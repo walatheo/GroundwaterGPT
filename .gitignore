@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data files (too large for git, regenerate with download_data.py)
+data/*.csv
+
+# Model files (regenerate with train_groundwater.py)
+models/*.joblib
+
+# Generated plots (regenerate with dashboard.py)
+plots/*.html
+plots/*.png
+
+# ChromaDB (regenerate from PDFs)
+chroma_db/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Keep these in git:
+# - *.py (source code)
+# - *.md (documentation)
+# - *.txt (requirements, reports)
+# - *.pdf (reference documents)
