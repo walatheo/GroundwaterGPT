@@ -1,31 +1,205 @@
 #!/usr/bin/env python3
-"""
-================================================================================
-DOWNLOAD_DATA.PY - Download Extended Climate & Groundwater Data
-================================================================================
+"""Download real USGS groundwater and ERA5 climate data.
 
-Downloads 10 years (2014-2023) of ERA5 climate data from Copernicus CDS
-and generates corresponding modeled groundwater data.
+Downloads:
+1. Real groundwater data from USGS National Water Information System (NWIS)
+2. ERA5 climate data from Copernicus CDS (optional)
 
 Usage:
-    python download_data.py              # Download all data
-    python download_data.py --climate    # Climate only
-    python download_data.py --groundwater # Groundwater only (requires climate)
+    python download_data.py              # Download USGS groundwater (default)
+    python download_data.py --climate    # Also download ERA5 climate data
+    python download_data.py --site SITE  # Specify USGS site ID
 """
 
 import argparse
-import os
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
+import requests
 
 # Add parent to path for config
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import ACTIVE_REGION, CDS_API_KEY, CDS_URL, DATA_DIR, REGIONS, TIME_CONFIG
+from config import ACTIVE_REGION, CDS_API_KEY, CDS_URL, DATA_DIR, REGIONS, TIME_CONFIG  # noqa: E402
+
+# =============================================================================
+# USGS CONFIGURATION
+# =============================================================================
+
+# Default USGS site - Lee County, FL (near Fort Myers)
+DEFAULT_USGS_SITE = "262724081260701"
+
+# USGS NWIS Web Service
+USGS_NWIS_URL = "https://waterservices.usgs.gov/nwis/dv/"
+
+# Parameter codes for groundwater
+USGS_PARAMS = {
+    "72019": "Depth to water level, ft below land surface",
+    "72020": "Water level altitude, ft above datum",
+    "62610": "Groundwater level relative to datum, ft",
+}
+
+
+# =============================================================================
+# USGS DATA DOWNLOAD
+# =============================================================================
+
+
+def fetch_usgs_groundwater(
+    site_id: str = DEFAULT_USGS_SITE,
+    start_date: str = "2014-01-01",
+    end_date: str = "2023-12-31",
+) -> pd.DataFrame:
+    """Download real groundwater data from USGS NWIS.
+
+    Args:
+        site_id: USGS site identifier (15-digit code)
+        start_date: Start date (YYYY-MM-DD)
+        end_date: End date (YYYY-MM-DD)
+
+    Returns:
+        DataFrame with columns: date, site_id, water_level_ft
+    """
+    print("\n💧 Downloading USGS groundwater data...")
+    print(f"   Site: {site_id}")
+    print(f"   Period: {start_date} to {end_date}")
+
+    # Try multiple parameter codes (sites vary in what they report)
+    for param_code, param_name in USGS_PARAMS.items():
+        print(f"   Trying parameter {param_code} ({param_name})...", end=" ")
+
+        params = {
+            "sites": site_id,
+            "parameterCd": param_code,
+            "startDT": start_date,
+            "endDT": end_date,
+            "format": "json",
+            "siteStatus": "all",
+        }
+
+        try:
+            response = requests.get(USGS_NWIS_URL, params=params, timeout=60)
+            response.raise_for_status()
+            data = response.json()
+
+            # Check if data exists
+            time_series = data.get("value", {}).get("timeSeries", [])
+            if not time_series:
+                print("No data")
+                continue
+
+            # Extract values
+            values = time_series[0].get("values", [{}])[0].get("value", [])
+            if not values:
+                print("Empty")
+                continue
+
+            print(f"✓ Found {len(values)} records")
+
+            # Parse into DataFrame
+            records = []
+            for v in values:
+                try:
+                    date = pd.to_datetime(v["dateTime"]).date()
+                    value = float(v["value"])
+                    if value > -999:  # USGS uses -999999 for missing
+                        records.append({"date": date, "site_id": site_id, "water_level_ft": value})
+                except (ValueError, KeyError):
+                    continue
+
+            if records:
+                df = pd.DataFrame(records)
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.sort_values("date").drop_duplicates(subset=["date"])
+                df = df.reset_index(drop=True)
+
+                print(f"\n✓ Downloaded {len(df)} days of REAL USGS measurements")
+                print(f"  Period: {df['date'].min().date()} to {df['date'].max().date()}")
+                print(
+                    f"  Water level range: {df['water_level_ft'].min():.2f} "
+                    f"to {df['water_level_ft'].max():.2f} ft"
+                )
+
+                return df
+
+        except requests.RequestException as e:
+            print(f"Error: {e}")
+            continue
+
+    # If we get here, no data found
+    raise RuntimeError(
+        f"Could not fetch groundwater data for site {site_id}. "
+        "Try a different site ID or check https://waterdata.usgs.gov/nwis"
+    )
+
+
+def search_usgs_sites(
+    state: str = "FL",
+    county: str = None,
+    site_type: str = "GW",
+    limit: int = 10,
+) -> pd.DataFrame:
+    """Search for USGS groundwater monitoring sites.
+
+    Args:
+        state: 2-letter state code
+        county: County name (optional)
+        site_type: Site type code (GW = groundwater)
+        limit: Maximum number of results
+
+    Returns:
+        DataFrame with site information
+    """
+    print(f"\n🔍 Searching for USGS sites in {state}...")
+
+    url = "https://waterservices.usgs.gov/nwis/site/"
+    params = {
+        "stateCd": state,
+        "siteType": site_type,
+        "siteStatus": "active",
+        "hasDataTypeCd": "dv",  # Daily values available
+        "format": "rdb",
+    }
+
+    if county:
+        params["countyFips"] = county
+
+    try:
+        response = requests.get(url, params=params, timeout=60)
+        response.raise_for_status()
+
+        # Parse RDB format (tab-separated with comment lines)
+        lines = [line for line in response.text.split("\n") if line and not line.startswith("#")]
+
+        if len(lines) < 2:
+            print("  No sites found")
+            return pd.DataFrame()
+
+        # First line is header, second is format, rest is data
+        from io import StringIO
+
+        df = pd.read_csv(
+            StringIO("\n".join([lines[0]] + lines[2:])),
+            sep="\t",
+            dtype=str,
+        )
+
+        # Select relevant columns
+        cols = ["site_no", "station_nm", "dec_lat_va", "dec_long_va"]
+        df = df[[c for c in cols if c in df.columns]].head(limit)
+
+        print(f"  Found {len(df)} sites")
+        return df
+
+    except requests.RequestException as e:
+        print(f"  Error: {e}")
+        return pd.DataFrame()
+
+
+# =============================================================================
+# ERA5 CLIMATE DATA (OPTIONAL)
+# =============================================================================
 
 
 def setup_cds_credentials():
@@ -38,8 +212,7 @@ def setup_cds_credentials():
 
 
 def download_era5_climate(years: list, region: dict) -> pd.DataFrame:
-    """
-    Download ERA5 climate data from Copernicus CDS.
+    """Download ERA5 climate data from Copernicus CDS.
 
     Downloads temperature and precipitation at daily resolution.
     For 10 years, this may take 10-30 minutes depending on CDS queue.
@@ -56,12 +229,12 @@ def download_era5_climate(years: list, region: dict) -> pd.DataFrame:
 
     print(f"\n📡 Downloading ERA5 data for {len(years)} years...")
     print(f"   Region: {region['name']} ({area})")
-    print(f"   Note: Each year takes ~1-5 min depending on CDS queue\n")
+    print("   Note: Each year takes ~1-5 min depending on CDS queue\n")
 
     for year in years:
         print(f"   Downloading {year}...", end=" ", flush=True)
 
-        # Temporary file for this year - use GRIB (faster)
+        # Temporary file for this year
         temp_file = DATA_DIR / f"era5_{year}_temp.grib"
 
         try:
@@ -83,21 +256,17 @@ def download_era5_climate(years: list, region: dict) -> pd.DataFrame:
                 str(temp_file),
             )
 
-            # Process GRIB file with cfgrib or fallback
+            # Process file
             ds = None
-            try:
-                ds = xr.open_dataset(temp_file, engine="cfgrib")
-            except Exception:
-                # Fallback: try netcdf engines (CDS sometimes returns netcdf anyway)
-                for engine in ["netcdf4", "scipy", "h5netcdf"]:
-                    try:
-                        ds = xr.open_dataset(temp_file, engine=engine)
-                        break
-                    except Exception:
-                        continue
+            for engine in ["cfgrib", "netcdf4", "scipy", "h5netcdf"]:
+                try:
+                    ds = xr.open_dataset(temp_file, engine=engine)
+                    break
+                except Exception:
+                    continue
 
             if ds is None:
-                raise RuntimeError(f"Could not open {temp_file} with any engine")
+                raise RuntimeError(f"Could not open {temp_file}")
 
             # Extract daily means
             df_year = pd.DataFrame(
@@ -110,8 +279,6 @@ def download_era5_climate(years: list, region: dict) -> pd.DataFrame:
 
             all_data.append(df_year)
             ds.close()
-
-            # Cleanup temp file
             temp_file.unlink()
 
             print(f"✓ {len(df_year)} days")
@@ -125,7 +292,6 @@ def download_era5_climate(years: list, region: dict) -> pd.DataFrame:
     if not all_data:
         raise RuntimeError("Failed to download any ERA5 data")
 
-    # Combine all years
     climate_df = pd.concat(all_data, ignore_index=True)
     climate_df = climate_df.sort_values("date").reset_index(drop=True)
     climate_df = climate_df.drop_duplicates(subset=["date"])
@@ -136,135 +302,98 @@ def download_era5_climate(years: list, region: dict) -> pd.DataFrame:
     return climate_df
 
 
-def generate_modeled_groundwater(climate_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Generate physically-realistic groundwater data based on climate.
-
-    Model incorporates:
-    1. Seasonal cycle (wet season recharge in June-October)
-    2. Precipitation lag (7-30 day aquifer response time)
-    3. Temperature effects (ET reduces water table)
-    4. Long-term trend (slight decline over decade)
-    5. Interannual variability
-    6. Random noise
-    """
-    print("\n💧 Generating modeled groundwater data...")
-
-    df = climate_df.copy()
-    df = df.sort_values("date").reset_index(drop=True)
-
-    # Time features
-    df["day_of_year"] = df["date"].dt.dayofyear
-    df["year"] = df["date"].dt.year
-    df["month"] = df["date"].dt.month
-
-    # Base year for trend calculation
-    base_year = df["year"].min()
-    years_elapsed = df["year"] - base_year
-
-    # ==========================================================================
-    # GROUNDWATER MODEL COMPONENTS
-    # ==========================================================================
-
-    # 1. Seasonal cycle (peak in late wet season ~October)
-    seasonal_phase = 2 * np.pi * (df["day_of_year"] - 100) / 365
-    seasonal = 1.2 * np.sin(seasonal_phase)
-
-    # 2. Precipitation effect with lag
-    precip_lag7 = df["precipitation_mm"].rolling(7, min_periods=1).sum().shift(7).fillna(0)
-    precip_lag14 = df["precipitation_mm"].rolling(14, min_periods=1).sum().shift(14).fillna(0)
-    precip_lag30 = df["precipitation_mm"].rolling(30, min_periods=1).sum().shift(30).fillna(0)
-
-    precip_effect = 0.5 * precip_lag7 + 0.3 * precip_lag14 + 0.2 * precip_lag30
-    precip_effect = (precip_effect - precip_effect.mean()) / precip_effect.std() * 0.8
-
-    # 3. Temperature effect (higher temp = lower water table)
-    temp_effect = (
-        -(df["temperature_c"] - df["temperature_c"].mean()) / df["temperature_c"].std() * 0.4
-    )
-
-    # 4. Long-term trend (-0.05 ft/year)
-    long_term_trend = -0.05 * years_elapsed
-
-    # 5. Interannual variability (4-year cycle)
-    days_total = (df["date"] - df["date"].min()).dt.days
-    interannual = 0.5 * np.sin(2 * np.pi * days_total / (4 * 365))
-
-    # 6. Random noise
-    np.random.seed(42)
-    noise = np.random.normal(0, 0.15, len(df))
-
-    # ==========================================================================
-    # COMBINE COMPONENTS
-    # ==========================================================================
-
-    base_level = 5.0  # feet
-
-    water_level = (
-        base_level + seasonal + precip_effect + temp_effect + long_term_trend + interannual + noise
-    )
-
-    # Clip to realistic values
-    water_level = np.clip(water_level, 1.0, 12.0)
-
-    groundwater_df = pd.DataFrame(
-        {"date": df["date"], "site_id": "FM_MODELED_001", "water_level_ft": water_level}
-    )
-
-    print(f"✓ Generated {len(groundwater_df)} days of groundwater data")
-    print(f"  Water level range: {water_level.min():.2f} to {water_level.max():.2f} ft")
-    print(f"  Long-term trend: {long_term_trend.iloc[-1]:.2f} ft over {years_elapsed.max()} years")
-
-    return groundwater_df
+# =============================================================================
+# MAIN
+# =============================================================================
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Download extended climate & groundwater data")
-    parser.add_argument("--climate", action="store_true", help="Download climate only")
-    parser.add_argument("--groundwater", action="store_true", help="Generate groundwater only")
+    """Run the USGS groundwater data download CLI."""
+    parser = argparse.ArgumentParser(
+        description="Download real USGS groundwater & ERA5 climate data"
+    )
+    parser.add_argument(
+        "--site",
+        type=str,
+        default=DEFAULT_USGS_SITE,
+        help=f"USGS site ID (default: {DEFAULT_USGS_SITE})",
+    )
+    parser.add_argument(
+        "--climate",
+        action="store_true",
+        help="Also download ERA5 climate data (requires CDS API)",
+    )
+    parser.add_argument(
+        "--search",
+        type=str,
+        metavar="STATE",
+        help="Search for USGS sites in a state (e.g., FL)",
+    )
+    parser.add_argument(
+        "--start",
+        type=str,
+        default=TIME_CONFIG["start_date"],
+        help="Start date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--end",
+        type=str,
+        default=TIME_CONFIG["end_date"],
+        help="End date (YYYY-MM-DD)",
+    )
     args = parser.parse_args()
 
     print("\n" + "=" * 60)
-    print("   EXTENDED DATA DOWNLOAD (10 Years)")
+    print("   USGS GROUNDWATER DATA DOWNLOAD")
     print("=" * 60)
-
-    region = REGIONS[ACTIVE_REGION]
-    years = TIME_CONFIG["years"]
-
-    print(f"\n📅 Period: {TIME_CONFIG['start_date']} to {TIME_CONFIG['end_date']}")
-    print(f"📍 Region: {region['name']}")
-    print(f"📊 Years: {len(years)}")
 
     DATA_DIR.mkdir(exist_ok=True)
 
-    download_climate = not args.groundwater or args.climate
-    generate_gw = not args.climate or args.groundwater
+    # Search mode
+    if args.search:
+        sites = search_usgs_sites(state=args.search)
+        if not sites.empty:
+            print("\nAvailable sites:")
+            print(sites.to_string(index=False))
+            print("\nUse: python download_data.py --site <site_no>")
+        return
 
-    climate_file = DATA_DIR / "climate.csv"
-
-    if download_climate:
-        climate_df = download_era5_climate(years, region)
-        climate_df.to_csv(climate_file, index=False)
-        print(f"\n💾 Saved: {climate_file}")
-    else:
-        if not climate_file.exists():
-            print("❌ Climate data required. Run without --groundwater first.")
-            return
-        climate_df = pd.read_csv(climate_file, parse_dates=["date"])
-        print(f"\n📂 Loaded existing climate: {len(climate_df)} records")
-
-    if generate_gw:
-        groundwater_df = generate_modeled_groundwater(climate_df)
+    # Download groundwater
+    try:
+        groundwater_df = fetch_usgs_groundwater(
+            site_id=args.site,
+            start_date=args.start,
+            end_date=args.end,
+        )
         gw_file = DATA_DIR / "groundwater.csv"
         groundwater_df.to_csv(gw_file, index=False)
-        print(f"💾 Saved: {gw_file}")
+        print(f"\n💾 Saved: {gw_file}")
+    except Exception as e:
+        print(f"\n❌ Error downloading groundwater data: {e}")
+        return
+
+    # Optionally download climate
+    if args.climate:
+        try:
+            region = REGIONS[ACTIVE_REGION]
+            years = TIME_CONFIG["years"]
+            climate_df = download_era5_climate(years, region)
+            climate_file = DATA_DIR / "climate.csv"
+            climate_df.to_csv(climate_file, index=False)
+            print(f"💾 Saved: {climate_file}")
+        except Exception as e:
+            print(f"\n⚠️ Climate download failed: {e}")
+            print("  Groundwater data was saved successfully.")
 
     print("\n" + "=" * 60)
     print("   DOWNLOAD COMPLETE")
     print("=" * 60)
+    print("\nData source: USGS National Water Information System (NWIS)")
+    print(f"Site ID: {args.site}")
+    print(f"URL: https://waterdata.usgs.gov/nwis/uv?site_no={args.site}")
     print("\nNext steps:")
-    print("  python main.py           # Run full analysis pipeline")
-    print("  python dashboard.py      # Generate trend dashboard")
+    print("  python train_groundwater.py   # Train prediction model")
+    print("  python dashboard.py           # Generate trend dashboard")
     print()
 
 
