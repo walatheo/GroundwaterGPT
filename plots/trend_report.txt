@@ -1,7 +1,7 @@
 
 ================================================================================
     FORT MYERS GROUNDWATER TREND REPORT
-    Generated: 2026-01-13 17:03:52
+    Generated: 2026-01-13 17:15:50
 ================================================================================
 
 DATA SOURCE
@@ -13,40 +13,40 @@ URL: https://waterservices.usgs.gov/
 DATA SUMMARY
 ------------
 Period: 2014-01-01 to 2023-12-31
-Total Days: 3,650
+Total Days: 3,641
 Years: 10.0
 
 WATER LEVEL STATISTICS
 ----------------------
-Average: 1.476 m (below land surface)
-Std Dev: 0.352 m
-Minimum: 0.614 m (shallowest)
-Maximum: 2.584 m (deepest)
+Average: 9.412 m (below land surface)
+Std Dev: 0.916 m
+Minimum: 7.233 m (shallowest)
+Maximum: 10.823 m (deepest)
 
 TREND ANALYSIS
 --------------
-Overall Trend: RISING (0.0140 m/year)
-Annual Change: -0.0140 m/year
-Total Change: -0.14 m
+Overall Trend: DECLINING (0.0570 m/year)
+Annual Change: 0.0570 m/year
+Total Change: 0.57 m
 
 SEASONAL PATTERN
 ----------------
-Shallowest: December (1.033 m)
-Deepest: September (1.881 m)
-Seasonal Range: 0.848 m
+Shallowest: May (8.303 m)
+Deepest: September (10.360 m)
+Seasonal Range: 2.057 m
 
 YEARLY BREAKDOWN
 ----------------
-2014: 1.599 m
-2015: 1.633 m
-2016: 1.442 m
-2017: 1.384 m
-2018: 1.548 m
-2019: 1.549 m
-2020: 1.331 m
-2021: 1.293 m
-2022: 1.493 m
-2023: 1.486 m
+2014: 9.104 m
+2015: 9.118 m
+2016: 9.861 m
+2017: 9.412 m
+2018: 9.374 m
+2019: 9.316 m
+2020: 9.023 m
+2021: 9.465 m
+2022: 9.674 m
+2023: 9.765 m
 
 ================================================================================
 Data: Real USGS measurements
