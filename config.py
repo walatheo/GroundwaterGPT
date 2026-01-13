@@ -68,7 +68,8 @@ USGS_SITES = []
 # ==============================================================================
 
 PDF_FILES = [
-    BASE_DIR / "a-conceptual-overview-of-surface-and-near-surface-brines-and-evaporite-minerals.pdf",
+    BASE_DIR
+    / "a-conceptual-overview-of-surface-and-near-surface-brines-and-evaporite-minerals.pdf",
     BASE_DIR / "a-glossary-of-hydrogeology.pdf",
     BASE_DIR / "age-dating-young-groundwater.pdf",
 ]
@@ -103,8 +104,10 @@ MODELS_DIR = BASE_DIR / "models"
 # HELPERS
 # ==============================================================================
 
+
 def get_region(name=None):
     return REGIONS.get(name or ACTIVE_REGION)
+
 
 def print_config():
     region = get_region()

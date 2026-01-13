@@ -1,7 +1,7 @@
 # GroundwaterGPT - Project Status & Roadmap
 
-**Last Updated:** January 13, 2026  
-**Location:** Fort Myers, Southwest Florida  
+**Last Updated:** January 13, 2026
+**Location:** Fort Myers, Southwest Florida
 **Data Source:** USGS National Water Information System (NWIS)
 
 ---

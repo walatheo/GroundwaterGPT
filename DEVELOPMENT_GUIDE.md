@@ -296,16 +296,16 @@ Jan 2026 ───────────────────────�
 ## Weekly Check-in: [Date]
 
 ### Progress
-- [ ] Data Engineer: 
-- [ ] ML Engineer: 
-- [ ] Software Engineer: 
-- [ ] Research Analyst: 
+- [ ] Data Engineer:
+- [ ] ML Engineer:
+- [ ] Software Engineer:
+- [ ] Research Analyst:
 
 ### Blockers
-- 
+-
 
 ### Next Week
-- 
+-
 
 ### Metrics
 - Tests passing: __/32
@@ -364,18 +364,18 @@ def predict_groundwater(
 ) -> np.ndarray:
     """
     Predict groundwater levels for given features.
-    
+
     Args:
         model: Trained sklearn Pipeline
         features: DataFrame with required feature columns
         horizon_days: Prediction horizon (default 7)
-    
+
     Returns:
         Array of predicted water levels in feet
-    
+
     Raises:
         ValueError: If features missing required columns
-    
+
     Example:
         >>> predictions = predict_groundwater(model, test_features)
         >>> print(f"Next 7 days: {predictions[:7]}")
@@ -439,26 +439,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           pip install pytest pytest-cov flake8 mypy
-          
+
       - name: Lint with flake8
         run: flake8 . --max-line-length=100 --exclude=.venv
-        
+
       - name: Type check with mypy
         run: mypy --ignore-missing-imports *.py
-        
+
       - name: Run tests
         run: pytest tests/ -v --cov=. --cov-report=xml
-        
+
       - name: Upload coverage
         uses: codecov/codecov-action@v3
 
@@ -498,13 +498,13 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         args: ['--maxkb=500']
-      
+
   - repo: https://github.com/psf/black
     rev: 24.1.0
     hooks:
       - id: black
         language_version: python3.11
-        
+
   - repo: https://github.com/pycqa/flake8
     rev: 7.0.0
     hooks:
@@ -544,32 +544,32 @@ data/
 class FeatureEngineer:
     """
     Feature engineering with proper data leakage prevention.
-    
+
     All features use ONLY data available at prediction time.
     """
-    
+
     def __init__(self, forecast_horizon: int = 7):
         self.forecast_horizon = forecast_horizon
         self.feature_names: List[str] = []
-    
+
     def create_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Create features with documented transformations.
-        
+
         Data Leakage Prevention:
         - All lags shifted by forecast_horizon + lag
         - Rolling stats end forecast_horizon days before target
         - No future data used in any feature
         """
         data = df.copy()
-        
+
         # Document each feature
         self._add_temporal_features(data)
         self._add_lag_features(data)
         self._add_rolling_features(data)
-        
+
         return data
-    
+
     def get_feature_documentation(self) -> pd.DataFrame:
         """Return documentation for all features."""
         return pd.DataFrame({
@@ -599,7 +599,7 @@ class DataQualityReport:
 def validate_groundwater_data(df: pd.DataFrame) -> DataQualityReport:
     """
     Comprehensive data quality validation.
-    
+
     Checks:
     1. No missing dates in time series
     2. Values within physical bounds (0-50 ft typical)
@@ -608,19 +608,19 @@ def validate_groundwater_data(df: pd.DataFrame) -> DataQualityReport:
     """
     errors = []
     warnings = []
-    
+
     # Check for gaps
     date_gaps = find_date_gaps(df['date'])
     if date_gaps:
         warnings.append(f"Found {len(date_gaps)} date gaps")
-    
+
     # Check value bounds
     if df['water_level'].min() < 0:
         errors.append("Negative water levels detected")
-    
+
     # Check for outliers
     outliers = detect_outliers(df['water_level'])
-    
+
     return DataQualityReport(
         passed=len(errors) == 0,
         total_records=len(df),
@@ -677,7 +677,7 @@ from train_groundwater import create_features, FORECAST_HORIZON
 
 class TestFeatureEngineering:
     """Test feature engineering functions."""
-    
+
     @pytest.fixture
     def sample_data(self):
         """Create sample groundwater data."""
@@ -686,11 +686,11 @@ class TestFeatureEngineering:
             'date': dates,
             'water_level': np.random.normal(5, 1, 100)
         })
-    
+
     def test_no_data_leakage(self, sample_data):
         """Verify features don't use future data."""
         features = create_features(sample_data)
-        
+
         # For any row, all feature values should be computable
         # using only data from FORECAST_HORIZON+ days before
         for i in range(FORECAST_HORIZON + 30, len(features)):
@@ -698,16 +698,16 @@ class TestFeatureEngineering:
             # lag_7d should equal value from FORECAST_HORIZON + 7 days ago
             expected = sample_data.iloc[i - FORECAST_HORIZON - 7]['water_level']
             assert row['level_lag_7d'] == pytest.approx(expected)
-    
+
     def test_feature_completeness(self, sample_data):
         """Verify no NaN in output features."""
         features = create_features(sample_data)
         assert not features.isnull().any().any()
-    
+
     def test_temporal_features_cyclical(self, sample_data):
         """Verify sin/cos encoding is bounded [-1, 1]."""
         features = create_features(sample_data)
-        
+
         assert features['month_sin'].between(-1, 1).all()
         assert features['month_cos'].between(-1, 1).all()
 
@@ -715,27 +715,27 @@ class TestFeatureEngineering:
 # tests/model/test_metrics.py
 class TestModelPerformance:
     """Test model meets minimum performance standards."""
-    
+
     @pytest.fixture
     def trained_model(self):
         """Load or train model."""
         from joblib import load
         return load('models/best_gradient_boosting.joblib')
-    
+
     def test_r2_minimum(self, trained_model, test_data):
         """Model must achieve R² >= 0.80 on test data."""
         X_test, y_test = test_data
         y_pred = trained_model.predict(X_test)
         r2 = r2_score(y_test, y_pred)
-        
+
         assert r2 >= 0.80, f"R² {r2:.4f} below threshold 0.80"
-    
+
     def test_rmse_maximum(self, trained_model, test_data):
         """RMSE must be <= 0.5 feet."""
         X_test, y_test = test_data
         y_pred = trained_model.predict(X_test)
         rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-        
+
         assert rmse <= 0.5, f"RMSE {rmse:.4f} exceeds threshold 0.5"
 ```
 
@@ -797,10 +797,10 @@ def download_usgs_data(
 ) -> pd.DataFrame:
     """
     Download groundwater data from USGS NWIS.
-    
+
     Fetches daily water level measurements from the USGS National
     Water Information System for a specified monitoring well.
-    
+
     Parameters
     ----------
     site_id : str
@@ -811,7 +811,7 @@ def download_usgs_data(
         End date in YYYY-MM-DD format
     parameter : str, optional
         USGS parameter code (default "72019" = depth to water)
-    
+
     Returns
     -------
     pd.DataFrame
@@ -820,23 +820,23 @@ def download_usgs_data(
         - water_level_ft: float64
         - site_id: str
         - quality_flag: str
-    
+
     Raises
     ------
     ConnectionError
         If USGS API is unreachable
     ValueError
         If site_id not found or date range invalid
-    
+
     Notes
     -----
     Rate limited to 1 request per second per USGS guidelines.
     Data may have gaps; use validate_groundwater_data() to check.
-    
+
     References
     ----------
     .. [1] USGS NWIS: https://waterdata.usgs.gov/nwis
-    
+
     Examples
     --------
     >>> df = download_usgs_data(
@@ -911,7 +911,7 @@ vulture *.py --min-confidence 80
 pip install isort
 isort .
 
-# Format code consistently  
+# Format code consistently
 pip install black
 black .
 ```

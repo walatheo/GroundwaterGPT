@@ -12,25 +12,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-          
+
       - name: Install linting tools
         run: pip install flake8 black isort mypy
-        
+
       - name: Check formatting with black
         run: black --check --diff .
-        
+
       - name: Check import sorting
         run: isort --check-only --diff .
-        
+
       - name: Lint with flake8
         run: flake8 . --max-line-length=100 --exclude=.venv,__pycache__
-        
+
       - name: Type check with mypy
         run: mypy --ignore-missing-imports *.py
         continue-on-error: true  # Warning only for now
@@ -41,22 +41,22 @@ jobs:
     needs: lint
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-          
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           pip install pytest pytest-cov
-          
+
       - name: Run tests
         run: pytest tests/ -v --cov=. --cov-report=xml --cov-report=term-missing
         continue-on-error: true  # Until tests are fully set up
-        
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
@@ -69,19 +69,19 @@ jobs:
     needs: lint
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-          
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-        
+
       - name: Validate config
         run: python -c "import config; print('Config OK')"
-        
+
       - name: Check module imports
         run: |
           python -c "import train_groundwater; print('train_groundwater OK')"
@@ -95,20 +95,20 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-          
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-        
+
       - name: Download test data
         run: python download_data.py
         continue-on-error: true
-        
+
       - name: Train and validate model
         run: |
           python train_groundwater.py
