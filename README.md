@@ -1,41 +1,88 @@
-# GroundwaterGPT - Southwest Florida Analysis
+# GroundwaterGPT
 
-## 🎯 Status: PRODUCTION READY
+[![CI Pipeline](https://github.com/walatheo/GroundwaterGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/walatheo/GroundwaterGPT/actions)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A machine learning pipeline for analyzing groundwater trends in Southwest Florida using ERA5 climate data.
-
-**Key Results:**
-- Ridge Regression Model: **R² = 0.84** (84% variance explained)
-- Interactive dashboard with trend analysis
-- 31 automated tests passing
+**A machine learning platform for groundwater level prediction and trend analysis in Southwest Florida.**
 
 ---
 
-## 📊 Data Available
+## 🎯 Project Overview
 
-### Climate Data (`data/climate.csv`)
-- **Source**: ERA5 Reanalysis from Copernicus Climate Data Store (REAL DATA)
-- **Region**: Fort Myers, FL (26.3°N to 27.0°N, 81.5°W to 82.2°W)
-- **Period**: January 1, 2023 - December 31, 2023
-- **Records**: 365 daily observations
-- **Variables**:
-  - `temperature_c`: Daily temperature (°C) - Range: 6.6°C to 29.2°C
-  - `precipitation_mm`: Daily precipitation (mm) - Range: 0 to 2.85mm
+GroundwaterGPT predicts groundwater levels using historical data from USGS monitoring wells. The platform provides:
 
-### Groundwater Data (`data/groundwater.csv`)
-- **Source**: Modeled from real climate data (USGS API was unavailable)
-- **Period**: January 1, 2023 - December 31, 2023
-- **Records**: 365 daily observations
-- **Variables**:
-  - `water_level_ft`: Water level (feet) - Range: 1.5 to 12.9 ft
-  - Correlated with precipitation (lagged) and temperature
+- **7-day ahead predictions** with 93% accuracy (R² = 0.93)
+- **Interactive dashboard** for trend visualization
+- **Research-ready foundation** for hydrogeological studies
 
-### Reference Books (for RAG/Training)
-1. `a-conceptual-overview-of-surface-and-near-surface-brines-and-evaporite-minerals.pdf`
-2. `a-glossary-of-hydrogeology.pdf`
-3. `age-dating-young-groundwater.pdf`
+### Current Model Performance
 
-Vector embeddings already created in `chroma_db/`
+| Metric | Value | Threshold |
+|--------|-------|-----------|
+| R² (7-day ahead) | **0.9262** | ≥ 0.80 |
+| RMSE | **0.30 ft** | ≤ 0.50 ft |
+| MAE | **0.23 ft** | — |
+
+---
+
+## 🚀 Quick Start
+
+### 1. Clone and Setup
+
+```bash
+git clone https://github.com/walatheo/GroundwaterGPT.git
+cd GroundwaterGPT
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 2. Download Data
+
+```bash
+python download_data.py
+```
+
+This fetches real groundwater data from USGS for Fort Myers, FL (2014-2023).
+
+### 3. Train Model
+
+```bash
+python train_groundwater.py
+```
+
+Trains and compares Ridge, Random Forest, and Gradient Boosting models.
+
+### 4. Generate Dashboard
+
+```bash
+python dashboard.py
+open plots/dashboard.html
+```
+
+Creates an interactive 6-panel visualization of groundwater trends.
+
+---
+
+## 📊 Data Sources
+
+### Groundwater Data
+- **Source:** USGS National Water Information System (NWIS)
+- **Site:** 263314081472201 (Fort Myers, Surficial Aquifer)
+- **Period:** 2014-01-01 to 2023-12-31
+- **Records:** 3,650 daily measurements
+- **Variable:** Depth to water level (feet below surface)
+
+### Reference Documents
+Three hydrogeology PDFs are embedded in ChromaDB for future RAG integration:
+- `a-glossary-of-hydrogeology.pdf`
+- `age-dating-young-groundwater.pdf`
+- `a-conceptual-overview-of-surface-and-near-surface-brines-and-evaporite-minerals.pdf`
 
 ---
 
@@ -43,115 +90,145 @@ Vector embeddings already created in `chroma_db/`
 
 ```
 GroundwaterGPT/
-├── config.py        # Configuration settings
-├── loaders.py       # Data loading functions
-├── visualize.py     # Static plotting functions
-├── dashboard.py     # Interactive HTML dashboard
-├── train.py         # Model training with feature engineering
-├── main.py          # Run the full pipeline
-├── test_pipeline.py # 31 quality assurance tests
-├── data/
-│   ├── climate.csv           # REAL ERA5 climate data
-│   ├── groundwater.csv       # Modeled groundwater data
-│   ├── model_comparison.csv  # Model performance metrics
-│   └── feature_importance.csv # Top predictive features
-├── plots/
-│   ├── dashboard.html        # Interactive trend analysis
-│   ├── trend_report.txt      # Text analysis report
-│   ├── climate.png           # Climate time series
-│   ├── groundwater.png       # Water level time series
-│   ├── correlation.png       # Climate-groundwater correlation
-│   └── model_results.png     # Prediction vs actual
-├── models/
-│   └── best_ridge.joblib     # Trained model
-├── chroma_db/                # PDF embeddings for RAG
-└── *.pdf                     # Reference books
+├── config.py                 # Configuration settings
+├── download_data.py          # USGS data fetcher
+├── train_groundwater.py      # Model training pipeline
+├── dashboard.py              # Interactive dashboard generator
+├── requirements.txt          # Dependencies
+├── DEVELOPMENT_GUIDE.md      # Best practices & standards
+├── PROJECT_STATUS.md         # Roadmap & current status
+│
+├── data/                     # Data files (gitignored)
+│   ├── groundwater.csv       # USGS measurements
+│   ├── forecast.csv          # 30-day predictions
+│   └── model_comparison.csv  # Model metrics
+│
+├── models/                   # Trained models (gitignored)
+│   └── best_gradient_boosting.joblib
+│
+├── plots/                    # Visualizations (gitignored)
+│   ├── dashboard.html        # Interactive dashboard
+│   └── model_predictions.png # Prediction accuracy
+│
+├── tests/                    # Test suite
+│   ├── unit/                 # Feature engineering tests
+│   ├── model/                # Model performance tests
+│   └── data/                 # Data quality tests
+│
+├── .github/workflows/        # CI/CD pipeline
+│   └── ci.yml
+│
+└── chroma_db/                # Vector store for RAG
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🧪 Testing
 
-1. **Run the full pipeline**:
-   ```bash
-   python main.py
-   ```
+Run the full test suite:
 
-2. **Generate interactive dashboard**:
-   ```bash
-   python dashboard.py
-   # Open plots/dashboard.html in browser
-   ```
+```bash
+pytest tests/ -v
+```
 
-3. **Run tests**:
-   ```bash
-   pytest test_pipeline.py -v
-   ```
+Run with coverage:
 
-4. **Just visualize**:
-   ```bash
-   python main.py --viz-only
-   ```
+```bash
+pytest tests/ --cov=. --cov-report=html
+open htmlcov/index.html
+```
 
-5. **Just train models**:
-   ```bash
-   python main.py --train-only
-   ```
+### Test Categories
+
+| Category | Tests | Purpose |
+|----------|-------|---------|
+| `tests/unit/` | 9 | Feature engineering, data leakage prevention |
+| `tests/model/` | 10 | Model performance thresholds |
+| `tests/data/` | 13 | Data quality and schema validation |
+
+**Current Status:** 32/32 tests passing ✅
 
 ---
 
-## 🔬 Model Details
+## 🔧 Development
 
-### Feature Engineering
-- **Cyclical time encoding**: sin/cos for month and day of year
-- **Lag features**: 1, 3, 7, 14, 30 days for delayed groundwater response
-- **Rolling averages**: 7, 14, 30 day windows for smoothed trends
+### Pre-commit Hooks
 
-### Model Comparison
-| Model | R² | RMSE | MAE |
-|-------|------|------|-----|
-| **Ridge Regression** | **0.84** | **0.31** | **0.26** |
-| Random Forest | -4.64 | 1.85 | 1.68 |
-| Gradient Boosting | -1.33 | 1.19 | 0.78 |
+Install hooks for automatic code quality checks:
 
-### Top Predictive Features
-1. `day_sin` (1.93) - Seasonal cycle
-2. `precipitation_mm_lag1` (0.61) - Yesterday's rainfall
-3. `temperature_c` (0.27) - Current temperature
-4. `precipitation_mm_lag3` (0.21) - Rainfall 3 days ago
-5. `day_cos` (0.18) - Seasonal cycle
+```bash
+pip install pre-commit
+pre-commit install
+```
 
----
+### Code Style
 
-## 📈 Key Findings
+- **Formatter:** Black (line length 100)
+- **Linter:** Flake8
+- **Import sorting:** isort
+- **Type hints:** Required for public functions
 
-From the trend analysis report:
+### Branch Strategy
 
-1. **Overall Trend**: Rising water levels (+1.76 m/year)
-2. **Seasonal Pattern**: 
-   - Highest: October (2.51m) - wet season recharge
-   - Lowest: April (0.74m) - dry season
-3. **Climate Correlations**:
-   - 7-day precipitation sum: r=0.34 (strongest)
-   - 7-day temperature average: r=0.21
-4. **Active recharge-discharge**: 1.77m seasonal variation
+```
+main (protected)
+  ↑ PR + CI must pass
+develop
+  ↑ feature branches
+feature/your-feature
+```
 
 ---
 
-## 🔧 Configuration
+## 📈 Roadmap
 
-Edit `config.py` to change:
-- Region (add new regions to `REGIONS` dict)
-- Time period (`TIME_CONFIG`)
-- Climate variables (`ERA5_VARIABLES`)
-- CDS API key (`CDS_API_KEY`)
+| Phase | Status | Focus |
+|-------|--------|-------|
+| 1. Foundation | ✅ Complete | Data pipeline, ML model, dashboard |
+| 2. Quality | 🔄 Current | CI/CD, testing, documentation |
+| 3. Enhancement | 📋 Planned | Multi-horizon forecasting, confidence intervals |
+| 4. Research | 📋 Planned | RAG integration, automated reports |
+| 5. Production | 📋 Planned | API, web hosting, alerts |
+
+See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed roadmap.
 
 ---
 
-## ✅ Verified Working
+## 📚 Documentation
 
-- [x] CDS API access working
-- [x] ERA5 data download (365 days of real data)
-- [x] Groundwater data prepared
-- [x] PDF vector store created
-- [x] Pipeline code ready
+- **[DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md)** - Coding standards, roles, schedule
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Current status and roadmap
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Make changes with tests
+4. Run quality checks (`pytest && flake8`)
+5. Commit with conventional message (`feat: add new feature`)
+6. Push and create PR
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+## 👤 Author
+
+**walatheo** - [GitHub](https://github.com/walatheo)
+
+*Florida Gulf Coast University*
+
+---
+
+## 🙏 Acknowledgments
+
+- **USGS** - Groundwater monitoring data via NWIS
+- **Copernicus Climate Data Store** - ERA5 reanalysis data
+- **scikit-learn** - Machine learning framework
+- **Plotly** - Interactive visualizations

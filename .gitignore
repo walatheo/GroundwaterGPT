@@ -45,3 +45,5 @@ Thumbs.db
 # - *.md (documentation)
 # - *.txt (requirements, reports)
 # - *.pdf (reference documents)
+.coverage
+htmlcov/
