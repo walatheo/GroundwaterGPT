@@ -47,3 +47,4 @@ Thumbs.db
 # - *.pdf (reference documents)
 .coverage
 htmlcov/
+.env

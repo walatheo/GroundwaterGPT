@@ -44,7 +44,7 @@ This project is structured around **four key roles** that ensure comprehensive c
 
 **Key Files Owned:**
 - `download_data.py`
-- `data_processing/*.py`
+- `config.py` (data source configuration)
 - `train_groundwater.py` (feature engineering sections)
 - `tests/data/test_quality.py`
 
@@ -208,8 +208,35 @@ This project is structured around **four key roles** that ensure comprehensive c
 
 ---
 
-### Phase 3: Enhanced Predictions
-*January 27 - February 24, 2026*
+### Phase 3: Agentic RAG System (Current)
+*January 15 - February 15, 2026*
+
+| Week | Focus | Role Lead | Deliverables |
+|------|-------|-----------|--------------|
+| **Week 1** | Agent Architecture | Software Engineer | LLM factory, tools, knowledge base |
+| **Week 2** | Tool Implementation | Data Engineer + ML Engineer | Data query tools, prediction tools |
+| **Week 3** | Chat Interface | Software Engineer | Streamlit chat app |
+| **Week 4** | Testing & Refinement | Research Analyst | User testing, prompt tuning |
+
+**Sprint Goals:**
+- [x] Create modular LLM factory (swappable providers)
+- [x] Implement groundwater data tools
+- [x] Connect ChromaDB knowledge base
+- [ ] Test with Gemini API
+- [ ] Launch chat interface
+- [ ] Document agent capabilities
+
+**Key Files:**
+- `agent/llm_factory.py` - Swappable LLM providers
+- `agent/tools.py` - Custom groundwater tools
+- `agent/knowledge.py` - ChromaDB RAG connector
+- `agent/groundwater_agent.py` - Main agent logic
+- `chat_app.py` - Streamlit chat interface
+
+---
+
+### Phase 4: Enhanced Predictions
+*February 15 - March 15, 2026*
 
 | Week | Focus | Role Lead | Deliverables |
 |------|-------|-----------|--------------|
