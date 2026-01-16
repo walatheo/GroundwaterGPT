@@ -14,10 +14,13 @@
 - [x] Replace modeled data with REAL USGS data
 - [x] Verify tests still pass with new data (32/32)
 - [x] Create modular LLM factory (swappable providers)
-- [x] Implement groundwater data tools
+- [x] Implement groundwater data tools (6 tools)
 - [x] Connect ChromaDB knowledge base (1,884 chunks indexed)
 - [x] Create Streamlit chat app structure
 - [x] Clean up redundant files (removed empty data_processing module)
+- [x] Build Deep Research Agent with iterative search
+- [x] Integrate DuckDuckGo web search
+- [x] Test Deep Research Agent (successfully generated research reports)
 
 ### In Progress ��
 - [ ] Test Gemini API (waiting for quota reset)

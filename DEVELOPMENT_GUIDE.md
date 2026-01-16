@@ -215,23 +215,35 @@ This project is structured around **four key roles** that ensure comprehensive c
 |------|-------|-----------|--------------|
 | **Week 1** | Agent Architecture | Software Engineer | LLM factory, tools, knowledge base |
 | **Week 2** | Tool Implementation | Data Engineer + ML Engineer | Data query tools, prediction tools |
-| **Week 3** | Chat Interface | Software Engineer | Streamlit chat app |
-| **Week 4** | Testing & Refinement | Research Analyst | User testing, prompt tuning |
+| **Week 3** | Deep Research Agent | Software Engineer | Iterative search, synthesis |
+| **Week 4** | Chat Interface | Research Analyst | Streamlit chat app, user testing |
 
 **Sprint Goals:**
 - [x] Create modular LLM factory (swappable providers)
 - [x] Implement groundwater data tools
 - [x] Connect ChromaDB knowledge base
-- [ ] Test with Gemini API
+- [x] Build Deep Research Agent with iterative search
+- [x] Integrate DuckDuckGo web search
+- [x] Test with Ollama/Llama locally
+- [ ] Test with Gemini API (quota pending)
 - [ ] Launch chat interface
 - [ ] Document agent capabilities
 
 **Key Files:**
-- `agent/llm_factory.py` - Swappable LLM providers
-- `agent/tools.py` - Custom groundwater tools
-- `agent/knowledge.py` - ChromaDB RAG connector
-- `agent/groundwater_agent.py` - Main agent logic
+- `agent/llm_factory.py` - Swappable LLM providers (Ollama, OpenAI, Anthropic, Gemini)
+- `agent/tools.py` - 6 custom groundwater tools
+- `agent/knowledge.py` - ChromaDB RAG connector (1,884 chunks)
+- `agent/groundwater_agent.py` - Main agent logic with simple retrieval mode
+- `agent/research_agent.py` - Deep Research Agent with iterative search
 - `chat_app.py` - Streamlit chat interface
+
+**Deep Research Agent Features:**
+- Iterative research with configurable depth (default: 3 levels)
+- Query optimization using LLM
+- Multi-source search (knowledge base + web)
+- Insight extraction with confidence scoring
+- Follow-up query generation
+- Comprehensive report synthesis
 
 ---
 

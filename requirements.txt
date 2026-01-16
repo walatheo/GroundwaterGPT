@@ -45,6 +45,19 @@ chromadb>=0.4.0
 # faiss-cpu>=1.7.0  # Optional: alternative vector store
 
 # ============================================================
+# LLM PROVIDERS & AGENTS
+# ============================================================
+
+# LLM Providers
+langchain-ollama>=0.0.1  # Local LLMs via Ollama
+langchain-google-genai>=0.0.1  # Google Gemini
+langchain-openai>=0.0.1  # OpenAI (optional)
+langchain-anthropic>=0.0.1  # Anthropic Claude (optional)
+
+# Deep Research Agent
+ddgs>=0.1.0  # DuckDuckGo web search
+
+# ============================================================
 # DEVELOPMENT DEPENDENCIES
 # ============================================================
 

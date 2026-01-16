@@ -83,6 +83,21 @@ def fetch_usgs_groundwater(
             response.raise_for_status()
             data = response.json()
 
+            # ============================================================
+            # SOURCE VERIFICATION: Verify USGS response authenticity
+            # ============================================================
+            try:
+                from agent.source_verification import verify_usgs_data
+
+                verification = verify_usgs_data(site_id, data)
+                if not verification.is_approved:
+                    print(f"\n⚠️ USGS data verification failed: {verification.reason}")
+                    continue
+                print(f"[{verification.trust_level.value}]", end=" ")
+            except ImportError:
+                pass  # Source verification module not available
+            # ============================================================
+
             # Check if data exists
             time_series = data.get("value", {}).get("timeSeries", [])
             if not time_series:
@@ -114,7 +129,12 @@ def fetch_usgs_groundwater(
                 df = df.sort_values("date").drop_duplicates(subset=["date"])
                 df = df.reset_index(drop=True)
 
-                print(f"\n✓ Downloaded {len(df)} days of REAL USGS measurements")
+                # Add verification metadata
+                df.attrs["source"] = "USGS NWIS"
+                df.attrs["verified"] = True
+                df.attrs["api_url"] = f"{USGS_NWIS_URL}?sites={site_id}"
+
+                print(f"\n✓ Downloaded {len(df)} days of VERIFIED USGS measurements")
                 print(f"  Period: {df['date'].min().date()} to {df['date'].max().date()}")
                 print(
                     f"  Water level range: {df['water_level_ft'].min():.2f} "

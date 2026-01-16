@@ -157,14 +157,42 @@ def get_retriever(k: int = 5):
     return vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": k})
 
 
-def add_document(content: str, metadata: Optional[dict] = None):
+def add_document(
+    content: str,
+    metadata: Optional[dict] = None,
+    source_url: Optional[str] = None,
+    require_verification: bool = True,
+) -> bool:
     """
-    Add a new document to the knowledge base.
+    Add a new document to the knowledge base with source verification.
 
     Args:
         content: Document content
         metadata: Optional metadata dictionary
+        source_url: URL of the source for verification
+        require_verification: If True, reject unverified sources (default: True)
+
+    Returns:
+        True if document was added, False if rejected
     """
+    from .source_verification import TrustLevel, verify_source
+
+    # Verify source if URL provided
+    if source_url and require_verification:
+        verification = verify_source(source_url)
+        if not verification.is_approved:
+            print(f"⚠️ Rejected unverified source: {source_url}")
+            print(f"   Reason: {verification.reason}")
+            return False
+
+        # Add verification info to metadata
+        if metadata is None:
+            metadata = {}
+        metadata["source_url"] = source_url
+        metadata["trust_level"] = verification.trust_level.value
+        metadata["verified"] = True
+        metadata["organization"] = verification.organization
+
     vectorstore = get_vectorstore()
 
     # Create document
@@ -179,6 +207,11 @@ def add_document(content: str, metadata: Optional[dict] = None):
 
     # Add to vectorstore
     vectorstore.add_documents(chunks)
+
+    if source_url:
+        print(f"✅ Added verified document from: {source_url}")
+
+    return True
 
 
 def get_knowledge_stats() -> dict:
