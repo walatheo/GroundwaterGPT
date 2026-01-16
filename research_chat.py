@@ -6,20 +6,30 @@ This is the main application - it uses the knowledge base (PDFs, USGS data)
 and conducts autonomous web research to answer groundwater questions.
 
 Features:
+- **Query Mode**: Fast lookup in knowledge base (instant answers)
+- **Research Mode**: Deep research with web search (takes longer)
 - Configurable timeout to prevent getting stuck
 - Stop button for user control
 - Progress updates during research
+
+Architecture:
+    This module serves as the presentation layer (UI) for the GroundwaterGPT system.
+    It connects to:
+    - agent.knowledge: Vector database (ChromaDB) for semantic search
+    - agent.research_agent: LLM-powered research agent (Ollama/llama3.2)
+    - agent.source_verification: Trust scoring for sources
+
+Usage:
+    streamlit run research_chat.py --server.port 8502
 """
 
 import logging
-import threading
 from datetime import datetime
 
 import streamlit as st
 
-from agent.knowledge import get_knowledge_stats
+from agent.knowledge import get_knowledge_stats, search_knowledge
 from agent.research_agent import DeepResearchAgent
-from agent.source_verification import SourceCategory
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -84,6 +94,8 @@ if "agent" not in st.session_state:
     st.session_state.agent = None
 if "current_research" not in st.session_state:
     st.session_state.current_research = None
+if "current_query_results" not in st.session_state:
+    st.session_state.current_query_results = None
 if "is_researching" not in st.session_state:
     st.session_state.is_researching = False
 if "research_status" not in st.session_state:
@@ -112,6 +124,86 @@ def stop_research():
     if st.session_state.agent:
         st.session_state.agent.stop()
         st.session_state.research_status = "stopping..."
+
+
+def query_knowledge_base(query: str, num_results: int = 10) -> dict:
+    """Query the knowledge base directly for fast results.
+    
+    Args:
+        query: The search query
+        num_results: Number of results to return
+        
+    Returns:
+        Dictionary with results and metadata
+    """
+    results = search_knowledge(query, k=num_results, score_threshold=0.2)
+    
+    # Organize results by type
+    usgs_results = []
+    pdf_results = []
+    other_results = []
+    
+    for doc in results:
+        doc_type = doc.metadata.get('doc_type', 'unknown')
+        result_item = {
+            'content': doc.page_content,
+            'doc_type': doc_type,
+            'source': doc.metadata.get('source_file', doc.metadata.get('site_name', 'Unknown')),
+            'metadata': doc.metadata,
+            'similarity': doc.metadata.get('similarity_score', 0)
+        }
+        
+        if doc_type == 'usgs_groundwater_data':
+            usgs_results.append(result_item)
+        elif doc_type == 'hydrogeology_reference':
+            pdf_results.append(result_item)
+        else:
+            other_results.append(result_item)
+    
+    return {
+        'query': query,
+        'total_results': len(results),
+        'usgs_data': usgs_results,
+        'pdf_references': pdf_results,
+        'other': other_results,
+        'timestamp': datetime.now().isoformat()
+    }
+
+
+def display_query_results(results: dict):
+    """Display knowledge base query results."""
+    st.markdown("---")
+    st.markdown(f"### 📚 Knowledge Base Results for: *{results['query']}*")
+    st.markdown(f"Found **{results['total_results']}** relevant documents")
+    
+    # USGS Data Results (priority)
+    usgs_data = results.get('usgs_data', [])
+    if usgs_data:
+        st.markdown("#### 📊 USGS Groundwater Data")
+        for i, item in enumerate(usgs_data, 1):
+            with st.expander(f"📍 {item['source']}", expanded=(i <= 2)):
+                st.markdown(item['content'])
+                st.caption(f"Similarity: {item['similarity']:.2%}")
+    
+    # PDF Reference Results
+    pdf_refs = results.get('pdf_references', [])
+    if pdf_refs:
+        st.markdown("#### 📖 Hydrogeology References")
+        for i, item in enumerate(pdf_refs[:5], 1):
+            with st.expander(f"📄 {item['source']}", expanded=False):
+                st.markdown(item['content'])
+                st.caption(f"Similarity: {item['similarity']:.2%}")
+    
+    # Other Results
+    other = results.get('other', [])
+    if other:
+        st.markdown("#### 🔍 Other Sources")
+        for item in other[:3]:
+            with st.expander(f"📝 {item['source']}", expanded=False):
+                st.markdown(item['content'])
+    
+    if results['total_results'] == 0:
+        st.warning("No results found in knowledge base. Try Research Mode for web search.")
 
 
 def display_research_result(result: dict):
@@ -273,97 +365,130 @@ def main():
 
     # Main content
     st.title("🌊 GroundwaterGPT Deep Research")
-    st.markdown(
-        f"""
-    Ask any question about groundwater, hydrogeology, or aquifers.
-    The research agent will:
-    1. Search the knowledge base (PDFs, USGS data)
-    2. Conduct web research from verified sources
-    3. Iterate to deepen understanding (up to {max_depth} levels)
-    4. Auto-stop after {timeout_minutes} minutes or when complete
-
-    **You can stop the research at any time using the Stop button.**
-    """
+    
+    # Mode selection
+    st.markdown("### Choose Your Mode")
+    mode = st.radio(
+        "Select mode:",
+        ["📚 Query Mode (Fast)", "🔬 Research Mode (Deep)"],
+        horizontal=True,
+        help="Query Mode searches your knowledge base instantly. Research Mode does deep web research."
     )
+    
+    is_query_mode = "Query" in mode
+    
+    if is_query_mode:
+        st.info("**Query Mode**: Instantly search your knowledge base (USGS data, PDFs, learned insights)")
+    else:
+        st.info(f"""**Research Mode**: Deep research with web search
+        - Searches knowledge base + web sources
+        - Up to {max_depth} research iterations  
+        - Auto-stops after {timeout_minutes} minutes""")
 
     # Research input
     query = st.text_area(
-        "🔍 Research Question",
-        placeholder="e.g., What factors affect groundwater recharge in Florida's coastal aquifers?",
+        "🔍 Your Question",
+        placeholder="e.g., What are the groundwater levels in the Biscayne Aquifer?" if is_query_mode 
+                    else "e.g., What factors affect groundwater recharge in Florida's coastal aquifers?",
         height=100,
     )
 
-    col1, col2, col3 = st.columns([1, 1, 1])
-
-    with col1:
-        research_button = st.button("🚀 Start Research", type="primary", use_container_width=True)
-
-    with col2:
-        quick_button = st.button("⚡ Quick (1 min)", use_container_width=True)
-
-    with col3:
-        stop_button = st.button(
-            "🛑 Stop Research",
-            use_container_width=True,
-            disabled=not st.session_state.is_researching,
-        )
-
-    # Handle stop button
-    if stop_button and st.session_state.agent:
-        stop_research()
-        st.warning("⏹️ Stop requested - research will stop after current operation")
-
-    # Execute research
-    if research_button and query:
-        st.session_state.is_researching = True
-        progress_bar = st.progress(0, text="Starting research...")
-        status_text = st.empty()
-
-        def update_progress(message: str, progress: float):
-            progress_bar.progress(progress, text=message)
-            status_text.text(f"Status: {message}")
-
-        try:
-            status_text.text(f"🔍 Researching (timeout: {timeout_minutes} min)...")
-            result = st.session_state.agent.research(
-                query,
-                max_depth=max_depth,
-                timeout=timeout_seconds,
-                progress_callback=update_progress,
-            )
-            st.session_state.current_research = result
-            st.session_state.research_history.append(
-                {"query": query, "result": result, "timestamp": datetime.now().isoformat()}
-            )
-
-            if result.get("stopped"):
-                st.warning("⏹️ Research was stopped by user")
-            elif result.get("timed_out"):
-                st.warning(f"⏱️ Research timed out after {timeout_minutes} minutes")
+    # Different buttons based on mode
+    if is_query_mode:
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            query_button = st.button("🔍 Search Knowledge Base", type="primary", use_container_width=True)
+        with col2:
+            num_results = st.selectbox("Results to show:", [5, 10, 20], index=1)
+        
+        # Execute query
+        if query_button and query:
+            with st.spinner("Searching knowledge base..."):
+                results = query_knowledge_base(query, num_results=num_results)
+                st.session_state.current_query_results = results
+            
+            if results['total_results'] > 0:
+                st.success(f"✅ Found {results['total_results']} results!")
             else:
-                st.success("✅ Research complete!")
+                st.warning("No results found. Try Research Mode for web search.")
+        
+        # Display query results
+        if 'current_query_results' in st.session_state and st.session_state.current_query_results:
+            display_query_results(st.session_state.current_query_results)
+    
+    else:
+        # Research mode buttons
+        col1, col2, col3 = st.columns([1, 1, 1])
 
-        except Exception as e:
-            st.error(f"Research failed: {e}")
-            logger.exception("Research error")
-        finally:
-            st.session_state.is_researching = False
-            progress_bar.empty()
-            status_text.empty()
+        with col1:
+            research_button = st.button("🚀 Start Research", type="primary", use_container_width=True)
 
-    elif quick_button and query:
-        with st.spinner("Quick research (1 min timeout)..."):
+        with col2:
+            quick_button = st.button("⚡ Quick (1 min)", use_container_width=True)
+
+        with col3:
+            stop_button = st.button(
+                "🛑 Stop Research",
+                use_container_width=True,
+                disabled=not st.session_state.is_researching,
+            )
+
+        # Handle stop button
+        if stop_button and st.session_state.agent:
+            stop_research()
+            st.warning("⏹️ Stop requested - research will stop after current operation")
+
+        # Execute research
+        if research_button and query:
+            st.session_state.is_researching = True
+            progress_bar = st.progress(0, text="Starting research...")
+            status_text = st.empty()
+
+            def update_progress(message: str, progress: float):
+                progress_bar.progress(progress, text=message)
+                status_text.text(f"Status: {message}")
+
             try:
-                # Quick research with 60 second timeout
-                result = st.session_state.agent.research(query, max_depth=1, timeout=60)
+                status_text.text(f"🔍 Researching (timeout: {timeout_minutes} min)...")
+                result = st.session_state.agent.research(
+                    query,
+                    max_depth=max_depth,
+                    timeout=timeout_seconds,
+                    progress_callback=update_progress,
+                )
                 st.session_state.current_research = result
-                st.success("✅ Quick answer ready!")
+                st.session_state.research_history.append(
+                    {"query": query, "result": result, "timestamp": datetime.now().isoformat()}
+                )
+
+                if result.get("stopped"):
+                    st.warning("⏹️ Research was stopped by user")
+                elif result.get("timed_out"):
+                    st.warning(f"⏱️ Research timed out after {timeout_minutes} minutes")
+                else:
+                    st.success("✅ Research complete!")
+
             except Exception as e:
                 st.error(f"Research failed: {e}")
+                logger.exception("Research error")
+            finally:
+                st.session_state.is_researching = False
+                progress_bar.empty()
+                status_text.empty()
 
-    # Display current research
-    if st.session_state.current_research:
-        display_research_result(st.session_state.current_research)
+        elif quick_button and query:
+            with st.spinner("Quick research (1 min timeout)..."):
+                try:
+                    # Quick research with 60 second timeout
+                    result = st.session_state.agent.research(query, max_depth=1, timeout=60)
+                    st.session_state.current_research = result
+                    st.success("✅ Quick answer ready!")
+                except Exception as e:
+                    st.error(f"Research failed: {e}")
+
+        # Display current research
+        if st.session_state.current_research:
+            display_research_result(st.session_state.current_research)
 
     # Research history
     if st.session_state.research_history:

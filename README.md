@@ -4,25 +4,27 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**A machine learning platform for groundwater level prediction and trend analysis in Southwest Florida.**
+**An AI-powered groundwater research platform with transparent, explainable architecture.**
 
 ---
 
 ## 🎯 Project Overview
 
-GroundwaterGPT predicts groundwater levels using historical data from USGS monitoring wells. The platform provides:
+GroundwaterGPT is a **whitebox AI system** that combines:
+- **Deep Research Agent**: LLM-powered research with source verification
+- **Continuous Learning**: Auto-growing knowledge base from USGS data
+- **ML Predictions**: 7-day groundwater level forecasts (93% accuracy)
+- **Interactive Dashboard**: Trend visualization
 
-- **7-day ahead predictions** with 93% accuracy (R² = 0.93)
-- **Interactive dashboard** for trend visualization
-- **Research-ready foundation** for hydrogeological studies
+### Key Features
 
-### Current Model Performance
-
-| Metric | Value | Threshold |
-|--------|-------|-----------|
-| R² (7-day ahead) | **0.9262** | ≥ 0.80 |
-| RMSE | **0.30 ft** | ≤ 0.50 ft |
-| MAE | **0.23 ft** | — |
+| Feature | Description |
+|---------|-------------|
+| 📚 **Query Mode** | Instant search of knowledge base (USGS data, PDFs) |
+| 🔬 **Research Mode** | Deep web research with verified sources |
+| 🧠 **Auto-Learning** | Continuously grows knowledge from new data |
+| 📊 **Predictions** | ML models for groundwater level forecasting |
+| ✅ **Whitebox** | All decisions are transparent and explainable |
 
 ---
 
@@ -42,30 +44,29 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Download Data
+### 2. Start the Research Interface
 
 ```bash
-python download_data.py
+streamlit run research_chat.py --server.port 8502
 ```
 
-This fetches real groundwater data from USGS for Fort Myers, FL (2014-2023).
+Open http://localhost:8502 to access:
+- **Query Mode**: Fast search of USGS data and hydrogeology documents
+- **Research Mode**: Deep research with web search and auto-learning
 
-### 3. Train Model
+### 3. Run Continuous Learning
 
 ```bash
-python train_groundwater.py
+python continuous_learning.py
 ```
 
-Trains and compares Ridge, Random Forest, and Gradient Boosting models.
+Fetches data from 40+ Florida aquifer monitoring sites and adds to knowledge base.
 
-### 4. Generate Dashboard
+### 4. View the Dashboard
 
 ```bash
-python dashboard.py
 open plots/dashboard.html
 ```
-
-Creates an interactive 6-panel visualization of groundwater trends.
 
 ---
 
@@ -120,6 +121,63 @@ GroundwaterGPT/
 │
 └── chroma_db/                # Vector store for RAG
 ```
+
+---
+
+## 🏗️ Whitebox Architecture
+
+GroundwaterGPT follows **whitebox principles** - all AI decisions are transparent and explainable.
+
+### System Components
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PRESENTATION LAYER                        │
+│  research_chat.py (Streamlit UI)                            │
+│  - Query Mode: Fast KB search                               │
+│  - Research Mode: Deep web research                         │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────────────┐
+│                    AGENT LAYER                              │
+│  agent/research_agent.py (Deep Research Agent)              │
+│  - Query optimization                                       │
+│  - Iterative search                                         │
+│  - Insight extraction                                       │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────────────┐
+│                    KNOWLEDGE LAYER                          │
+│  agent/knowledge.py (ChromaDB + Embeddings)                 │
+│  - Vector search (BAAI/bge-small-en-v1.5)                  │
+│  - Document storage                                         │
+│  continuous_learning.py (Data Collection)                   │
+│  - USGS API integration                                     │
+│  - Auto-ingestion                                           │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────────────┐
+│                    VERIFICATION LAYER                       │
+│  agent/source_verification.py                               │
+│  - Trust scoring (0.0 - 1.0)                               │
+│  - Source categorization                                    │
+│  - Approval/rejection logic                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Trust Hierarchy
+
+All sources are scored transparently:
+
+| Priority | Source Type | Score | Example |
+|----------|-------------|-------|---------|
+| 1 | USGS Data | 1.00 | waterdata.usgs.gov |
+| 2 | Research Papers | 0.95 | DOI links, journals |
+| 3 | Government | 0.90 | .gov domains |
+| 4 | Academic | 0.85 | .edu domains |
+| 5 | Reference | 0.70 | Wikipedia |
+| 6 | Unknown | 0.50 | Unverified |
+| 7 | Untrusted | 0.00 | Blocked |
 
 ---
 

@@ -1,7 +1,27 @@
 """
-Knowledge Base - ChromaDB Connection for RAG
+Knowledge Base - ChromaDB Vector Store for RAG.
 
-Connects to the existing ChromaDB with hydrogeology documents.
+This module manages the vector database (ChromaDB) that stores:
+1. Hydrogeology PDF documents (chunked and embedded)
+2. USGS groundwater monitoring data summaries
+3. Research insights learned during agent sessions
+
+Architecture:
+    - Uses BAAI/bge-small-en-v1.5 embedding model (384 dimensions)
+    - ChromaDB for persistent vector storage
+    - LangChain for document processing and retrieval
+
+Key Functions:
+    - get_vectorstore(): Get or create the ChromaDB instance
+    - search_knowledge(): Semantic search over documents
+    - add_document(): Add verified documents to the knowledge base
+    - get_knowledge_stats(): Get statistics about stored documents
+
+Example:
+    >>> from agent.knowledge import search_knowledge
+    >>> results = search_knowledge("Biscayne Aquifer water levels", k=5)
+    >>> for doc in results:
+    ...     print(doc.page_content[:100])
 """
 
 from pathlib import Path

@@ -6,6 +6,27 @@ This module enables the knowledge base to continuously grow by:
 3. Storing verified research insights
 4. Running on a schedule or manually
 
+Architecture:
+    ContinuousLearner class orchestrates:
+    - USGS Water Services API calls
+    - Data transformation and summary generation
+    - Knowledge base (ChromaDB) updates
+    - Source verification for all data
+
+Data Flow:
+    USGS API → DataFrame → Summary Document → ChromaDB
+
+Key Components:
+    - FLORIDA_AQUIFER_SITES: Configuration of monitored USGS sites
+    - ContinuousLearner: Main class for data collection
+    - LearningStats: Tracks learning session metrics
+
+Example:
+    >>> from continuous_learning import ContinuousLearner
+    >>> learner = ContinuousLearner(days_of_history=365)
+    >>> stats = learner.fetch_all_florida_aquifer_data()
+    >>> print(f"Added {stats.documents_added} documents")
+
 The LLM uses all this accumulated knowledge to answer questions.
 """
 
@@ -14,7 +35,6 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 import requests

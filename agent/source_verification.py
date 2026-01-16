@@ -3,6 +3,31 @@ Source Verification Module.
 
 Validates that data sources are trusted and accurate before
 being added to the knowledge base or used in research.
+
+This implements a "whitebox" approach to source verification:
+- All verification rules are explicit and configurable
+- Trust scores are transparent and explainable
+- Source categories prioritize numerical data over opinion
+
+Trust Hierarchy (highest to lowest):
+    1. VERIFIED (1.0): USGS, EPA, NOAA, NASA - official government data
+    2. TRUSTED (0.95): Peer-reviewed journals with DOI
+    3. TRUSTED (0.9): Government agencies (.gov)
+    4. MODERATE (0.85): Universities and research institutions
+    5. MODERATE (0.7): General reference (Wikipedia)
+    6. UNKNOWN (0.5): Unverified sources
+    7. UNTRUSTED (0.0): Known unreliable sources
+
+Key Functions:
+    - verify_source(url): Verify a URL and return trust information
+    - is_source_approved(url): Quick check if source is approved
+    - get_source_priority(url): Get priority score for ranking
+
+Example:
+    >>> from agent.source_verification import verify_source
+    >>> result = verify_source("https://waterdata.usgs.gov/nwis")
+    >>> print(f"Trust: {result.trust_level.value}, Score: {result.priority_score}")
+    Trust: verified, Score: 1.0
 """
 
 from __future__ import annotations
