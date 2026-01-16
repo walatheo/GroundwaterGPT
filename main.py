@@ -30,16 +30,15 @@ sys.path.insert(0, str(SRC_DIR))
 def run_app():
     """Start the Streamlit research chat interface."""
     print("🌊 Starting GroundwaterGPT Research Interface...")
-    subprocess.run([
-        "streamlit", "run", 
-        str(SRC_DIR / "ui" / "research_chat.py"),
-        "--server.port", "8502"
-    ])
+    subprocess.run(
+        ["streamlit", "run", str(SRC_DIR / "ui" / "research_chat.py"), "--server.port", "8502"]
+    )
 
 
 def run_dashboard():
     """Open the dashboard visualization."""
     import webbrowser
+
     dashboard_path = ROOT_DIR / "outputs" / "plots" / "dashboard.html"
     if dashboard_path.exists():
         webbrowser.open(f"file://{dashboard_path}")
@@ -52,6 +51,7 @@ def run_learn():
     """Run continuous learning to fetch USGS data."""
     print("🧠 Starting continuous learning...")
     from src.data.continuous_learning import ContinuousLearner
+
     learner = ContinuousLearner()
     stats = learner.fetch_all_florida_aquifer_data()
     print(f"✅ Learning complete: {stats}")
@@ -60,7 +60,7 @@ def run_learn():
 def run_train():
     """Train ML models."""
     print("🎯 Training models...")
-    exec(open(SRC_DIR / "ml" / "train_groundwater.py").read())
+    subprocess.run([sys.executable, str(SRC_DIR / "ml" / "train_groundwater.py")])
 
 
 def run_tests():
@@ -91,12 +91,14 @@ if __name__ == "__main__":
         "train": run_train,
         "test": run_tests,
         "help": show_help,
+        "--help": show_help,
+        "-h": show_help,
     }
-    
+
     if len(sys.argv) < 2:
         show_help()
         sys.exit(0)
-    
+
     cmd = sys.argv[1].lower()
     if cmd in commands:
         commands[cmd]()
