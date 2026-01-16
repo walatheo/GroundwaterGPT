@@ -30,8 +30,9 @@ models/*.joblib
 plots/*.html
 plots/*.png
 
-# ChromaDB (regenerate from PDFs)
+# ChromaDB (regenerate from PDFs + USGS data)
 chroma_db/
+knowledge_base/
 
 # OS files
 .DS_Store
@@ -40,11 +41,19 @@ Thumbs.db
 # Jupyter
 .ipynb_checkpoints/
 
+# Coverage reports
+.coverage
+htmlcov/
+
+# Environment
+.env
+
+# Outputs (regenerate as needed)
+outputs/
+*.log
+
 # Keep these in git:
 # - *.py (source code)
 # - *.md (documentation)
 # - *.txt (requirements, reports)
-# - *.pdf (reference documents)
-.coverage
-htmlcov/
-.env
+# - *.pdf (reference documents in resources/)
