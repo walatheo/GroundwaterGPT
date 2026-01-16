@@ -47,7 +47,11 @@ pip install -r requirements.txt
 ### 2. Start the Research Interface
 
 ```bash
-streamlit run research_chat.py --server.port 8502
+# Using main entry point
+python main.py app
+
+# Or directly
+streamlit run src/ui/research_chat.py --server.port 8502
 ```
 
 Open http://localhost:8502 to access:
@@ -57,7 +61,7 @@ Open http://localhost:8502 to access:
 ### 3. Run Continuous Learning
 
 ```bash
-python continuous_learning.py
+python main.py learn
 ```
 
 Fetches data from 40+ Florida aquifer monitoring sites and adds to knowledge base.
@@ -83,7 +87,7 @@ open plots/dashboard.html
 Three hydrogeology PDFs are embedded in ChromaDB for future RAG integration:
 - `a-glossary-of-hydrogeology.pdf`
 - `age-dating-young-groundwater.pdf`
-- `a-conceptual-overview-of-surface-and-near-surface-brines-and-evaporite-minerals.pdf`
+- `resources/pdfs/*.pdf` - Hydrogeology reference documents
 
 ---
 
@@ -91,35 +95,52 @@ Three hydrogeology PDFs are embedded in ChromaDB for future RAG integration:
 
 ```
 GroundwaterGPT/
-├── config.py                 # Configuration settings
-├── download_data.py          # USGS data fetcher
-├── train_groundwater.py      # Model training pipeline
-├── dashboard.py              # Interactive dashboard generator
-├── requirements.txt          # Dependencies
-├── DEVELOPMENT_GUIDE.md      # Best practices & standards
-├── PROJECT_STATUS.md         # Roadmap & current status
+├── main.py                   # 🚀 Main entry point
+├── README.md                 # This file
+├── requirements.txt          # Dependencies (symlink)
 │
-├── data/                     # Data files (gitignored)
-│   ├── groundwater.csv       # USGS measurements
-│   ├── forecast.csv          # 30-day predictions
-│   └── model_comparison.csv  # Model metrics
+├── 📚 docs/                  # Documentation
+│   ├── PROJECT_PLAN.md       # Timeline & milestones
+│   ├── ROLES.md              # Team responsibilities
+│   ├── DEVELOPMENT_GUIDE.md  # Coding standards
+│   └── CHECKLIST.md          # Review checklist
 │
-├── models/                   # Trained models (gitignored)
-│   └── best_gradient_boosting.joblib
+├── 🤖 src/                   # Source code
+│   ├── agent/                # AI research agent
+│   │   ├── research_agent.py # Deep Research Agent
+│   │   ├── knowledge.py      # ChromaDB interface
+│   │   └── source_verification.py
+│   ├── data/                 # Data processing
+│   │   ├── download_data.py  # USGS fetcher
+│   │   └── continuous_learning.py
+│   ├── ml/                   # Machine learning
+│   │   └── train_groundwater.py
+│   └── ui/                   # User interfaces
+│       ├── research_chat.py  # Main Streamlit app
+│       └── dashboard.py
 │
-├── plots/                    # Visualizations (gitignored)
-│   ├── dashboard.html        # Interactive dashboard
-│   └── model_predictions.png # Prediction accuracy
+├── 📊 data/                  # Data files (gitignored)
+│   └── usgs_*.csv            # USGS measurements
 │
-├── tests/                    # Test suite
-│   ├── unit/                 # Feature engineering tests
-│   ├── model/                # Model performance tests
-│   └── data/                 # Data quality tests
+├── 📖 resources/             # Reference materials
+│   └── pdfs/                 # Hydrogeology PDFs
 │
-├── .github/workflows/        # CI/CD pipeline
-│   └── ci.yml
+├── 🧠 knowledge_base/        # ChromaDB vector store
 │
-└── chroma_db/                # Vector store for RAG
+├── 🎯 models/                # Trained ML models
+│
+├── 📈 outputs/               # Generated outputs
+│   ├── plots/                # Visualizations
+│   └── reports/              # Generated reports
+│
+├── 🧪 tests/                 # Test suite
+│   ├── data/                 # Data quality tests
+│   ├── model/                # ML tests
+│   └── unit/                 # Unit tests
+│
+└── 🔧 config/                # Configuration
+    ├── config.py
+    └── requirements.txt
 ```
 
 ---
@@ -133,7 +154,7 @@ GroundwaterGPT follows **whitebox principles** - all AI decisions are transparen
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    PRESENTATION LAYER                        │
-│  research_chat.py (Streamlit UI)                            │
+│  src/ui/research_chat.py (Streamlit UI)                            │
 │  - Query Mode: Fast KB search                               │
 │  - Research Mode: Deep web research                         │
 └─────────────────────┬───────────────────────────────────────┘
