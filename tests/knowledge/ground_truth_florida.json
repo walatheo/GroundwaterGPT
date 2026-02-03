@@ -1,0 +1,219 @@
+{
+  "metadata": {
+    "description": "Ground truth Q&A pairs for Florida aquifer data accuracy testing",
+    "created": "2026-02-03",
+    "data_source": "USGS NWIS groundwater monitoring sites",
+    "version": "1.0"
+  },
+  "test_cases": [
+    {
+      "id": "FL001",
+      "category": "site_identification",
+      "question": "What is the site number for Miami-Dade G-3764?",
+      "expected_answer": "251241080385301",
+      "required_keywords": ["251241080385301"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL002",
+      "category": "aquifer_type",
+      "question": "What aquifer is the Miami-Dade G-3764 monitoring site in?",
+      "expected_answer": "Biscayne Aquifer",
+      "required_keywords": ["biscayne", "aquifer"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL003",
+      "category": "aquifer_type",
+      "question": "What aquifer is the Lee County Fort Myers site monitoring?",
+      "expected_answer": "Floridan Aquifer",
+      "required_keywords": ["floridan", "aquifer"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL004",
+      "category": "water_level_stats",
+      "question": "What is the mean water level at the Lee County Fort Myers USGS site?",
+      "expected_answer": "Approximately 21.22-21.36 ft below land surface",
+      "required_keywords": ["21"],
+      "acceptable_range": {"min": 20.0, "max": 23.0, "unit": "ft"},
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL005",
+      "category": "water_level_stats",
+      "question": "What is the mean water level at the Miami-Dade G-3764 site?",
+      "expected_answer": "Approximately 0.59 ft below land surface",
+      "required_keywords": ["0.5", "0.6"],
+      "acceptable_range": {"min": 0.4, "max": 0.8, "unit": "ft"},
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL006",
+      "category": "water_level_stats",
+      "question": "What is the mean water level at Miami-Dade G-3777?",
+      "expected_answer": "Approximately 0.53 ft below land surface",
+      "required_keywords": ["0.5"],
+      "acceptable_range": {"min": 0.4, "max": 0.7, "unit": "ft"},
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL007",
+      "category": "water_level_stats",
+      "question": "What is the mean water level at Miami-Dade G-1251?",
+      "expected_answer": "Approximately 1.41 ft below land surface",
+      "required_keywords": ["1.4", "1.41"],
+      "acceptable_range": {"min": 1.2, "max": 1.6, "unit": "ft"},
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL008",
+      "category": "water_level_stats",
+      "question": "What is the mean water level at Miami-Dade G-3336?",
+      "expected_answer": "Approximately 1.87 ft below land surface",
+      "required_keywords": ["1.8", "1.87"],
+      "acceptable_range": {"min": 1.7, "max": 2.0, "unit": "ft"},
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL009",
+      "category": "trend",
+      "question": "Are water levels rising or falling at the Lee County site?",
+      "expected_answer": "Rising at approximately 0.145-0.246 ft/year",
+      "required_keywords": ["rising"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL010",
+      "category": "trend",
+      "question": "What is the water level trend at Miami-Dade G-3764?",
+      "expected_answer": "Rising at approximately 0.010 ft/year",
+      "required_keywords": ["rising"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL011",
+      "category": "data_period",
+      "question": "What is the data collection period for Miami-Dade G-3764?",
+      "expected_answer": "2016 to 2025",
+      "required_keywords": ["2016", "2025"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL012",
+      "category": "record_count",
+      "question": "How many groundwater records are available for Miami-Dade G-3764?",
+      "expected_answer": "168 records",
+      "required_keywords": ["168"],
+      "acceptable_range": {"min": 160, "max": 180},
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL013",
+      "category": "county",
+      "question": "Which county is the Floridan Aquifer monitoring site in?",
+      "expected_answer": "Lee County",
+      "required_keywords": ["lee"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL014",
+      "category": "county",
+      "question": "Which Florida county has multiple Biscayne Aquifer monitoring sites?",
+      "expected_answer": "Miami-Dade County",
+      "required_keywords": ["miami-dade", "miami"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL015",
+      "category": "extremes",
+      "question": "What is the minimum (highest) water level recorded at Lee County Fort Myers?",
+      "expected_answer": "-0.93 ft (highest water, above land surface)",
+      "required_keywords": ["-0.93", "0.93"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL016",
+      "category": "extremes",
+      "question": "What is the maximum (lowest) water level at Lee County Fort Myers?",
+      "expected_answer": "34.73 ft below land surface",
+      "required_keywords": ["34.73", "34"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL017",
+      "category": "annual_average",
+      "question": "What was the average water level at Miami-Dade G-3764 in 2020?",
+      "expected_answer": "0.61 ft below land surface",
+      "required_keywords": ["2020", "0.6"],
+      "acceptable_range": {"min": 0.5, "max": 0.7, "unit": "ft"},
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL018",
+      "category": "annual_average",
+      "question": "What was the 2024 average water level at Lee County site?",
+      "expected_answer": "21.49 ft below land surface",
+      "required_keywords": ["2024", "21"],
+      "acceptable_range": {"min": 21.0, "max": 22.0, "unit": "ft"},
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL019",
+      "category": "comparison",
+      "question": "Which aquifer has deeper water levels - Biscayne or Floridan in our monitoring data?",
+      "expected_answer": "Floridan Aquifer (Lee County ~21 ft vs Biscayne ~0.5-2 ft)",
+      "required_keywords": ["21", "ft"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL020",
+      "category": "site_count",
+      "question": "How many USGS monitoring sites do we have data for in Miami-Dade County?",
+      "expected_answer": "5 sites (G-3764, G-3777, G-1251, G-3336, G-5004)",
+      "required_keywords": ["g-3764", "g-3777"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL021",
+      "category": "variability",
+      "question": "What is the standard deviation of water levels at Lee County Fort Myers?",
+      "expected_answer": "Approximately 13.62-13.92 ft",
+      "required_keywords": ["13"],
+      "acceptable_range": {"min": 13.0, "max": 14.5, "unit": "ft"},
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL022",
+      "category": "variability",
+      "question": "Which Miami-Dade site has the most stable water levels based on standard deviation?",
+      "expected_answer": "Miami-Dade G-5004 with 0.51 ft standard deviation",
+      "required_keywords": ["0.51", "standard deviation"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL023",
+      "category": "site_identification",
+      "question": "What is the USGS site number for Miami-Dade G-1251?",
+      "expected_answer": "251922080340701",
+      "required_keywords": ["251922080340701"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL024",
+      "category": "site_identification",
+      "question": "What is the USGS site number for the Lee County monitoring well?",
+      "expected_answer": "262724081260701",
+      "required_keywords": ["262724081260701"],
+      "source": "USGS NWIS"
+    },
+    {
+      "id": "FL025",
+      "category": "data_period",
+      "question": "When did data collection start at Miami-Dade G-5004?",
+      "expected_answer": "April 2020",
+      "required_keywords": ["2020"],
+      "source": "USGS NWIS"
+    }
+  ]
+}

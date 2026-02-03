@@ -6,15 +6,17 @@ Run the application with:
 
 Commands:
     app         - Start the main Streamlit research interface
-    dashboard   - Open the dashboard visualization
+    viz         - Start the integrated visualization app (NEW!)
+    dashboard   - Open the dashboard visualization (HTML)
     learn       - Run continuous learning to fetch USGS data
     train       - Train ML models
     test        - Run test suite
 
 Examples:
     python main.py app          # Start research chat
+    python main.py viz          # Start visualization app
     python main.py learn        # Fetch new USGS data
-    python main.py dashboard    # Open dashboard
+    python main.py dashboard    # Open dashboard (HTML file)
 """
 
 import subprocess
@@ -32,6 +34,14 @@ def run_app():
     print("🌊 Starting GroundwaterGPT Research Interface...")
     subprocess.run(
         ["streamlit", "run", str(SRC_DIR / "ui" / "research_chat.py"), "--server.port", "8502"]
+    )
+
+
+def run_viz():
+    """Start the integrated visualization app with research + charts."""
+    print("📊 Starting GroundwaterGPT Integrated App (Research + Visualization)...")
+    subprocess.run(
+        ["streamlit", "run", str(SRC_DIR / "ui" / "integrated_app.py"), "--server.port", "8501"]
     )
 
 
@@ -86,6 +96,8 @@ def show_help():
 if __name__ == "__main__":
     commands = {
         "app": run_app,
+        "viz": run_viz,
+        "visualization": run_viz,
         "dashboard": run_dashboard,
         "learn": run_learn,
         "train": run_train,

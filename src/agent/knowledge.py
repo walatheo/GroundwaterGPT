@@ -260,3 +260,165 @@ def get_knowledge_stats() -> dict:
             "pdf_files": len(PDF_FILES),
             "status": f"error: {str(e)}",
         }
+
+
+def search_usgs_data(
+    site_name: str = None,
+    site_id: str = None,
+    county: str = None,
+    aquifer: str = None,
+    include_trends: bool = True,
+    k: int = 10,
+) -> List[Document]:
+    """
+    Search specifically for USGS groundwater monitoring data.
+
+    This function uses optimized queries for retrieving USGS data,
+    including statistics, annual averages, and trend information.
+    Uses both semantic search and metadata filtering for better recall.
+
+    Args:
+        site_name: Site name (e.g., "Miami-Dade G-3764")
+        site_id: USGS site number (e.g., "251241080385301")
+        county: County name (e.g., "Miami-Dade")
+        aquifer: Aquifer type (e.g., "Biscayne", "Floridan")
+        include_trends: Whether to include trend data (default: True)
+        k: Number of results per query strategy
+
+    Returns:
+        List of relevant USGS documents, deduplicated
+    """
+    vectorstore = get_vectorstore()
+    collection = vectorstore._collection
+    all_results = []
+    seen_content = set()
+
+    # Method 1: Direct metadata filtering (most accurate for specific sites)
+    if site_name or site_id:
+        try:
+            # Get all documents with matching metadata
+            all_docs = collection.get(include=["documents", "metadatas"])
+
+            for i, meta in enumerate(all_docs["metadatas"]):
+                # Check if this is a USGS document for the requested site
+                if meta.get("doc_type") != "usgs_groundwater_data":
+                    continue
+
+                match = False
+                if site_name and meta.get("site_name") == site_name:
+                    match = True
+                if site_id and meta.get("site_no") == site_id:
+                    match = True
+
+                if match:
+                    content = all_docs["documents"][i]
+                    content_hash = hash(content[:200])
+                    if content_hash not in seen_content:
+                        doc = Document(page_content=content, metadata=meta)
+                        all_results.append(doc)
+                        seen_content.add(content_hash)
+        except Exception as e:
+            print(f"Metadata search failed: {e}")
+
+    # Method 2: Semantic search queries (for broader matches)
+    queries = []
+
+    if site_name:
+        queries.append(f"USGS {site_name} groundwater monitoring")
+        if include_trends:
+            queries.append(f"{site_name} annual trend water level")
+
+    if site_id:
+        queries.append(f"USGS site {site_id} groundwater data")
+        queries.append(f"site number {site_id}")
+
+    if county:
+        queries.append(f"{county} County groundwater monitoring USGS")
+
+    if aquifer:
+        queries.append(f"{aquifer} Aquifer water level statistics")
+
+    # Default query if no specific filters
+    if not queries and not all_results:
+        queries = ["USGS groundwater monitoring Florida aquifer data"]
+
+    # Execute semantic search queries
+    for query in queries:
+        results = vectorstore.similarity_search_with_score(query, k=k)
+
+        for doc, score in results:
+            content_hash = hash(doc.page_content[:200])
+            if content_hash not in seen_content:
+                if doc.metadata.get("doc_type") == "usgs_groundwater_data":
+                    doc.metadata["similarity_score"] = 1 - score if score <= 1 else 0
+                    all_results.append(doc)
+                    seen_content.add(content_hash)
+
+    # Sort by similarity score (documents from metadata search won't have scores)
+    all_results.sort(key=lambda x: x.metadata.get("similarity_score", 0.5), reverse=True)
+
+    return all_results[: k * 2]
+
+
+def search_with_fallback(
+    query: str,
+    k: int = 5,
+    score_threshold: float = 0.3,
+    min_results: int = 3,
+) -> List[Document]:
+    """
+    Search with automatic query expansion for better recall.
+
+    If the initial search returns fewer than min_results, this function
+    automatically tries alternative query formulations.
+
+    Args:
+        query: Search query
+        k: Number of results to return
+        score_threshold: Minimum similarity score
+        min_results: Minimum acceptable results before trying alternatives
+
+    Returns:
+        List of relevant documents
+    """
+    # Try primary search
+    results = search_knowledge(query, k=k, score_threshold=score_threshold)
+
+    if len(results) >= min_results:
+        return results
+
+    # Try lowering threshold
+    if len(results) < min_results:
+        results = search_knowledge(query, k=k, score_threshold=0.2)
+
+    if len(results) >= min_results:
+        return results
+
+    # Try query expansion - extract key terms
+    import re
+
+    # Extract site identifiers
+    site_match = re.search(r"G-\d+|[0-9]{15}", query)
+    aquifer_match = re.search(r"(biscayne|floridan|surficial)", query.lower())
+    county_match = re.search(r"(miami-dade|lee|broward|palm beach)", query.lower())
+
+    expanded_queries = []
+
+    if site_match:
+        expanded_queries.append(f"USGS {site_match.group()} groundwater")
+    if aquifer_match:
+        expanded_queries.append(f"{aquifer_match.group()} aquifer water level Florida")
+    if county_match:
+        expanded_queries.append(f"{county_match.group()} county groundwater monitoring")
+
+    # Try expanded queries
+    seen = set(doc.page_content[:100] for doc in results)
+
+    for eq in expanded_queries:
+        new_results = search_knowledge(eq, k=k, score_threshold=0.2)
+        for doc in new_results:
+            if doc.page_content[:100] not in seen:
+                results.append(doc)
+                seen.add(doc.page_content[:100])
+
+    return results[: k * 2]
