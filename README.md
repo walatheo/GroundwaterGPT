@@ -275,8 +275,11 @@ See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed roadmap.
 
 ## 📚 Documentation
 
-- **[DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md)** - Coding standards, roles, schedule
-- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Current status and roadmap
+- **[DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)** - Coding standards, roles, schedule
+- **[PROJECT_STATUS.md](docs/PROJECT_STATUS.md)** - Current status and roadmap
+- **[PROJECT_PLAN.md](docs/PROJECT_PLAN.md)** - Timeline & milestones
+- **[ROLES.md](docs/ROLES.md)** - Team responsibilities
+- **[CHECKLIST.md](docs/CHECKLIST.md)** - Review checklist
 
 ---
 

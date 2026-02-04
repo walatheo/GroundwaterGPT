@@ -2,6 +2,7 @@ import MapView from './MapView'
 import TimeSeriesChart from './TimeSeriesChart'
 import HeatmapChart from './HeatmapChart'
 import AnalysisView from './AnalysisView'
+import ChatView from './ChatView'
 import StatsCard from './StatsCard'
 import { TrendingUp, TrendingDown, Minus, Droplet, Calendar, Database, Activity } from 'lucide-react'
 
@@ -33,12 +34,14 @@ export default function Dashboard({ site, data, heatmapData, stats, sites, loadi
           {activeTab === 'timeseries' && '📈 Time Series Analysis'}
           {activeTab === 'heatmap' && '🌡️ Water Level Heatmap'}
           {activeTab === 'analysis' && '📊 Statistical Analysis'}
+          {activeTab === 'chat' && '🤖 AI Assistant'}
         </h2>
         <p className="text-slate-500 mt-1">
           {activeTab === 'map' && 'Interactive map of Florida groundwater monitoring sites'}
           {activeTab === 'timeseries' && 'Historical water level data with trends'}
           {activeTab === 'heatmap' && 'Temporal patterns by month and year'}
           {activeTab === 'analysis' && 'Detailed statistics and distributions'}
+          {activeTab === 'chat' && 'Ask questions about groundwater, irrigation, and crops'}
         </p>
       </header>
 
@@ -115,6 +118,9 @@ export default function Dashboard({ site, data, heatmapData, stats, sites, loadi
         )}
         {activeTab === 'analysis' && (
           <AnalysisView data={data} site={site} stats={stats} />
+        )}
+        {activeTab === 'chat' && (
+          <ChatView selectedSite={site} />
         )}
       </div>
 

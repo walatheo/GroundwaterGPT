@@ -1,10 +1,11 @@
-import { Map, BarChart3, LineChart, Activity, Droplets } from 'lucide-react'
+import { Map, BarChart3, LineChart, Activity, Droplets, MessageSquare } from 'lucide-react'
 
 const navItems = [
   { id: 'map', label: 'Map', icon: Map },
   { id: 'timeseries', label: 'Time Series', icon: LineChart },
   { id: 'heatmap', label: 'Heatmap', icon: BarChart3 },
   { id: 'analysis', label: 'Analysis', icon: Activity },
+  { id: 'chat', label: 'AI Assistant', icon: MessageSquare, badge: 'Beta' },
 ]
 
 export default function Sidebar({ sites, selectedSite, onSiteSelect, activeTab, setActiveTab }) {
@@ -41,6 +42,11 @@ export default function Sidebar({ sites, selectedSite, onSiteSelect, activeTab, 
             >
               <item.icon className="w-5 h-5" />
               {item.label}
+              {item.badge && (
+                <span className="ml-auto text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                  {item.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>

@@ -1,9 +1,8 @@
-"""
-FastAPI backend for GroundwaterGPT Dashboard
-Serves real USGS groundwater data to the React frontend
+"""FastAPI backend for GroundwaterGPT Dashboard.
+
+Serves real USGS groundwater data to the React frontend.
 """
 
-import json
 from pathlib import Path
 from typing import Optional
 
@@ -25,73 +24,312 @@ app.add_middleware(
 # Data directory
 DATA_DIR = Path(__file__).parent.parent / "data"
 
-# Site metadata with coordinates (approximate locations in Florida)
-SITE_METADATA = {
-    "251241080385301": {
-        "id": "251241080385301",
-        "name": "Miami-Dade G-3764",
-        "aquifer": "Biscayne Aquifer",
-        "county": "Miami-Dade",
-        "lat": 25.2114,
-        "lng": -80.6481,
-        "depth": 50,
-        "description": "Monitoring well in the Biscayne Aquifer, Miami-Dade County",
-    },
-    "251457080395802": {
-        "id": "251457080395802",
-        "name": "Miami-Dade G-3777",
-        "aquifer": "Biscayne Aquifer",
-        "county": "Miami-Dade",
-        "lat": 25.2492,
-        "lng": -80.6661,
-        "depth": 45,
-        "description": "Monitoring well in the Biscayne Aquifer, Miami-Dade County",
-    },
-    "251922080340701": {
-        "id": "251922080340701",
-        "name": "Miami-Dade G-1251",
-        "aquifer": "Biscayne Aquifer",
-        "county": "Miami-Dade",
-        "lat": 25.3228,
-        "lng": -80.5686,
-        "depth": 60,
-        "description": "Long-term monitoring well in the Biscayne Aquifer",
-    },
-    "252007080335701": {
-        "id": "252007080335701",
-        "name": "Miami-Dade G-3336",
-        "aquifer": "Biscayne Aquifer",
-        "county": "Miami-Dade",
-        "lat": 25.3353,
-        "lng": -80.5658,
-        "depth": 55,
-        "description": "Monitoring well in the Biscayne Aquifer, Miami-Dade County",
-    },
-    "252036080293501": {
-        "id": "252036080293501",
-        "name": "Miami-Dade G-5004",
-        "aquifer": "Biscayne Aquifer",
-        "county": "Miami-Dade",
-        "lat": 25.3433,
-        "lng": -80.4931,
-        "depth": 40,
-        "description": "Newer monitoring well in the Biscayne Aquifer",
-    },
-    "262724081260701": {
-        "id": "262724081260701",
-        "name": "Lee County - Fort Myers",
-        "aquifer": "Floridan Aquifer",
-        "county": "Lee",
-        "lat": 26.4567,
-        "lng": -81.4353,
-        "depth": 800,
-        "description": "Deep monitoring well in the Floridan Aquifer System",
-    },
-}
+
+def get_site_metadata():
+    """Dynamically build site metadata from available CSV files."""
+    # Base metadata for known sites
+    known_sites = {
+        "251241080385301": {
+            "name": "Miami-Dade G-3764",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.2114,
+            "lng": -80.6481,
+        },
+        "251457080395802": {
+            "name": "Miami-Dade G-3777",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.2492,
+            "lng": -80.6661,
+        },
+        "251922080340701": {
+            "name": "Miami-Dade G-1251",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.3228,
+            "lng": -80.5686,
+        },
+        "252007080335701": {
+            "name": "Miami-Dade G-3336",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.3353,
+            "lng": -80.5658,
+        },
+        "252036080293501": {
+            "name": "Miami-Dade G-5004",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.3433,
+            "lng": -80.4931,
+        },
+        "252332080300501": {
+            "name": "Miami-Dade G-3355",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.3922,
+            "lng": -80.5014,
+        },
+        "252502080253901": {
+            "name": "Miami-Dade G-3356",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.4172,
+            "lng": -80.4275,
+        },
+        "252612080300701": {
+            "name": "Miami-Dade G-864",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.4367,
+            "lng": -80.5019,
+        },
+        "252918080234201": {
+            "name": "Miami-Dade G-1183",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.4883,
+            "lng": -80.3950,
+        },
+        "253029080295601": {
+            "name": "Miami-Dade S-196A",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.5081,
+            "lng": -80.4989,
+        },
+        "253413080225301": {
+            "name": "Miami-Dade G-3969",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.5703,
+            "lng": -80.3814,
+        },
+        "253417080224301": {
+            "name": "Miami-Dade G-3968",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.5714,
+            "lng": -80.3786,
+        },
+        "253539080284101": {
+            "name": "Miami-Dade G-757AR",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.5942,
+            "lng": -80.4781,
+        },
+        "253539080320501": {
+            "name": "Miami-Dade G-3628",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.5942,
+            "lng": -80.5347,
+        },
+        "253640080264701": {
+            "name": "Miami-Dade G-1362A",
+            "aquifer": "Biscayne Aquifer",
+            "county": "Miami-Dade",
+            "lat": 25.6111,
+            "lng": -80.4464,
+        },
+        "262724081260701": {
+            "name": "Lee County - Fort Myers",
+            "aquifer": "Floridan Aquifer",
+            "county": "Lee",
+            "lat": 26.4567,
+            "lng": -81.4353,
+        },
+        # Lee County (Fort Myers area)
+        "261957081432201": {
+            "name": "L-2194",
+            "aquifer": "Floridan Aquifer",
+            "county": "Lee",
+            "lat": 26.3325,
+            "lng": -81.7228,
+        },
+        "263532081592201": {
+            "name": "L-581",
+            "aquifer": "Floridan Aquifer",
+            "county": "Lee",
+            "lat": 26.5922,
+            "lng": -81.9894,
+        },
+        "263041081433103": {
+            "name": "L-1999",
+            "aquifer": "Floridan Aquifer",
+            "county": "Lee",
+            "lat": 26.5114,
+            "lng": -81.7253,
+        },
+        "261957081432202": {
+            "name": "L-2195",
+            "aquifer": "Floridan Aquifer",
+            "county": "Lee",
+            "lat": 26.3325,
+            "lng": -81.7228,
+        },
+        "263335081394301": {
+            "name": "L-729",
+            "aquifer": "Floridan Aquifer",
+            "county": "Lee",
+            "lat": 26.5597,
+            "lng": -81.6619,
+        },
+        "263440082022001": {
+            "name": "L-2644",
+            "aquifer": "Floridan Aquifer",
+            "county": "Lee",
+            "lat": 26.5778,
+            "lng": -82.0389,
+        },
+        "262711081413701": {
+            "name": "L-2550",
+            "aquifer": "Floridan Aquifer",
+            "county": "Lee",
+            "lat": 26.4531,
+            "lng": -81.6936,
+        },
+        # Collier County (Naples area)
+        "261342081352901": {
+            "name": "C-948R",
+            "aquifer": "Floridan Aquifer",
+            "county": "Collier",
+            "lat": 26.2283,
+            "lng": -81.5914,
+        },
+        "261342081352902": {
+            "name": "C-951R",
+            "aquifer": "Floridan Aquifer",
+            "county": "Collier",
+            "lat": 26.2283,
+            "lng": -81.5914,
+        },
+        "261342081352903": {
+            "name": "C-953R",
+            "aquifer": "Floridan Aquifer",
+            "county": "Collier",
+            "lat": 26.2283,
+            "lng": -81.5914,
+        },
+        "260111081243901": {
+            "name": "C-496",
+            "aquifer": "Floridan Aquifer",
+            "county": "Collier",
+            "lat": 26.0197,
+            "lng": -81.4108,
+        },
+        "260405081414101": {
+            "name": "C-1224",
+            "aquifer": "Floridan Aquifer",
+            "county": "Collier",
+            "lat": 26.0681,
+            "lng": -81.6947,
+        },
+        # Hendry County
+        "262214081113001": {
+            "name": "HE-1042",
+            "aquifer": "Floridan Aquifer",
+            "county": "Hendry",
+            "lat": 26.3706,
+            "lng": -81.1917,
+        },
+        "262735081044601": {
+            "name": "HE-860",
+            "aquifer": "Floridan Aquifer",
+            "county": "Hendry",
+            "lat": 26.4597,
+            "lng": -81.0794,
+        },
+        "262735081044602": {
+            "name": "HE-859",
+            "aquifer": "Floridan Aquifer",
+            "county": "Hendry",
+            "lat": 26.4597,
+            "lng": -81.0794,
+        },
+        "261735080534001": {
+            "name": "HE-861",
+            "aquifer": "Floridan Aquifer",
+            "county": "Hendry",
+            "lat": 26.2931,
+            "lng": -80.8944,
+        },
+        # Sarasota County
+        "272127082323801": {
+            "name": "Sarasota 23rd & Coconut",
+            "aquifer": "Floridan Aquifer",
+            "county": "Sarasota",
+            "lat": 27.3575,
+            "lng": -82.5439,
+        },
+        "272129082330202": {
+            "name": "Sarasota Hickory Ave",
+            "aquifer": "Floridan Aquifer",
+            "county": "Sarasota",
+            "lat": 27.3581,
+            "lng": -82.5506,
+        },
+        "272020082194801": {
+            "name": "Verna Test Well 0-4",
+            "aquifer": "Floridan Aquifer",
+            "county": "Sarasota",
+            "lat": 27.3389,
+            "lng": -82.3300,
+        },
+        "271619082240201": {
+            "name": "Fla Cities Test 1",
+            "aquifer": "Floridan Aquifer",
+            "county": "Sarasota",
+            "lat": 27.2719,
+            "lng": -82.4006,
+        },
+    }
+
+    # Scan for all USGS CSV files
+    sites = {}
+    for csv_file in DATA_DIR.glob("usgs_*.csv"):
+        site_id = csv_file.stem.replace("usgs_", "")
+
+        if site_id in known_sites:
+            meta = known_sites[site_id].copy()
+        else:
+            # Try to extract info from CSV
+            try:
+                df = pd.read_csv(csv_file, nrows=1)
+                meta = {
+                    "name": df.get("site_name", [f"Site {site_id}"])[0],
+                    "aquifer": df.get("aquifer", ["Florida Aquifer"])[0],
+                    "county": "Florida",
+                    "lat": 25.5 + hash(site_id) % 100 / 100,
+                    "lng": -80.5 + hash(site_id) % 100 / 200,
+                }
+            except Exception:
+                meta = {
+                    "name": f"Site {site_id}",
+                    "aquifer": "Florida Aquifer",
+                    "county": "Florida",
+                    "lat": 25.5,
+                    "lng": -80.5,
+                }
+
+        sites[site_id] = {
+            "id": site_id,
+            "depth": 50,
+            "description": f"USGS monitoring well {site_id}",
+            **meta,
+        }
+
+    return sites
+
+
+# Cache site metadata
+SITE_METADATA = get_site_metadata()
 
 
 def load_site_data(site_id: str) -> pd.DataFrame:
-    """Load CSV data for a specific site"""
+    """Load CSV data for a specific site."""
     csv_path = DATA_DIR / f"usgs_{site_id}.csv"
     if not csv_path.exists():
         raise HTTPException(status_code=404, detail=f"Data not found for site {site_id}")
@@ -103,7 +341,7 @@ def load_site_data(site_id: str) -> pd.DataFrame:
 
 
 def calculate_stats(df: pd.DataFrame) -> dict:
-    """Calculate statistics for site data"""
+    """Calculate statistics for site data."""
     values = df["value"].dropna()
 
     if len(values) == 0:
@@ -138,12 +376,13 @@ def calculate_stats(df: pd.DataFrame) -> dict:
 
 @app.get("/")
 def root():
+    """Return API info."""
     return {"message": "GroundwaterGPT API", "version": "1.0.0"}
 
 
 @app.get("/api/sites")
 def get_sites():
-    """Get list of all monitoring sites with metadata"""
+    """Get list of all monitoring sites with metadata."""
     sites = []
     for site_id, metadata in SITE_METADATA.items():
         csv_path = DATA_DIR / f"usgs_{site_id}.csv"
@@ -157,7 +396,7 @@ def get_sites():
 
 @app.get("/api/sites/{site_id}")
 def get_site(site_id: str):
-    """Get metadata and statistics for a specific site"""
+    """Get metadata and statistics for a specific site."""
     if site_id not in SITE_METADATA:
         raise HTTPException(status_code=404, detail=f"Site {site_id} not found")
 
@@ -169,7 +408,7 @@ def get_site(site_id: str):
 
 @app.get("/api/sites/{site_id}/data")
 def get_site_data(site_id: str, start_date: Optional[str] = None, end_date: Optional[str] = None):
-    """Get time series data for a specific site"""
+    """Get time series data for a specific site."""
     df = load_site_data(site_id)
 
     # Filter by date range if provided
@@ -197,7 +436,7 @@ def get_site_data(site_id: str, start_date: Optional[str] = None, end_date: Opti
 
 @app.get("/api/sites/{site_id}/heatmap")
 def get_heatmap_data(site_id: str):
-    """Get heatmap data (monthly averages by year)"""
+    """Get heatmap data with monthly averages by year."""
     df = load_site_data(site_id)
 
     # Calculate monthly averages by year
@@ -228,7 +467,7 @@ def get_heatmap_data(site_id: str):
 
 @app.get("/api/compare")
 def compare_sites(site_ids: str):
-    """Compare multiple sites"""
+    """Compare multiple sites by their statistics."""
     ids = site_ids.split(",")
     comparison = []
 
@@ -238,13 +477,184 @@ def compare_sites(site_ids: str):
                 df = load_site_data(site_id.strip())
                 stats = calculate_stats(df)
                 comparison.append({"site": SITE_METADATA[site_id.strip()], "stats": stats})
-            except:
+            except HTTPException:
                 pass
 
     return {"comparison": comparison}
 
 
+# ============================================================================
+# AI Chat Endpoint (Under Construction)
+# ============================================================================
+
+# Knowledge base for common groundwater/agriculture queries
+GROUNDWATER_KB = {
+    "irrigation": {
+        "keywords": ["irrigat", "water", "crop", "plant", "farm"],
+        "info": (
+            "Groundwater levels are critical for irrigation planning. "
+            "In Florida, the dry season (Nov-May) typically shows lower water tables. "
+            "Monitor levels 2-3 weeks before planting to ensure adequate supply."
+        ),
+    },
+    "soil_moisture": {
+        "keywords": ["soil", "moisture", "drain", "saturat"],
+        "info": (
+            "Soil moisture is directly related to groundwater depth. "
+            "Shallow water tables (<3ft) may cause waterlogging. "
+            "Deep water tables (>10ft) may require irrigation supplementation."
+        ),
+    },
+    "crops": {
+        "keywords": ["crop", "plant", "grow", "vegetable", "citrus", "tomato"],
+        "info": (
+            "Different crops have varying water table tolerances: "
+            "Citrus: 3-6ft optimal depth. "
+            "Tomatoes: 2-4ft optimal. "
+            "Sugarcane: tolerates 1-3ft. "
+            "Most vegetables prefer 2-5ft water table depth."
+        ),
+    },
+    "saltwater": {
+        "keywords": ["salt", "intrusion", "coastal", "chloride", "brackish"],
+        "info": (
+            "Saltwater intrusion is a concern in coastal Florida aquifers. "
+            "Biscayne Aquifer (Miami-Dade) is particularly vulnerable. "
+            "Monitor chloride levels and watch for declining freshwater heads."
+        ),
+    },
+    "seasonal": {
+        "keywords": ["season", "wet", "dry", "rain", "hurricane"],
+        "info": (
+            "Florida has distinct wet (Jun-Oct) and dry (Nov-May) seasons. "
+            "Groundwater levels typically peak in Sep-Oct after summer rains. "
+            "Lowest levels occur in Apr-May before wet season begins."
+        ),
+    },
+    "aquifer": {
+        "keywords": ["aquifer", "floridan", "biscayne", "surficial"],
+        "info": (
+            "Florida has three main aquifer systems: "
+            "1) Surficial (unconfined, shallow) "
+            "2) Biscayne (SE Florida, highly productive) "
+            "3) Floridan (deep, artesian in some areas). "
+            "Each has different characteristics for well placement."
+        ),
+    },
+    "well": {
+        "keywords": ["well", "pump", "depth", "drill", "permit"],
+        "info": (
+            "Well permits required from local Water Management District. "
+            "Residential wells typically 20-100ft deep. "
+            "Agricultural wells may be 100-500ft for Floridan Aquifer access. "
+            "Pumping rates affect neighboring wells - check sustainable yield."
+        ),
+    },
+}
+
+
+def get_site_context(county: str = None) -> str:
+    """Get context about available sites for AI response."""
+    sites_by_county = {}
+    for site_id, meta in SITE_METADATA.items():
+        c = meta.get("county", "Unknown")
+        if c not in sites_by_county:
+            sites_by_county[c] = []
+        sites_by_county[c].append(meta.get("name", site_id))
+
+    if county and county in sites_by_county:
+        sites_list = ", ".join(sites_by_county[county][:5])
+        return f"Available monitoring sites in {county}: {sites_list}"
+
+    site_count = len(SITE_METADATA)
+    county_count = len(sites_by_county)
+    return f"Monitoring {site_count} USGS sites across {county_count} Florida counties."
+
+
+def simple_ai_response(query: str) -> dict:
+    """Generate a simple rule-based AI response.
+
+    This is a placeholder until full LLM integration.
+    Uses keyword matching and knowledge base lookup.
+    """
+    query_lower = query.lower()
+
+    # Find matching knowledge entries
+    matches = []
+    for topic, data in GROUNDWATER_KB.items():
+        for keyword in data["keywords"]:
+            if keyword in query_lower:
+                matches.append((topic, data["info"]))
+                break
+
+    # Extract county mention
+    county_mentioned = None
+    for county in ["Miami-Dade", "Lee", "Collier", "Sarasota", "Hendry"]:
+        if county.lower() in query_lower:
+            county_mentioned = county
+            break
+
+    # Build response
+    if matches:
+        response = " ".join([m[1] for m in matches[:2]])  # Max 2 topics
+        context = get_site_context(county_mentioned)
+        sources = [f"GroundwaterGPT KB: {m[0]}" for m in matches]
+    else:
+        response = (
+            "I can help with groundwater questions about irrigation, crops, "
+            "soil moisture, aquifers, wells, saltwater intrusion, and seasonal patterns. "
+            "Try asking about water levels for farming or which crops suit your area."
+        )
+        context = get_site_context()
+        sources = ["GroundwaterGPT Knowledge Base"]
+
+    return {
+        "response": response,
+        "context": context,
+        "sources": sources,
+        "status": "beta",
+        "note": "AI chat is under construction. Full LLM integration coming soon.",
+    }
+
+
+@app.post("/api/chat")
+def chat_endpoint(query: dict):
+    """AI chat endpoint for groundwater questions.
+
+    Currently uses rule-based responses.
+    Full LLM integration planned for Phase 5.
+    """
+    user_query = query.get("message", "")
+    if not user_query:
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    response = simple_ai_response(user_query)
+    return response
+
+
+@app.get("/api/chat/status")
+def chat_status():
+    """Get AI chat system status."""
+    return {
+        "status": "beta",
+        "version": "0.1.0",
+        "features": [
+            "Irrigation planning advice",
+            "Crop water requirements",
+            "Seasonal patterns",
+            "Aquifer information",
+            "Well guidance",
+        ],
+        "coming_soon": [
+            "Full LLM integration",
+            "RAG with hydrogeology documents",
+            "Site-specific recommendations",
+            "Predictive insights",
+        ],
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

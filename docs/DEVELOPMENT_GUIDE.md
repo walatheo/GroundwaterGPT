@@ -1,5 +1,6 @@
 # GroundwaterGPT Development Guide
 
+**Last Updated:** February 3, 2026
 **Purpose:** Best practices and standards for developing a production-quality groundwater prediction and research platform.
 
 **Core Goals:**
@@ -11,15 +12,190 @@
 
 ## 📋 Table of Contents
 
-1. [Project Roles](#-project-roles)
-2. [Development Schedule](#-development-schedule)
-3. [Project Vision & Roadmap](#-project-vision--roadmap)
-4. [Code Quality Standards](#-code-quality-standards)
-5. [CI/CD Pipeline](#-cicd-pipeline)
-6. [Data Engineering Best Practices](#-data-engineering-best-practices)
-7. [Testing Strategy](#-testing-strategy)
-8. [Documentation Standards](#-documentation-standards)
-9. [Code Maintenance](#-code-maintenance)
+1. [System Architecture](#-system-architecture)
+2. [Technology Stack](#-technology-stack)
+3. [Project Roles](#-project-roles)
+4. [User Types](#-user-types)
+5. [Development Schedule](#-development-schedule)
+6. [Code Quality Standards](#-code-quality-standards)
+7. [CI/CD Pipeline](#-cicd-pipeline)
+8. [Data Engineering Best Practices](#-data-engineering-best-practices)
+9. [Testing Strategy](#-testing-strategy)
+10. [Quick Start Guide](#-quick-start-guide)
+
+---
+
+## 🏗️ System Architecture
+
+### Overview
+
+GroundwaterGPT uses a modern **React + FastAPI** architecture with verified USGS data:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    FRONTEND (React)                         │
+│  http://localhost:3000                                      │
+│  ├── MapView.jsx      - Leaflet interactive map (36 sites) │
+│  ├── TimeSeriesChart  - Recharts with trend analysis       │
+│  ├── HeatmapChart     - Monthly/yearly patterns            │
+│  ├── AnalysisView     - Statistics & seasonal patterns     │
+│  └── Sidebar          - Site selector                      │
+└─────────────────────┬───────────────────────────────────────┘
+                      │ REST API (JSON)
+┌─────────────────────▼───────────────────────────────────────┐
+│                    BACKEND (FastAPI)                        │
+│  http://localhost:8000                                      │
+│  ├── GET /api/sites           - List all USGS sites        │
+│  ├── GET /api/sites/{id}/data - Time series data           │
+│  ├── GET /api/sites/{id}/heatmap - Monthly averages        │
+│  └── GET /api/compare         - Multi-site comparison      │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────────────┐
+│                    DATA LAYER                               │
+│  data/usgs_*.csv (36 files, 106,628 records)               │
+│  - Source: USGS National Water Information System          │
+│  - Verified authentic against live API                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Directory Structure
+
+```
+GroundwaterGPT/
+├── api/                      # FastAPI backend
+│   └── main.py               # API endpoints
+├── frontend/                 # React frontend
+│   ├── src/
+│   │   ├── App.jsx           # Main application
+│   │   ├── api/client.js     # API client
+│   │   └── components/       # React components
+│   ├── package.json
+│   └── vite.config.js
+├── data/                     # USGS CSV data (36 sites)
+│   └── usgs_*.csv
+├── src/                      # Python source code
+│   ├── agent/                # AI research agent
+│   ├── data/                 # Data processing
+│   ├── ml/                   # Machine learning
+│   └── ui/                   # Streamlit UI (legacy)
+├── tests/                    # Test suite
+├── docs/                     # Documentation
+└── knowledge_base/           # ChromaDB vector store
+```
+
+---
+
+## 🛠️ Technology Stack
+
+### Frontend
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| React | 18.2.0 | UI framework |
+| Vite | 5.0.0 | Build tool |
+| Tailwind CSS | 3.3.5 | Styling |
+| Recharts | 2.10.0 | Charts |
+| Leaflet | 1.9.4 | Maps |
+| react-leaflet | 4.2.1 | React Leaflet bindings |
+
+### Backend
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| Python | 3.11+ | Runtime |
+| FastAPI | latest | REST API |
+| uvicorn | latest | ASGI server |
+| pandas | latest | Data processing |
+
+### Data & ML
+| Technology | Purpose |
+|------------|---------|
+| USGS NWIS API | Groundwater data source |
+| ChromaDB | Vector store for RAG |
+| scikit-learn | ML models |
+| joblib | Model serialization |
+
+---
+
+## 👤 User Types
+
+### 1. 🔬 Researcher / Scientist
+
+**Goal:** Analyze groundwater trends, validate hypotheses
+
+**Key Features:**
+- Time series analysis with trend lines and rolling averages
+- Seasonal pattern visualization (heatmaps)
+- Multi-site comparison
+- Data export for statistical analysis
+
+**Typical Workflow:**
+```
+1. Select monitoring site from interactive map
+2. Review long-term water level trends
+3. Analyze seasonal patterns via heatmap
+4. Compare multiple sites
+5. Export data for further analysis
+```
+
+---
+
+### 2. 🏛️ Government / Water Manager
+
+**Goal:** Monitor aquifer health, plan water resources
+
+**Key Features:**
+- Regional overview map with all 36 sites
+- Historical trend analysis
+- Multi-county view (Miami-Dade, Lee, Collier, Sarasota, Hendry)
+- Anomaly detection
+
+**Typical Workflow:**
+```
+1. View regional map of monitoring sites
+2. Identify sites with declining water levels
+3. Review historical patterns
+4. Generate reports for stakeholders
+```
+
+---
+
+### 3. 🎓 Student / Educator
+
+**Goal:** Learn about groundwater systems, teaching
+
+**Key Features:**
+- Visual exploration of aquifer data
+- Interactive Florida map
+- Clear, intuitive visualizations
+- Access to verified USGS data
+
+**Typical Workflow:**
+```
+1. Explore Florida aquifer map
+2. Select site to study (Biscayne, Floridan aquifer)
+3. Analyze seasonal patterns
+4. Compare different aquifer types
+```
+
+---
+
+### 4. 🌾 Agricultural / Private Well Owner
+
+**Goal:** Understand local groundwater conditions
+
+**Key Features:**
+- Find nearby monitoring sites
+- View current water levels
+- Seasonal patterns for irrigation planning
+- Historical context
+
+**Typical Workflow:**
+```
+1. Locate nearest USGS monitoring site on map
+2. Check current groundwater levels
+3. Review seasonal patterns for irrigation planning
+4. Track year-over-year changes
+```
 
 ---
 
@@ -887,6 +1063,80 @@ def download_usgs_data(
     Downloaded 1461 records
     """
 ```
+
+---
+
+## 🚀 Quick Start Guide
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- Git
+
+### Installation
+
+```bash
+# Clone repository
+git clone https://github.com/walatheo/GroundwaterGPT.git
+cd GroundwaterGPT
+
+# Python environment
+python -m venv .venv
+source .venv/bin/activate
+pip install -r GroundwaterGPT/requirements.txt
+
+# Frontend dependencies
+cd GroundwaterGPT/frontend
+npm install
+```
+
+### Running the Application
+
+**Terminal 1 - Start API:**
+```bash
+cd GroundwaterGPT/api
+uvicorn main:app --reload --port 8000
+```
+
+**Terminal 2 - Start Frontend:**
+```bash
+cd GroundwaterGPT/frontend
+npm run dev
+```
+
+### Access Points
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Frontend | http://localhost:3000 | React dashboard |
+| API | http://localhost:8000 | FastAPI backend |
+| API Docs | http://localhost:8000/docs | Swagger UI |
+
+---
+
+## 📊 Data Sources
+
+### USGS Sites (36 Total)
+
+| County | Sites | Example IDs |
+|--------|-------|-------------|
+| Miami-Dade | 16 | G-1251, G-3777, G-3356 |
+| Lee | 7 | L-2194, L-581, L-1999 |
+| Collier | 5 | C-951R, C-953R, C-948R |
+| Sarasota | 4 | Multiple wells |
+| Hendry | 4 | HE-1042, HE-859 |
+
+### Data Verification
+
+All data is verified against the official USGS NWIS API:
+- Site IDs match official database
+- Values confirmed against live API
+- 106,628 total records
+
+---
+
+*Last updated: February 3, 2026*
 
 ### README Template
 
