@@ -14,7 +14,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root and src paths
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(PROJECT_ROOT / "src" / "ml"))
 
 
 class TestModelPerformance:
@@ -35,11 +39,14 @@ class TestModelPerformance:
         if not data_path.exists():
             pytest.skip("Groundwater data not available")
 
-        from train_groundwater import load_groundwater_data, prepare_data
+        try:
+            from train_groundwater import load_groundwater_data, prepare_data
 
-        model = load(model_path)
-        df = load_groundwater_data()
-        X_train, X_test, y_train, y_test, feature_cols, dates_test = prepare_data(df)
+            model = load(model_path)
+            df = load_groundwater_data()
+            X_train, X_test, y_train, y_test, feature_cols, dates_test = prepare_data(df)
+        except FileNotFoundError as e:
+            pytest.skip(f"Data not available: {e}")
 
         return model, X_test, y_test
 

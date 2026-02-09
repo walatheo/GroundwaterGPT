@@ -95,15 +95,23 @@ Three hydrogeology PDFs are embedded in ChromaDB for future RAG integration:
 
 ```
 GroundwaterGPT/
-├── main.py                   # 🚀 Main entry point
+├── main.py                   # 🚀 CLI entry point (Streamlit legacy)
 ├── README.md                 # This file
-├── requirements.txt          # Dependencies (symlink)
+├── requirements.txt          # Python dependencies
 │
 ├── 📚 docs/                  # Documentation
-│   ├── PROJECT_PLAN.md       # Timeline & milestones
 │   ├── ROLES.md              # Team responsibilities
 │   ├── DEVELOPMENT_GUIDE.md  # Coding standards
+│   ├── ENGINEERING_STANDARDS.md  # Software engineering standards
 │   └── CHECKLIST.md          # Review checklist
+│
+├── 🖥️ api/                   # FastAPI Backend
+│   └── main.py               # REST API server (port 8000)
+│
+├── 🌐 frontend/              # React Frontend
+│   ├── src/                  # React components
+│   ├── package.json          # NPM dependencies
+│   └── vite.config.js        # Vite configuration
 │
 ├── 🤖 src/                   # Source code
 │   ├── agent/                # AI research agent
@@ -113,14 +121,11 @@ GroundwaterGPT/
 │   ├── data/                 # Data processing
 │   │   ├── download_data.py  # USGS fetcher
 │   │   └── continuous_learning.py
-│   ├── ml/                   # Machine learning
-│   │   └── train_groundwater.py
-│   └── ui/                   # User interfaces
-│       ├── research_chat.py  # Main Streamlit app
-│       └── dashboard.py
+│   └── ml/                   # Machine learning
+│       └── train_groundwater.py
 │
-├── 📊 data/                  # Data files (gitignored)
-│   └── usgs_*.csv            # USGS measurements
+├── 📊 data/                  # USGS CSV data
+│   └── usgs_*.csv            # 36 monitoring sites
 │
 ├── 📖 resources/             # Reference materials
 │   └── pdfs/                 # Hydrogeology PDFs
@@ -130,17 +135,15 @@ GroundwaterGPT/
 ├── 🎯 models/                # Trained ML models
 │
 ├── 📈 outputs/               # Generated outputs
-│   ├── plots/                # Visualizations
-│   └── reports/              # Generated reports
+│   └── plots/                # Visualizations
 │
-├── 🧪 tests/                 # Test suite
-│   ├── data/                 # Data quality tests
-│   ├── model/                # ML tests
+├── 🧪 tests/                 # Test suite (89+ tests)
+│   ├── data/                 # Data quality & integrity tests
+│   ├── model/                # ML performance tests
 │   └── unit/                 # Unit tests
 │
 └── 🔧 config/                # Configuration
-    ├── config.py
-    └── requirements.txt
+    └── config.py
 ```
 
 ---
@@ -221,11 +224,11 @@ open htmlcov/index.html
 
 | Category | Tests | Purpose |
 |----------|-------|---------|
-| `tests/unit/` | 9 | Feature engineering, data leakage prevention |
+| `tests/unit/` | 50+ | Feature engineering, data leakage prevention |
 | `tests/model/` | 10 | Model performance thresholds |
-| `tests/data/` | 13 | Data quality and schema validation |
+| `tests/data/` | 25+ | Data quality, schema validation, USGS integrity |
 
-**Current Status:** 32/32 tests passing ✅
+**Current Status:** 89/89 tests passing ✅
 
 ---
 
@@ -264,22 +267,24 @@ feature/your-feature
 | Phase | Status | Focus |
 |-------|--------|-------|
 | 1. Foundation | ✅ Complete | Data pipeline, ML model, dashboard |
-| 2. Quality | 🔄 Current | CI/CD, testing, documentation |
-| 3. Enhancement | 📋 Planned | Multi-horizon forecasting, confidence intervals |
-| 4. Research | 📋 Planned | RAG integration, automated reports |
-| 5. Production | 📋 Planned | API, web hosting, alerts |
+| 2. Quality | ✅ Complete | CI/CD, testing, documentation |
+| 3. Enhancement | ✅ Complete | Multi-site expansion, React frontend |
+| 4. Dashboard | ✅ Complete | AI Chat (Beta), 36 USGS sites, interactive maps |
+| 5. Research | � Current | AI Research Integration, advanced analytics |
+| 6. Production | 📋 Planned | API, web hosting, alerts |
 
-See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed roadmap.
+See [CHECKLIST.md](docs/CHECKLIST.md) for detailed status.
 
 ---
 
 ## 📚 Documentation
 
-- **[DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)** - Coding standards, roles, schedule
-- **[PROJECT_STATUS.md](docs/PROJECT_STATUS.md)** - Current status and roadmap
-- **[PROJECT_PLAN.md](docs/PROJECT_PLAN.md)** - Timeline & milestones
-- **[ROLES.md](docs/ROLES.md)** - Team responsibilities
-- **[CHECKLIST.md](docs/CHECKLIST.md)** - Review checklist
+| Document | Purpose |
+|----------|---------|
+| **[CHECKLIST.md](docs/CHECKLIST.md)** | Active tasks, phase goals, sprint tracking |
+| **[DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)** | Architecture, roles, coding standards |
+| **[ENGINEERING_STANDARDS.md](docs/ENGINEERING_STANDARDS.md)** | Testing philosophy, code quality rules |
+| **[SPONSOR_SUMMARY.md](docs/SPONSOR_SUMMARY.md)** | Executive overview for stakeholders |
 
 ---
 

@@ -41,8 +41,10 @@ TIME_CONFIG = {
 # ERA5 CLIMATE DATA (Copernicus CDS)
 # ==============================================================================
 
-CDS_API_KEY = "20c4a99b-280e-4952-90ee-971bb40a0c52"
-CDS_URL = "https://cds.climate.copernicus.eu/api"
+import os
+
+CDS_API_KEY = os.getenv("CDS_API_KEY", "")
+CDS_URL = os.getenv("CDS_URL", "https://cds.climate.copernicus.eu/api")
 
 ERA5_VARIABLES = [
     "2m_temperature",

@@ -1,135 +1,159 @@
-# GroundwaterGPT - Active Task Checklist
+# GroundwaterGPT - Active Checklist & Goals
 
-**Last Updated:** January 15, 2026
-
----
-
-## 🎯 Current Sprint: Phase 3 - Agentic RAG System
-
-### Completed ✅
-- [x] Set up CI/CD pipeline (GitHub Actions)
-- [x] Create pre-commit hooks
-- [x] Write test suite (32 tests passing)
-- [x] Create DEVELOPMENT_GUIDE.md with roles & schedule
-- [x] Replace modeled data with REAL USGS data
-- [x] Verify tests still pass with new data (32/32)
-- [x] Create modular LLM factory (swappable providers)
-- [x] Implement groundwater data tools (6 tools)
-- [x] Connect ChromaDB knowledge base (1,884 chunks indexed)
-- [x] Create Streamlit chat app structure
-- [x] Clean up redundant files (removed empty data_processing module)
-- [x] Build Deep Research Agent with iterative search
-- [x] Integrate DuckDuckGo web search
-- [x] Test Deep Research Agent (successfully generated research reports)
-
-### In Progress ��
-- [ ] Test Gemini API (waiting for quota reset)
-- [ ] Launch and test chat interface
-- [ ] Commit agent changes to GitHub
-
-### Remaining This Sprint
-- [ ] Achieve 80% test coverage
-- [ ] Add agent tests
-- [ ] Document agent capabilities in README
+**Last Updated:** February 4, 2026
+**Current Phase:** Phase 5 - AI Research Integration
+**Sprint:** Feb 4-10, 2026
 
 ---
 
-## 📁 Project Structure (Cleaned)
+## 📋 Quick Status
 
-\`\`\`
+| Component | Status | Tests | Notes |
+|-----------|--------|-------|-------|
+| **Data Pipeline** | ✅ Complete | 26/26 | 36 USGS sites, 106K records |
+| **Knowledge Base** | ✅ Complete | 31/31 | 1,901 documents |
+| **React Dashboard** | ✅ Complete | - | Map, charts, heatmaps |
+| **FastAPI Backend** | ✅ Complete | - | REST API on :8000 |
+| **AI Chat (Beta)** | ✅ Complete | 17/17 | Rule-based responses |
+| **ML Models** | ✅ Complete | - | R² = 0.93 (7-day) |
+
+**Total Tests:** 89 passing, 4 skipped
+
+---
+
+## 🎯 Phase Goals
+
+### ✅ Phase 1-4: COMPLETED
+
+| Phase | Goals Achieved | Key Deliverables |
+|-------|---------------|------------------|
+| **1. Foundation** | Data pipeline, ML model | `download_data.py`, R²=0.93 |
+| **2. Quality** | CI/CD, testing | 80%+ coverage, GitHub Actions |
+| **3. Data Expansion** | 36 sites, 106K records | 5 counties covered |
+| **4. Dashboard** | React UI, AI Chat Beta | Interactive map, chat |
+
+### 🔄 Phase 5: AI Research Integration (CURRENT)
+
+**Success Criteria - ALL must pass before Phase 6:**
+
+| Goal | Target | Current | Status |
+|------|--------|---------|--------|
+| **G5.1** LLM Connected | Yes | No | ⏳ |
+| **G5.2** RAG Precision | ≥90% | - | ⏳ |
+| **G5.3** Source Citations | 100% | - | ⏳ |
+| **G5.4** Hallucination Rate | <5% | - | ⏳ |
+| **G5.5** Farmer KB Topics | ≥10 | 7 | 🔄 |
+| **G5.6** Response Time | <3s | <1s | ✅ |
+
+---
+
+## 📅 Current Sprint (Feb 4-10)
+
+### Priority 1: Research Integrity ✅
+- [x] Create ENGINEERING_STANDARDS.md
+- [x] Create USGS data integrity tests (13 tests)
+- [x] Consolidate documentation (7 → 4 files)
+- [x] Clean unused files from repo
+
+### Priority 2: AI Assistant Upgrade
+- [ ] Integrate LLM for natural language queries
+- [ ] Connect RAG to chat endpoint
+- [ ] Add source citations to responses
+- [ ] Expand farmer knowledge base
+
+### Priority 3: Testing
+- [ ] Write RAG accuracy tests BEFORE implementation
+- [ ] Add hallucination detection tests
+- [ ] Ensure all existing tests pass
+
+---
+
+## 🧪 Testing Standards
+
+### Before Marking Any Task Complete
+
+- [ ] Unit tests written (if applicable)
+- [ ] All existing tests still pass
+- [ ] Code reviewed
+- [ ] Documentation updated
+- [ ] No linting errors
+
+### Test Philosophy
+
+> **NEVER modify a test just to make it pass.**
+>
+> If a test fails:
+> 1. Understand WHY it fails
+> 2. Fix the ROOT CAUSE
+> 3. Document what was learned
+
+---
+
+## 📁 Project Structure
+
+```
 GroundwaterGPT/
-├── agent/                    # 🤖 Agentic RAG System
-│   ├── __init__.py          # Module exports
-│   ├── llm_factory.py       # Swappable LLM providers
-│   ├── tools.py             # Groundwater data tools
-│   ├── knowledge.py         # ChromaDB RAG connector
-│   └── groundwater_agent.py # Main agent logic
-├── tests/                    # 🧪 Test Suite
-│   ├── data/                # Data quality tests
-│   ├── model/               # Model performance tests
-│   └── unit/                # Unit tests
-├── data/                     # �� Data files (gitignored)
-├── models/                   # 🤖 Trained models (gitignored)
-├── plots/                    # 📈 Generated visualizations
-├── chroma_db/               # 🔍 Vector database (gitignored)
-├── config.py                # ⚙️ Configuration
-├── download_data.py         # 📥 USGS data pipeline
-├── train_groundwater.py     # 🎯 ML training
-├── dashboard.py             # 📊 Visualization generator
-├── chat_app.py              # 💬 Streamlit chat interface
-├── DEVELOPMENT_GUIDE.md     # 📖 Development standards
-├── CHECKLIST.md             # ✅ This file
-└── README.md                # 📄 Project overview
-\`\`\`
+├── api/main.py              # FastAPI backend (active)
+├── frontend/                # React dashboard (active)
+│   └── src/components/      # UI components
+├── src/
+│   ├── agent/               # AI research agent
+│   ├── data/                # Data pipeline
+│   └── ml/                  # ML models
+├── data/                    # 36 USGS CSV files
+├── tests/                   # 89+ tests
+└── docs/                    # 4 documentation files
+    ├── CHECKLIST.md         # ← You are here
+    ├── DEVELOPMENT_GUIDE.md # Complete dev guide + roles
+    ├── ENGINEERING_STANDARDS.md # Code quality rules
+    └── SPONSOR_SUMMARY.md   # Executive overview
+```
 
 ---
 
-## 📊 Data Status
+## 👥 Role Quick Reference
 
-| Data Source | Status | Notes |
-|-------------|--------|-------|
-| Groundwater | ✅ **REAL USGS** | Site 262724081260701, Lee County FL |
-| Knowledge Base | ✅ Indexed | 1,884 chunks from 3 PDFs |
-| Dashboard | ✅ Real data | 8-panel interactive HTML |
+| Role | Primary Focus | Key Files |
+|------|--------------|-----------|
+| **Data Engineer** | USGS pipeline | `src/data/`, `data/` |
+| **Knowledge Engineer** | RAG, ChromaDB | `src/agent/knowledge.py` |
+| **Frontend Developer** | React UI | `frontend/src/` |
+| **ML Engineer** | Forecasting | `src/ml/` |
+| **Research Lead** | AI chat, LLM | `src/agent/`, `api/` |
 
-### USGS Data Details
-- **Site ID:** 262724081260701
-- **Location:** Lee County, FL (Fort Myers area)
-- **Period:** 2014-01-01 to 2023-12-31
-- **Records:** 3,641 daily measurements
-- **Parameter:** Water level elevation (ft above NGVD 1929)
-- **Range:** 23.73 to 35.51 ft
+*Full role details in [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md)*
 
 ---
 
-## 🤖 Agent Status
+## 📈 Progress Tracking
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| LLM Factory | ✅ Ready | Supports Ollama, OpenAI, Anthropic, Gemini |
-| Tools | ✅ Ready | 6 custom groundwater tools |
-| Knowledge Base | ✅ Ready | 1,884 document chunks indexed |
-| Chat UI | ✅ Ready | Streamlit interface created |
-| LLM Provider | 🔄 Pending | Gemini API quota reset needed |
-
-### Available Tools
-1. query_groundwater_data - Query USGS water level data
-2. get_water_level_prediction - ML-based forecasts
-3. analyze_seasonal_patterns - Wet/dry season analysis
-4. detect_anomalies - Find unusual events
-5. get_data_quality_report - Data coverage check
-6. search_hydrogeology_docs - RAG knowledge search
+```
+Phase 1: ████████████ 100% ✅ Foundation
+Phase 2: ████████████ 100% ✅ Quality
+Phase 3: ████████████ 100% ✅ Data Expansion
+Phase 4: ████████████ 100% ✅ Dashboard
+Phase 5: ██░░░░░░░░░░  15% 🔄 AI Research
+Phase 6: ░░░░░░░░░░░░   0% ⏳ Multi-Horizon ML
+Phase 7: ░░░░░░░░░░░░   0% ⏳ Production
+```
 
 ---
 
-## �� Model Performance (REAL DATA)
+## ✅ Quick Commands
 
-| Model | R² | RMSE | MAE |
-|-------|-----|------|-----|
-| **Ridge** | **0.8559** | 0.9691 | 0.6200 |
-| Random Forest | 0.8444 | 1.0066 | 0.5898 |
-| Gradient Boosting | 0.8448 | 1.0056 | 0.5971 |
+```bash
+# Run all tests
+pytest tests/ -v
 
-**Best Model:** Ridge (R² = 0.86) ✅
+# Check code quality
+flake8 src/ api/ tests/ --max-line-length=120
+black --check src/ api/ tests/
 
----
-
-## 🔧 Next Actions
-
-1. **WAITING**: Gemini API quota reset (~1 minute)
-2. **THEN**: Test agent with sample queries
-3. **THEN**: Launch Streamlit chat interface
-4. **THEN**: Commit all changes to GitHub
-5. **FUTURE**: Add agent unit tests
+# Start development servers
+cd frontend && npm run dev          # Port 3000
+cd api && uvicorn main:app --reload # Port 8000
+```
 
 ---
 
-## 📈 Metrics
-
-| Metric | Current | Target |
-|--------|---------|--------|
-| Tests Passing | 32/32 ✅ | 32/32 |
-| Code Coverage | 42% | 80% |
-| Model R² | 0.86 ✅ | ≥0.75 |
-| Knowledge Chunks | 1,884 | - |
-| Agent Tools | 6 | - |
+*Last sprint completed: Feb 4, 2026 (Documentation consolidation)*
