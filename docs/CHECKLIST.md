@@ -157,3 +157,53 @@ cd api && uvicorn main:app --reload # Port 8000
 ---
 
 *Last sprint completed: Feb 4, 2026 (Documentation consolidation)*
+
+---
+
+## 🧠 AI Chat Evaluation Goals
+
+These benchmark questions define the performance targets for GroundwaterGPT's AI chat.
+The system must answer these reproducibly with cited USGS wells and correct aquifer units.
+
+### Level 1 — Single-Task Quantitative Trend (Easy)
+
+**Benchmark Question:**
+> *"What has been the change in groundwater level in Estero over the last 30 years?"*
+
+**Required capabilities:**
+- [ ] Identify relevant USGS monitoring wells near Estero (site ID, borehole code, aquifer name, geographic coordinates)
+- [ ] Retrieve groundwater-level records for ~30 years (explicit data source statement, actual time period used e.g. 1994-01-10 to 2024-12-31)
+- [ ] Produce a time series plot based on real data
+- [ ] Summarize trend (declining / stable / rising)
+- [ ] Compute net change (decline or rise) with relative magnitude (small vs. substantial)
+- [ ] Separate results by aquifer (if more than one aquifer unit exists, provide answer for each)
+
+**Success Criterion:** Answer must be reproducible using the cited wells, including correct well identification based on coordinates.
+
+### Level 2 — Multi-Source Synthesis (Hard)
+
+**Benchmark Question:**
+> *"What are the groundwater sources the Village of Estero uses for water supply and what have been changes in groundwater levels there over the last 30 years?"*
+
+**Required capabilities:**
+- [ ] Identify which aquifers are actually used for supply (name specific units: Lower Tamiami, Hawthorn Group, Upper Floridan; acknowledge uncertainty if documentation is incomplete)
+- [ ] Identify which monitoring wells represent those aquifers (which USGS wells, why they are appropriate proxies, limitations such as distance or depth mismatch)
+- [ ] Evaluate trends within each specific aquifer (same as Level 1 requirements)
+- [ ] Synthesize results across multiple units:
+  - Direction of change in each unit
+  - Compare trends across aquifers (which sources are most stressed)
+  - Discuss shallow vs. deep system differences (e.g., shallow = high seasonal variability, deeper = smoother but persistent decline)
+- [ ] Discuss implications (sustainability, saltwater intrusion risk, extensive drawdown, etc.)
+
+**Success Criterion:** Answer must be reproducible using the cited wells, including correct aquifer units and well identification based on coordinates.
+
+### Evaluation Rubric
+
+| Dimension | Level 1 Target | Level 2 Target |
+|-----------|---------------|----------------|
+| **Well Identification** | Correct site IDs + coords | Correct + aquifer-appropriate |
+| **Data Period** | Stated explicitly | Stated explicitly |
+| **Trend Analysis** | Direction + magnitude | Per-aquifer + comparison |
+| **Citations** | USGS well IDs cited | Wells + aquifer units cited |
+| **Reproducibility** | Fully reproducible | Fully reproducible |
+| **Implications** | Not required | Required (sustainability, risk) |
