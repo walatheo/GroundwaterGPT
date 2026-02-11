@@ -9,8 +9,10 @@ from pathlib import Path
 
 import streamlit as st
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+# Add project root and src to path for imports
+ROOT_DIR = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(ROOT_DIR))
+sys.path.insert(0, str(ROOT_DIR / "src"))
 
 from agent import GroundwaterAgent, LLMProvider
 
