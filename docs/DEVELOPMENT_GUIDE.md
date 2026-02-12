@@ -1,12 +1,15 @@
 # GroundwaterGPT Development Guide
 
-**Last Updated:** February 3, 2026
-**Purpose:** Best practices and standards for developing a production-quality groundwater prediction and research platform.
+**Last Updated:** February 12, 2026
+**Purpose:** Engineering specification for an agentic deep-research platform for groundwater science, built on verified USGS data, modular AI agents, and interactive data visualization.
 
 **Core Goals:**
-1. Accurate groundwater level modeling and trend analysis
-2. Research-ready platform with extensibility for future studies
-3. Clean, maintainable, well-documented codebase
+1. **Agentic Deep Research** — An AI research agent that iteratively searches, synthesizes, and verifies groundwater information across local knowledge, web sources, and live USGS data
+2. **Interactive Data Visualization** — React dashboard with time series plots, heatmaps, and map views driven by direct USGS API queries
+3. **Modular, Extensible Architecture** — Cleanly separated layers (Presentation, Agent, Knowledge, Verification, Data/ML) so each can evolve independently
+4. **Research Integrity** — Every claim is source-verified; every data point traces back to USGS or peer-reviewed literature
+
+> **Reference:** Architecture patterns informed by [Awesome-Deep-Research](https://github.com/DavidZWZ/Awesome-Deep-Research) — a survey of agentic search systems including iterative RAG, multi-agent research, query optimization, and reinforcement-learning-based search agents.
 
 ---
 
@@ -14,188 +17,316 @@
 
 1. [System Architecture](#-system-architecture)
 2. [Technology Stack](#-technology-stack)
-3. [Project Roles](#-project-roles)
-4. [User Types](#-user-types)
-5. [Development Schedule](#-development-schedule)
+3. [User Types & Use Cases](#-user-types--use-cases)
+4. [Project Roles](#-project-roles)
+5. [Modular Development Sessions](#-modular-development-sessions)
 6. [Code Quality Standards](#-code-quality-standards)
 7. [CI/CD Pipeline](#-cicd-pipeline)
 8. [Data Engineering Best Practices](#-data-engineering-best-practices)
-9. [Testing Strategy](#-testing-strategy)
+9. [Testing & Benchmarking Strategy](#-testing--benchmarking-strategy)
 10. [Quick Start Guide](#-quick-start-guide)
+11. [Future Research Directions](#-future-research-directions)
 
 ---
 
 ## 🏗️ System Architecture
 
-### Overview
+### Design Principles
 
-GroundwaterGPT uses a modern **React + FastAPI** architecture with verified USGS data:
+| Principle | Application |
+|-----------|-------------|
+| **Modularity** | Each layer has a single responsibility with well-defined interfaces |
+| **Efficiency** | Local-first LLM (Ollama), cached embeddings, incremental data updates |
+| **Usability** | React UI for visual exploration, natural-language chat for research |
+| **Verifiability** | Every response cites sources; trust scores are transparent |
+
+### Layered Architecture
+
+The system is organized into five layers. Data flows downward for queries and upward for responses. Each layer is independently deployable and testable.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    FRONTEND (React)                         │
-│  http://localhost:3000                                      │
-│  ├── MapView.jsx      - Leaflet interactive map (36 sites) │
-│  ├── TimeSeriesChart  - Recharts with trend analysis       │
-│  ├── HeatmapChart     - Monthly/yearly patterns            │
-│  ├── AnalysisView     - Statistics & seasonal patterns     │
-│  └── Sidebar          - Site selector                      │
-└─────────────────────┬───────────────────────────────────────┘
-                      │ REST API (JSON)
-┌─────────────────────▼───────────────────────────────────────┐
-│                    BACKEND (FastAPI)                        │
-│  http://localhost:8000                                      │
-│  ├── GET /api/sites           - List all USGS sites        │
-│  ├── GET /api/sites/{id}/data - Time series data           │
-│  ├── GET /api/sites/{id}/heatmap - Monthly averages        │
-│  └── GET /api/compare         - Multi-site comparison      │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-┌─────────────────────▼───────────────────────────────────────┐
-│                    DATA LAYER                               │
-│  data/usgs_*.csv (36 files, 106,628 records)               │
-│  - Source: USGS National Water Information System          │
-│  - Verified authentic against live API                      │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                   1. PRESENTATION LAYER                      │
+│                                                              │
+│  React Dashboard (localhost:3000)                            │
+│  ├── MapView.jsx        — Leaflet interactive map (36 sites) │
+│  ├── TimeSeriesChart    — Recharts with trend lines          │
+│  ├── HeatmapChart       — Monthly/yearly patterns            │
+│  ├── AnalysisView       — Statistics & seasonal analysis     │
+│  ├── ChatView.jsx       — Research chat interface            │
+│  └── Sidebar            — Site selector + mode toggle        │
+│                                                              │
+│  Streamlit Research UI (localhost:8502)                       │
+│  └── research_chat.py   — Query Mode + Deep Research Mode    │
+│                                                              │
+│  FastAPI (localhost:8000)                                     │
+│  ├── GET /api/sites              — List all USGS sites       │
+│  ├── GET /api/sites/{id}/data    — Time series data          │
+│  ├── GET /api/sites/{id}/heatmap — Monthly averages          │
+│  ├── GET /api/compare            — Multi-site comparison     │
+│  ├── POST /api/chat              — Agent chat endpoint       │
+│  └── POST /api/research          — Deep research endpoint    │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+┌──────────────────────────▼───────────────────────────────────┐
+│                    2. AGENT LAYER                             │
+│                                                              │
+│  research_agent.py   — Deep Research Agent                   │
+│  ├── Iterative search with configurable depth (default: 3)   │
+│  ├── Query optimization via LLM                              │
+│  ├── Multi-source search (KB + web + USGS API)               │
+│  ├── Insight extraction with confidence scoring              │
+│  └── Follow-up query generation + report synthesis           │
+│                                                              │
+│  groundwater_agent.py — Conversational Agent                 │
+│  ├── Intent detection (prediction, seasonal, quality, etc.)  │
+│  ├── Simple RAG mode (small models) / ReAct mode (GPT-4+)   │
+│  └── Streaming chat with history                             │
+│                                                              │
+│  llm_factory.py — Swappable LLM Providers                   │
+│  └── Ollama (local) | OpenAI | Anthropic | Gemini            │
+│                                                              │
+│  tools.py — Groundwater Analysis Tools                       │
+│  ├── query_groundwater_data()     — USGS data querying       │
+│  ├── get_water_level_prediction() — ML-based forecasts       │
+│  ├── analyze_seasonal_patterns()  — Wet/dry season analysis  │
+│  ├── detect_anomalies()           — Z-score outlier detection │
+│  └── get_data_quality_report()    — Completeness & gaps      │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+┌──────────────────────────▼───────────────────────────────────┐
+│                   3. KNOWLEDGE LAYER                          │
+│                                                              │
+│  knowledge.py — ChromaDB + HuggingFace Embeddings            │
+│  ├── 1,901 document chunks (PDFs + USGS data + research)     │
+│  ├── BAAI/bge-small-en-v1.5 embeddings (384 dim)            │
+│  ├── Semantic search with similarity threshold               │
+│  └── Auto-learning: saves verified insights back to KB       │
+│                                                              │
+│  continuous_learning.py — Live Data Collection                │
+│  ├── 40+ Florida aquifer monitoring sites                    │
+│  └── Incremental USGS data updates                           │
+│                                                              │
+│  resources/pdfs/ — Reference Documents                       │
+│  ├── Hydrogeology glossary                                   │
+│  ├── Surface & near-surface brines and evaporite minerals    │
+│  ├── Age dating young groundwater                            │
+│  └── (Future research documents added here)                  │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+┌──────────────────────────▼───────────────────────────────────┐
+│                  4. VERIFICATION LAYER                        │
+│                                                              │
+│  source_verification.py — Whitebox Trust Scoring             │
+│  ├── USGS / NOAA (numerical data)        → 1.0  VERIFIED    │
+│  ├── Peer-reviewed journals (DOI)        → 0.95 VERIFIED    │
+│  ├── Government reports (.gov, EPA)      → 0.9  VERIFIED    │
+│  ├── Academic institutions (.edu)        → 0.85 TRUSTED     │
+│  ├── General references (Wikipedia)      → 0.7  MODERATE    │
+│  └── Unknown / blogs / social media      → 0.0  UNTRUSTED   │
+│                                                              │
+│  Rules: Reject sources below 0.6 | Prioritize numerical     │
+│  data > research papers > government > academic              │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+┌──────────────────────────▼───────────────────────────────────┐
+│                 5. DATA & ML LAYER                            │
+│                                                              │
+│  USGS NWIS API (live)                                        │
+│  ├── 36 monitoring sites across 5 Florida counties           │
+│  ├── 106,628 verified records                                │
+│  └── Direct API queries for real-time data                   │
+│                                                              │
+│  ML Models (scikit-learn)                                    │
+│  ├── 7-day water level prediction (R² = 0.93)               │
+│  ├── Feature engineering with leakage prevention             │
+│  └── Seasonal pattern analysis                               │
+│                                                              │
+│  Data files: data/usgs_*.csv (36 sites)                      │
+│  Models: models/*.joblib                                     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Directory Structure
 
 ```
 GroundwaterGPT/
-├── api/                      # FastAPI backend
-│   └── main.py               # API endpoints
-├── frontend/                 # React frontend
+├── api/                          # FastAPI backend
+│   └── main.py                   #   REST API endpoints + chat/research routes
+├── frontend/                     # React frontend (Vite + Tailwind)
 │   ├── src/
-│   │   ├── App.jsx           # Main application
-│   │   ├── api/client.js     # API client
-│   │   └── components/       # React components
+│   │   ├── App.jsx               #   Main application shell
+│   │   ├── api/client.js         #   API client (axios)
+│   │   └── components/           #   UI components (Map, Charts, Chat, etc.)
 │   ├── package.json
 │   └── vite.config.js
-├── data/                     # USGS CSV data (36 sites)
-│   └── usgs_*.csv
-├── src/                      # Python source code
-│   ├── agent/                # AI research agent
-│   ├── data/                 # Data processing
-│   ├── ml/                   # Machine learning
-│   └── ui/                   # Streamlit UI (legacy)
-├── tests/                    # Test suite
-├── docs/                     # Documentation
-└── knowledge_base/           # ChromaDB vector store
+├── src/                          # Python source code
+│   ├── agent/                    #   AI agent layer
+│   │   ├── research_agent.py     #     Deep Research Agent (iterative search)
+│   │   ├── groundwater_agent.py  #     Conversational agent (RAG + ReAct)
+│   │   ├── llm_factory.py        #     LLM provider factory (Ollama/OpenAI/etc.)
+│   │   ├── tools.py              #     Groundwater analysis tools
+│   │   ├── knowledge.py          #     ChromaDB knowledge base
+│   │   └── source_verification.py#     Source trust scoring
+│   ├── data/                     #   Data pipelines
+│   │   ├── download_data.py      #     USGS data acquisition
+│   │   └── continuous_learning.py#     Live data collection & KB updates
+│   ├── ml/                       #   Machine learning
+│   │   └── train_groundwater.py  #     Model training & feature engineering
+│   └── ui/                       #   Streamlit UIs (research chat, dashboard)
+│       ├── research_chat.py      #     Deep research chat interface
+│       ├── chat_app.py           #     Simple chat interface
+│       ├── integrated_app.py     #     Full integrated app
+│       └── visualization.py      #     Plotly visualizations
+├── tests/                        # Test suite
+│   ├── unit/                     #   Unit tests (features, chat API)
+│   ├── data/                     #   Data quality & USGS integrity tests
+│   ├── model/                    #   ML performance tests
+│   └── knowledge/                #   Florida accuracy ground truth tests
+├── config/                       # Configuration
+│   ├── config.py                 #   App configuration
+│   ├── requirements.txt          #   Python dependencies
+│   └── .env.example              #   Environment variable template
+├── resources/pdfs/               # Reference documents (hydrogeology)
+├── knowledge_base/               # ChromaDB persistent vector store
+├── models/                       # Trained model artifacts (.joblib)
+├── docs/                         # Project documentation
+└── main.py                       # CLI entry point
 ```
 
 ---
 
 ## 🛠️ Technology Stack
 
-### Frontend
+### Frontend (Presentation Layer)
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| React | 18.2.0 | UI framework |
-| Vite | 5.0.0 | Build tool |
-| Tailwind CSS | 3.3.5 | Styling |
-| Recharts | 2.10.0 | Charts |
-| Leaflet | 1.9.4 | Maps |
-| react-leaflet | 4.2.1 | React Leaflet bindings |
+| React | 18.2.0 | UI framework — dashboard + chat interface |
+| Vite | 5.0.0 | Fast build tool with HMR |
+| Tailwind CSS | 3.3.5 | Utility-first styling |
+| Recharts | 2.10.0 | Time series charts, bar charts |
+| Leaflet | 1.9.4 | Interactive maps (USGS site locations) |
+| react-leaflet | 4.2.1 | React bindings for Leaflet |
 
-### Backend
+### Backend (API + Agent Layer)
 | Technology | Version | Purpose |
 |------------|---------|---------|
 | Python | 3.11+ | Runtime |
-| FastAPI | latest | REST API |
-| uvicorn | latest | ASGI server |
-| pandas | latest | Data processing |
+| FastAPI | ≥0.109.1 | REST API + WebSocket for chat |
+| uvicorn | ≥0.24.0 | ASGI server |
+| LangChain | ≥0.3.81 | Agent framework (tools, chains, graphs) |
+| LangGraph | ≥0.0.1 | Stateful agent graph execution |
+| Ollama | local | Default LLM provider (llama3.2, qwen2.5) |
+
+### Knowledge & Verification
+| Technology | Purpose |
+|------------|---------|
+| ChromaDB | Persistent vector store (1,901 chunks) |
+| HuggingFace Embeddings | BAAI/bge-small-en-v1.5 (384 dim) |
+| DuckDuckGo Search | Web search fallback for deep research |
+| Source Verification Engine | Whitebox trust scoring (custom) |
 
 ### Data & ML
 | Technology | Purpose |
 |------------|---------|
-| USGS NWIS API | Groundwater data source |
-| ChromaDB | Vector store for RAG |
-| scikit-learn | ML models |
+| USGS NWIS API | Live groundwater data source (36 sites) |
+| pandas | Data processing & analysis |
+| scikit-learn | ML models (Ridge Regression, Gradient Boosting) |
 | joblib | Model serialization |
+| Plotly | Server-side visualization |
+
+### Streamlit (Legacy/Research UI)
+| Technology | Purpose |
+|------------|---------|
+| Streamlit | Research chat UI (localhost:8502) |
 
 ---
 
-## 👤 User Types
+## 👤 User Types & Use Cases
+
+Each user type maps to specific agent capabilities and UI flows. The research agent must handle all of these naturally through conversational interaction.
 
 ### 1. 🔬 Researcher / Scientist
 
-**Goal:** Analyze groundwater trends, validate hypotheses
+**Goal:** Analyze groundwater trends, validate hypotheses, deep-dive research
 
-**Key Features:**
+**Key Interactions:**
 - Time series analysis with trend lines and rolling averages
-- Seasonal pattern visualization (heatmaps)
-- Multi-site comparison
-- Data export for statistical analysis
+- Deep research mode: multi-step investigation with source citations
+- Multi-site comparison and statistical analysis
+- Data export for external analysis
 
-**Typical Workflow:**
+**Example Queries:**
 ```
-1. Select monitoring site from interactive map
-2. Review long-term water level trends
-3. Analyze seasonal patterns via heatmap
-4. Compare multiple sites
-5. Export data for further analysis
+"What are the long-term trends for Biscayne Aquifer sites?"
+"Compare water levels in Miami-Dade vs Collier County over the last 5 years"
+"What does the literature say about saltwater intrusion in Southeast Florida?"
 ```
+
+**Agent Flow:** Query → Deep Research Agent (depth=3) → KB + Web + USGS API → Synthesis with citations
 
 ---
 
 ### 2. 🏛️ Government / Water Manager
 
-**Goal:** Monitor aquifer health, plan water resources
+**Goal:** Monitor aquifer health, plan water resources, generate reports
 
-**Key Features:**
-- Regional overview map with all 36 sites
-- Historical trend analysis
-- Multi-county view (Miami-Dade, Lee, Collier, Sarasota, Hendry)
-- Anomaly detection
+**Key Interactions:**
+- Regional overview map with anomaly highlighting
+- Automated trend reports with confidence intervals
+- Multi-county dashboard view
+- Alert on declining water levels
 
-**Typical Workflow:**
+**Example Queries:**
 ```
-1. View regional map of monitoring sites
-2. Identify sites with declining water levels
-3. Review historical patterns
-4. Generate reports for stakeholders
+"Which sites show declining water levels this quarter?"
+"Generate a summary report of aquifer health for Hendry County"
+"Are there any anomalies in the last 30 days?"
 ```
+
+**Agent Flow:** Query → Intent Detection → Tools (anomaly, quality report) → Formatted report
 
 ---
 
 ### 3. 🎓 Student / Educator
 
-**Goal:** Learn about groundwater systems, teaching
+**Goal:** Learn about groundwater systems, explore data visually
 
-**Key Features:**
-- Visual exploration of aquifer data
-- Interactive Florida map
-- Clear, intuitive visualizations
-- Access to verified USGS data
+**Key Interactions:**
+- Interactive Florida map exploration
+- Visual comparison of aquifer types
+- Natural language Q&A about hydrogeology concepts
+- Access to verified reference documents
 
-**Typical Workflow:**
+**Example Queries:**
 ```
-1. Explore Florida aquifer map
-2. Select site to study (Biscayne, Floridan aquifer)
-3. Analyze seasonal patterns
-4. Compare different aquifer types
+"What is the difference between the Biscayne and Floridan aquifers?"
+"Show me seasonal patterns for site L-2194"
+"How does groundwater recharge work in Florida?"
 ```
+
+**Agent Flow:** Query → KB semantic search → Reference documents → Clear explanation with sources
 
 ---
 
 ### 4. 🌾 Agricultural / Private Well Owner
 
-**Goal:** Understand local groundwater conditions
+**Goal:** Understand local groundwater conditions for irrigation and crop planning
 
-**Key Features:**
-- Find nearby monitoring sites
-- View current water levels
-- Seasonal patterns for irrigation planning
-- Historical context
+**Key Interactions:**
+- Find nearest monitoring sites on map
+- Seasonal patterns for irrigation scheduling
+- Crop suitability based on water availability
+- Year-over-year trend tracking
 
-**Typical Workflow:**
+**Example Queries:**
 ```
-1. Locate nearest USGS monitoring site on map
-2. Check current groundwater levels
-3. Review seasonal patterns for irrigation planning
-4. Track year-over-year changes
+"What is a good crop to grow in this area given the water table?"
+"When is the best time to irrigate in Lee County?"
+"How have water levels near Fort Myers changed over the past 3 years?"
 ```
+
+**Agent Flow:** Query → USGS data tools + KB search → Seasonal analysis → Practical recommendation with data backing
 
 ---
 
@@ -203,366 +334,322 @@ GroundwaterGPT/
 
 ### Role Definitions
 
-This project is structured around **four key roles** that ensure comprehensive coverage of all aspects from data to deployment. Each role has specific responsibilities, deliverables, and quality gates.
+Four key roles ensure comprehensive coverage from data to deployment.
 
 ---
 
 ### 1. 📊 Data Engineer
 
-**Focus:** Data acquisition, pipeline reliability, and feature engineering
+**Focus:** Data acquisition, pipeline reliability, USGS API integration, feature engineering
 
-**Responsibilities:**
-- Maintain USGS data download pipeline (`download_data.py`)
-- Ensure data quality and validation
-- Design and implement feature engineering
-- Monitor data freshness and completeness
-- Handle data versioning and lineage
+**Key Responsibilities:**
+- Maintain USGS data download pipeline (`src/data/download_data.py`)
+- Implement direct USGS API query tools for the agent layer
+- Data quality validation and schema enforcement
+- Feature engineering for ML models (leakage prevention)
+- Continuous learning pipeline (`src/data/continuous_learning.py`)
 
-**Key Files Owned:**
-- `download_data.py`
-- `config.py` (data source configuration)
-- `train_groundwater.py` (feature engineering sections)
-- `tests/data/test_quality.py`
+**Key Files:** `src/data/`, `config/config.py`, `tests/data/`
 
 **Quality Gates:**
 - [ ] All data tests pass (`pytest tests/data/`)
 - [ ] No data gaps > 7 days in time series
+- [ ] USGS API queries return verified results
 - [ ] Feature engineering documented with rationale
-- [ ] Data validation runs on every pipeline execution
-
-**Deliverables per Sprint:**
-| Deliverable | Acceptance Criteria |
-|-------------|---------------------|
-| Data freshness | Data updated within 7 days of latest USGS |
-| Schema documentation | All columns documented with types/ranges |
-| Feature documentation | Each feature has: name, formula, rationale |
-| Validation report | Weekly data quality metrics |
 
 ---
 
 ### 2. 🤖 ML Engineer
 
-**Focus:** Model development, training, evaluation, and prediction quality
+**Focus:** Model development, prediction quality, agent tool performance
 
-**Responsibilities:**
-- Design and train prediction models
+**Key Responsibilities:**
+- Train and evaluate prediction models (scikit-learn)
 - Prevent data leakage in feature/target setup
-- Evaluate model performance and select best models
-- Implement model versioning and tracking
-- Monitor model drift and trigger retraining
+- Build ML-backed agent tools (prediction, anomaly detection)
+- Model versioning and performance monitoring
+- Benchmarking against ground truth
 
-**Key Files Owned:**
-- `train_groundwater.py` (model training sections)
-- `models/*.joblib`
-- `tests/model/test_performance.py`
-- Model experiment logs
+**Key Files:** `src/ml/`, `src/agent/tools.py` (prediction tools), `tests/model/`
 
 **Quality Gates:**
 - [ ] R² ≥ 0.80 on test set (7-day ahead)
 - [ ] RMSE ≤ 0.5 ft
 - [ ] No data leakage (verified by tests)
-- [ ] Feature importance documented
-- [ ] Model comparison documented
-
-**Deliverables per Sprint:**
-| Deliverable | Acceptance Criteria |
-|-------------|---------------------|
-| Model performance report | R², RMSE, MAE for all models |
-| Feature importance analysis | Top 10 features with interpretation |
-| Prediction validation | Backtesting on holdout period |
-| Model card | Documented assumptions, limitations |
+- [ ] Benchmark results documented per session
 
 ---
 
 ### 3. 🎨 Software Engineer
 
-**Focus:** Code quality, architecture, testing, and CI/CD
+**Focus:** Architecture, code quality, agent framework, testing, CI/CD
 
-**Responsibilities:**
-- Maintain code quality standards (linting, formatting)
-- Design and implement software architecture
-- Write and maintain tests
-- Manage CI/CD pipeline
-- Code reviews and refactoring
+**Key Responsibilities:**
+- Maintain layered architecture (separation of concerns)
+- Design agent orchestration (research_agent, groundwater_agent)
+- FastAPI endpoint design and React component architecture
+- Write and maintain tests across all layers
+- CI/CD pipeline and pre-commit hooks
 
-**Key Files Owned:**
-- `.github/workflows/ci.yml`
-- `.pre-commit-config.yaml`
-- `tests/unit/*.py`
-- `config.py`
-- All `__init__.py` files
+**Key Files:** `src/agent/`, `api/`, `frontend/`, `.github/`, `tests/`
 
 **Quality Gates:**
-- [ ] All tests pass (32+ tests)
-- [ ] Code coverage ≥ 80%
-- [ ] No linting errors (flake8, black, isort)
-- [ ] Type hints on all public functions
-- [ ] No code duplication
-
-**Deliverables per Sprint:**
-| Deliverable | Acceptance Criteria |
-|-------------|---------------------|
-| Test coverage report | Coverage % with gaps identified |
-| CI/CD status | All pipelines green |
-| Code review | All PRs reviewed within 24h |
-| Refactoring log | Technical debt addressed |
+- [ ] All tests pass (89+ tests)
+- [ ] No linting errors
+- [ ] Each layer independently testable
+- [ ] Agent responses include source citations
 
 ---
 
 ### 4. 📈 Research Analyst
 
-**Focus:** Domain expertise, visualization, insights, and documentation
+**Focus:** Domain expertise, knowledge base curation, visualization design
 
-**Responsibilities:**
-- Interpret model results in hydrogeological context
-- Design and maintain dashboard visualizations
-- Write research documentation and reports
-- Integrate domain knowledge (PDFs, literature)
-- Identify new research questions and data sources
+**Key Responsibilities:**
+- Curate knowledge base (PDFs, research documents, ground truth)
+- Design dashboard visualizations for each user type
+- Validate agent responses against hydrogeological knowledge
+- Maintain benchmark question sets for accuracy testing
+- Identify new research documents and data sources
 
-**Key Files Owned:**
-- `dashboard.py`
-- `plots/*.html`, `plots/*.png`
-- `README.md`, `PROJECT_STATUS.md`
-- `DEVELOPMENT_GUIDE.md` (research sections)
-- PDF reference documents
+**Key Files:** `resources/pdfs/`, `knowledge_base/`, `tests/knowledge/`, `docs/`
 
 **Quality Gates:**
-- [ ] Dashboard reflects current model predictions
-- [ ] Trend report updated with each data refresh
-- [ ] Visualizations follow accessibility standards
-- [ ] Research context documented
-
-**Deliverables per Sprint:**
-| Deliverable | Acceptance Criteria |
-|-------------|---------------------|
-| Updated dashboard | Reflects latest predictions |
-| Trend analysis report | Key findings summarized |
-| Research notes | New insights documented |
-| Literature review | Relevant papers identified |
+- [ ] KB covers all Florida aquifer topics
+- [ ] Ground truth tests pass (Florida accuracy)
+- [ ] Benchmark questions answered correctly
+- [ ] New research documents integrated within 1 sprint
 
 ---
 
-### Role Interaction Matrix
+## 📅 Modular Development Sessions
 
-| From → To | Data Engineer | ML Engineer | Software Engineer | Research Analyst |
-|-----------|---------------|-------------|-------------------|------------------|
-| **Data Engineer** | — | Provides features | Reports data issues | Explains data sources |
-| **ML Engineer** | Requests features | — | Reports model bugs | Explains predictions |
-| **Software Engineer** | Reviews pipeline code | Reviews model code | — | Reviews viz code |
-| **Research Analyst** | Requests new data | Validates predictions | Requests features | — |
+Development is organized into focused sessions, each delivering a working increment. Sessions are designed to be completable in 1–2 weeks and are ordered by dependency — earlier sessions provide the foundation for later ones.
 
----
+### Completed Sessions
 
-## 📅 Development Schedule
-
-### Sprint Structure
-
-**Sprint Duration:** 2 weeks
-**Sprint Cadence:**
-- Day 1: Sprint planning & goal setting
-- Days 2-12: Development work
-- Day 13: Testing & integration
-- Day 14: Sprint review & retrospective
+| Session | Focus | Status | Key Deliverables |
+|---------|-------|--------|------------------|
+| **S1** | Data Pipeline & Foundation | ✅ Done | USGS download, 36 sites, 106K records |
+| **S2** | ML Models & Prediction | ✅ Done | R²=0.93 (7-day), feature engineering |
+| **S3** | Quality Infrastructure | ✅ Done | CI/CD, 89 tests, pre-commit hooks |
+| **S4** | React Dashboard | ✅ Done | Map, time series, heatmap, sidebar |
+| **S5** | Knowledge Base & RAG | ✅ Done | ChromaDB, 1,901 chunks, PDF ingestion |
+| **S6** | Agent Architecture | ✅ Done | LLM factory, tools, research agent, chat |
 
 ---
 
-### Phase 2: Quality Infrastructure (Current)
-*January 13 - January 27, 2026*
+### Session 7: Agent ↔ API Integration
+*Role Lead: Software Engineer + Data Engineer*
 
-| Week | Focus | Role Lead | Deliverables |
-|------|-------|-----------|--------------|
-| **Week 1** | Testing & CI/CD | Software Engineer | ✅ Test suite (32 tests), CI pipeline |
-| **Week 2** | Documentation | Research Analyst | README update, API docs |
+**Goal:** Connect the research agent to the React frontend via FastAPI so users can chat and trigger deep research from the dashboard.
 
-**Sprint Goals:**
-- [x] Set up pytest framework
-- [x] Create CI/CD pipeline
-- [x] Add pre-commit hooks
-- [ ] Achieve 80% code coverage
-- [ ] Complete API documentation
+**Deliverables:**
+- [ ] `POST /api/chat` — Conversational agent endpoint (streaming)
+- [ ] `POST /api/research` — Deep research endpoint (returns structured report)
+- [ ] React `ChatView.jsx` connected to live agent backend
+- [ ] Mode toggle in UI: Quick Query vs Deep Research
+- [ ] Error handling and loading states in frontend
 
----
-
-### Phase 3: Agentic RAG System (Current)
-*January 15 - February 15, 2026*
-
-| Week | Focus | Role Lead | Deliverables |
-|------|-------|-----------|--------------|
-| **Week 1** | Agent Architecture | Software Engineer | LLM factory, tools, knowledge base |
-| **Week 2** | Tool Implementation | Data Engineer + ML Engineer | Data query tools, prediction tools |
-| **Week 3** | Deep Research Agent | Software Engineer | Iterative search, synthesis |
-| **Week 4** | Chat Interface | Research Analyst | Streamlit chat app, user testing |
-
-**Sprint Goals:**
-- [x] Create modular LLM factory (swappable providers)
-- [x] Implement groundwater data tools
-- [x] Connect ChromaDB knowledge base
-- [x] Build Deep Research Agent with iterative search
-- [x] Integrate DuckDuckGo web search
-- [x] Test with Ollama/Llama locally
-- [ ] Test with Gemini API (quota pending)
-- [ ] Launch chat interface
-- [ ] Document agent capabilities
+**Acceptance Criteria:**
+- [ ] User can ask "What are the water level trends for Lee County?" in the React chat and get a sourced response
+- [ ] Deep research mode runs iterative search and returns a multi-section report
+- [ ] All responses include source citations with trust scores
 
 **Key Files:**
-- `agent/llm_factory.py` - Swappable LLM providers (Ollama, OpenAI, Anthropic, Gemini)
-- `agent/tools.py` - 6 custom groundwater tools
-- `agent/knowledge.py` - ChromaDB RAG connector (1,884 chunks)
-- `agent/groundwater_agent.py` - Main agent logic with simple retrieval mode
-- `agent/research_agent.py` - Deep Research Agent with iterative search
-- `chat_app.py` - Streamlit chat interface
-
-**Deep Research Agent Features:**
-- Iterative research with configurable depth (default: 3 levels)
-- Query optimization using LLM
-- Multi-source search (knowledge base + web)
-- Insight extraction with confidence scoring
-- Follow-up query generation
-- Comprehensive report synthesis
+- `api/main.py` — New chat/research endpoints
+- `frontend/src/components/ChatView.jsx` — Wire to backend
+- `frontend/src/api/client.js` — Add chat API methods
 
 ---
 
-### Phase 4: Enhanced Predictions
-*February 15 - March 15, 2026*
+### Session 8: Data Visualization Layer
+*Role Lead: Software Engineer + Research Analyst*
 
-| Week | Focus | Role Lead | Deliverables |
-|------|-------|-----------|--------------|
-| **Week 1-2** | Multi-horizon forecasting | ML Engineer | 7/14/30/90 day predictions |
-| **Week 3-4** | Confidence intervals | ML Engineer + Data Engineer | Uncertainty quantification |
+**Goal:** Enable the agent to generate and return data visualizations (time series plots, seasonal charts) as part of its responses, and allow users to plot USGS data directly.
 
-**Sprint Goals:**
-- [ ] Implement multi-horizon prediction
-- [ ] Add prediction confidence intervals
-- [ ] Create forecast comparison dashboard
-- [ ] Backtest on 2023 data
+**Deliverables:**
+- [ ] Agent tool: `generate_time_series_plot()` — returns Plotly chart data as JSON
+- [ ] Agent tool: `generate_comparison_chart()` — multi-site overlay
+- [ ] React component to render agent-returned chart data
+- [ ] Direct USGS API time series plotting from the dashboard (no pre-downloaded CSV needed)
+- [ ] Heatmap and seasonal pattern visualization from live data
 
----
+**Acceptance Criteria:**
+- [ ] User asks "Show me water levels for site G-1251 over the last 2 years" → gets an interactive chart
+- [ ] Dashboard can plot time series from USGS API directly (real-time)
+- [ ] Charts are interactive (zoom, pan, tooltips)
 
-### Phase 4: Data Expansion
-*February 24 - March 24, 2026*
-
-| Week | Focus | Role Lead | Deliverables |
-|------|-------|-----------|--------------|
-| **Week 1-2** | Multi-site support | Data Engineer | 3-5 additional USGS sites |
-| **Week 3-4** | Regional analysis | Research Analyst | Cross-site comparison dashboard |
-
-**Sprint Goals:**
-- [ ] Add Southwest Florida regional sites
-- [ ] Create site comparison visualizations
-- [ ] Implement regional trend analysis
-- [ ] Document site selection criteria
+**Key Files:**
+- `src/agent/tools.py` — New visualization tools
+- `frontend/src/components/TimeSeriesChart.jsx` — Accept dynamic data
+- `api/main.py` — Serve chart data endpoints
 
 ---
 
-### Phase 5: Research Platform
-*March 24 - April 21, 2026*
+### Session 9: USGS Live Query Integration
+*Role Lead: Data Engineer*
 
-| Week | Focus | Role Lead | Deliverables |
-|------|-------|-----------|--------------|
-| **Week 1-2** | RAG integration | Software Engineer | Query interface for PDFs |
-| **Week 3-4** | Automated reports | Research Analyst | Monthly report generation |
+**Goal:** Agent can query the USGS NWIS API in real time to answer questions about current conditions, not just historical CSV data.
 
-**Sprint Goals:**
-- [ ] LLM integration for natural language queries
-- [ ] Automated monthly trend reports
-- [ ] Research paper integration
-- [ ] Knowledge base documentation
+**Deliverables:**
+- [ ] Agent tool: `query_usgs_live()` — Fetch current/recent data from USGS API
+- [ ] Caching layer to avoid redundant API calls (TTL-based)
+- [ ] Fallback to local CSV if USGS API is unreachable
+- [ ] Rate limiting per USGS guidelines (1 req/sec)
 
----
+**Acceptance Criteria:**
+- [ ] "What is the current water level at site L-2194?" returns today's data from USGS
+- [ ] Repeated queries within 15 minutes use cached results
+- [ ] API failures gracefully fall back to local data with a note
 
-### Phase 6: Production Deployment
-*April 21 - May 19, 2026*
-
-| Week | Focus | Role Lead | Deliverables |
-|------|-------|-----------|--------------|
-| **Week 1-2** | API development | Software Engineer | REST API for predictions |
-| **Week 3-4** | Web deployment | Software Engineer | Hosted dashboard |
-
-**Sprint Goals:**
-- [ ] Deploy API endpoint
-- [ ] Host interactive dashboard
-- [ ] Set up monitoring and alerts
-- [ ] Create user documentation
+**Key Files:**
+- `src/data/usgs_api.py` — New live query module
+- `src/agent/tools.py` — Register new tool
+- `config/config.py` — Cache TTL and rate limit settings
 
 ---
 
-### Milestone Summary
+### Session 10: Benchmarking & Accuracy Testing
+*Role Lead: Research Analyst + ML Engineer*
+
+**Goal:** Establish a benchmark suite that measures agent answer quality against ground-truth questions, and ML model performance against holdout data.
+
+**Deliverables:**
+- [ ] Benchmark question set: 30+ questions across all user types
+- [ ] Automated benchmark runner that scores agent responses
+- [ ] Ground-truth answers for Florida aquifer questions (expand `tests/knowledge/ground_truth_florida.json`)
+- [ ] ML benchmark: backtesting on 2023–2024 holdout data
+- [ ] Benchmark report output (JSON + summary)
+
+**Acceptance Criteria:**
+- [ ] Agent achieves ≥85% accuracy on benchmark questions
+- [ ] ML model R² ≥ 0.80 on holdout data
+- [ ] Hallucination rate < 5% (verified by source checking)
+- [ ] Response time < 5s for query mode, < 30s for deep research
+
+**Benchmark Question Categories:**
+| Category | Example Question | Expected Source |
+|----------|------------------|-----------------|
+| Factual (USGS) | "What is the average water level at G-1251?" | USGS data |
+| Trend Analysis | "Is the Biscayne Aquifer declining?" | USGS + KB |
+| Hydrogeology | "What is aquifer recharge?" | PDF knowledge base |
+| Agricultural | "What crop grows well in Lee County given water table?" | KB + web |
+| Comparison | "Compare water levels in Miami-Dade vs Collier" | USGS data |
+| Anomaly | "Were there any unusual readings last month?" | USGS + anomaly tool |
+
+**Key Files:**
+- `tests/knowledge/ground_truth_florida.json` — Expand ground truth
+- `tests/benchmark/` — New benchmark runner
+- `tests/model/test_performance.py` — Holdout backtesting
+
+---
+
+### Session 11: Multi-Horizon Forecasting
+*Role Lead: ML Engineer*
+
+**Goal:** Extend predictions from 7-day to 14/30/90-day horizons with confidence intervals.
+
+**Deliverables:**
+- [ ] Multi-horizon models: 7, 14, 30, 90 day
+- [ ] Confidence intervals (quantile regression or bootstrap)
+- [ ] Agent tool: `get_forecast()` with horizon parameter
+- [ ] Forecast comparison visualization in React dashboard
+
+**Acceptance Criteria:**
+- [ ] 7-day: R² ≥ 0.80 | 14-day: R² ≥ 0.70 | 30-day: R² ≥ 0.60
+- [ ] Confidence intervals displayed on time series charts
+- [ ] User asks "What will water levels be next month?" → gets forecast with uncertainty
+
+---
+
+### Session 12: Research Document Ingestion Pipeline
+*Role Lead: Research Analyst + Data Engineer*
+
+**Goal:** Streamlined pipeline for adding new research documents (PDFs, papers) to the knowledge base, with automatic chunking, embedding, and verification.
+
+**Deliverables:**
+- [ ] CLI command: `python main.py ingest --path <file_or_dir>`
+- [ ] Automatic PDF parsing, chunking (512 chars), embedding
+- [ ] Source verification before ingestion (trust score ≥ 0.7)
+- [ ] Metadata extraction (title, author, date, DOI if available)
+- [ ] KB statistics endpoint (`GET /api/knowledge/stats`)
+
+**Acceptance Criteria:**
+- [ ] Drop a PDF into `resources/pdfs/` → run ingest → KB updated
+- [ ] Agent can answer questions from newly ingested documents
+- [ ] Duplicate detection prevents re-ingesting the same document
+
+**Key Files:**
+- `src/agent/knowledge.py` — Ingest pipeline
+- `main.py` — CLI ingest command
+- `resources/pdfs/` — Document drop zone
+
+---
+
+### Session 13: Deep Research Agent v2
+*Role Lead: Software Engineer*
+
+**Goal:** Enhance the research agent with patterns from Awesome-Deep-Research: multi-step planning, self-reflection, and structured report output.
+
+**Deliverables:**
+- [ ] Research planner: Break complex questions into sub-queries
+- [ ] Self-reflection loop: Agent evaluates its own answer quality before responding
+- [ ] Structured report output (sections, citations, confidence per section)
+- [ ] Configurable search depth and timeout
+- [ ] Research session persistence (resume interrupted research)
+
+**Acceptance Criteria:**
+- [ ] Complex question "What are the long-term impacts of sea level rise on the Biscayne Aquifer?" produces a multi-section report with 5+ sources
+- [ ] Self-reflection catches low-confidence sections and triggers re-search
+- [ ] Research can be stopped and resumed
+
+**Reference Patterns (from Awesome-Deep-Research):**
+- Iterative query optimization (SmartSearch, ReSeek)
+- Self-reflection for quality control (WebSeer)
+- Multi-agent decomposition (O-Researcher)
+- Budget-aware tool use for efficiency
+
+---
+
+### Session 14: Production Deployment
+*Role Lead: Software Engineer*
+
+**Goal:** Deploy the full stack (React + FastAPI + Agent) for public access.
+
+**Deliverables:**
+- [ ] Docker Compose for full stack deployment
+- [ ] Environment configuration for production (API keys, CORS, etc.)
+- [ ] Health check endpoints
+- [ ] Monitoring and alerting (response times, error rates)
+- [ ] User documentation and onboarding guide
+
+---
+
+### Session Dependency Graph
 
 ```
-Jan 2026 ──────────────────────────────────────────────────────────► May 2026
-
-     Phase 2          Phase 3           Phase 4          Phase 5        Phase 6
-   ┌─────────┐     ┌───────────┐     ┌───────────┐    ┌──────────┐   ┌─────────┐
-   │ Quality │ ──► │ Enhanced  │ ──► │   Data    │ ──►│ Research │ ──►│  Prod   │
-   │  Infra  │     │Predictions│     │ Expansion │    │ Platform │   │ Deploy  │
-   └─────────┘     └───────────┘     └───────────┘    └──────────┘   └─────────┘
-      CI/CD          Multi-horizon     Multi-site        RAG           API
-      Tests          Uncertainty       Regional          Reports       Web Host
-
-   ✅ Current          📋 Next           📋 Q1             📋 Q1         📋 Q2
+S1─S2─S3─S4 ─────── S7 ──── S8
+         │           │        │
+         S5─S6 ──────┤   S9 ──┤
+                     │        │
+                     S10 ─────┤
+                              │
+                     S11 ─────┤
+                              │
+                     S12 ── S13 ── S14
 ```
 
----
-
-### Weekly Check-in Template
-
-```markdown
-## Weekly Check-in: [Date]
-
-### Progress
-- [ ] Data Engineer:
-- [ ] ML Engineer:
-- [ ] Software Engineer:
-- [ ] Research Analyst:
-
-### Blockers
--
-
-### Next Week
--
-
-### Metrics
-- Tests passing: __/32
-- Code coverage: __%
-- Model R²: ___
-- Data freshness: ___ days
-```
-
----
-
-### Definition of Done
-
-A feature/task is considered **DONE** when:
-
-- [ ] Code written and self-reviewed
-- [ ] Unit tests added (if applicable)
-- [ ] All tests pass locally
-- [ ] Documentation updated
-- [ ] PR created and reviewed
-- [ ] CI pipeline passes
-- [ ] Merged to main branch
-
----
-
-## 🎯 Project Vision & Roadmap
-
-### Mission Statement
-Build a reliable, extensible platform for groundwater analysis that can:
-- Model and predict groundwater levels with quantified uncertainty
-- Visualize trends for stakeholders and researchers
-- Serve as a foundation for academic research and addendums
-- Integrate new data sources and methodologies over time
-
-### Development Phases
-
-| Phase | Focus | Status |
-|-------|-------|--------|
-| **1. Foundation** | Data pipeline, basic ML, dashboard | ✅ Complete |
-| **2. Quality** | Testing, CI/CD, documentation | 🔄 Current |
-| **3. Enhancement** | Multi-site, confidence intervals, API | 📋 Planned |
-| **4. Research** | RAG integration, automated reports | 📋 Planned |
-| **5. Production** | Web hosting, alerts, integrations | 📋 Planned |
+| Session | Depends On | Can Parallel With |
+|---------|-----------|-------------------|
+| S7 (API Integration) | S4, S6 | S9, S10 |
+| S8 (Data Viz) | S7 | S9, S10, S11 |
+| S9 (USGS Live) | S6 | S7, S10 |
+| S10 (Benchmarking) | S6 | S7, S8, S9 |
+| S11 (Multi-Horizon) | S2, S7 | S10, S12 |
+| S12 (Doc Ingestion) | S5 | S10, S11 |
+| S13 (Agent v2) | S7, S12 | S11 |
+| S14 (Production) | S7, S8, S13 | — |
 
 ---
 
@@ -849,16 +936,17 @@ def validate_groundwater_data(df: pd.DataFrame) -> DataQualityReport:
 
 ---
 
-## 🧪 Testing Strategy
+## 🧪 Testing & Benchmarking Strategy
 
 ### Test Categories
 
 | Type | Purpose | Coverage Target |
 |------|---------|-----------------|
 | **Unit** | Individual functions | 90% |
-| **Integration** | Component interactions | 80% |
-| **Data** | Data quality & schema | 100% of pipelines |
-| **Model** | ML performance | Key metrics |
+| **Integration** | Component interactions (API ↔ Agent ↔ KB) | 80% |
+| **Data** | Data quality, schema, USGS integrity | 100% of pipelines |
+| **Model** | ML performance metrics | Key thresholds |
+| **Knowledge** | Agent accuracy vs ground truth | Benchmark suite |
 | **Regression** | Prevent regressions | Critical paths |
 
 ### Test Structure
@@ -1288,27 +1376,41 @@ Types:
 
 ---
 
-## 🔮 Future Addendums
+## 🔮 Future Research Directions
 
-This project is designed for extensibility. Planned research additions:
+This project is designed as an extensible foundation for agentic groundwater research. The following directions are informed by the [Awesome-Deep-Research](https://github.com/DavidZWZ/Awesome-Deep-Research) survey and the project's domain needs.
 
-### Data Sources
-- [ ] Additional USGS sites (regional analysis)
-- [ ] NOAA precipitation data
-- [ ] Sea level monitoring
-- [ ] Satellite imagery (NDVI, soil moisture)
+### Agentic Research Patterns (from literature)
 
-### Methodologies
+| Pattern | Description | Applicable To |
+|---------|-------------|---------------|
+| **Iterative Query Optimization** | LLM rewrites search queries based on initial results (SmartSearch, ReSeek) | Deep research mode |
+| **Self-Reflection** | Agent evaluates its own outputs and re-searches weak areas (WebSeer) | Answer quality control |
+| **Multi-Agent Decomposition** | Complex questions split across specialized sub-agents (O-Researcher) | Multi-source research |
+| **Budget-Aware Tool Use** | Minimize LLM/API calls while maintaining quality | Cost efficiency |
+| **Reinforcement Learning for Search** | Train search policy from feedback (GRPO, M-GRPO) | Long-term improvement |
+| **Context Summarization** | Compress long search histories for LLM context windows (ReSum) | Long research sessions |
+
+### Data Sources (planned)
+- [ ] NOAA precipitation data (correlate rainfall with water levels)
+- [ ] Sea level monitoring (NOAA tide gauges)
+- [ ] Satellite imagery (NDVI, soil moisture via NASA EarthData)
+- [ ] Additional USGS sites beyond Florida
+
+### ML & Modeling (planned)
 - [ ] LSTM/Transformer models for sequence prediction
 - [ ] Bayesian uncertainty quantification
-- [ ] Causal inference for climate impacts
-- [ ] Ensemble methods
+- [ ] Causal inference for climate impact analysis
+- [ ] Ensemble methods combining multiple model architectures
 
-### Research Outputs
-- [ ] Automated trend reports
-- [ ] Seasonal forecasts
+### Research Outputs (planned)
+- [ ] Automated monthly trend reports
+- [ ] Seasonal forecasts with confidence intervals
 - [ ] Drought/flood risk assessment
-- [ ] Publication-ready figures
+- [ ] Publication-ready figures and data exports
+
+### Document Integration (planned)
+New research documents will be added to `resources/pdfs/` and ingested via the document pipeline (Session 12). The knowledge base is designed to grow over time while maintaining source verification standards.
 
 ---
 
