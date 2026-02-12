@@ -10,7 +10,7 @@ from pathlib import Path
 import streamlit as st
 
 # Add project root and src to path for imports
-ROOT_DIR = Path(__file__).parent.parent.parent
+ROOT_DIR = Path(__file__).parent.parent.parent  # src/ui -> src -> root
 sys.path.insert(0, str(ROOT_DIR))
 sys.path.insert(0, str(ROOT_DIR / "src"))
 
