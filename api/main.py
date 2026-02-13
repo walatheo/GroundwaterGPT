@@ -3,6 +3,9 @@
 Serves real USGS groundwater data to the React frontend.
 """
 
+import logging
+import sys
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -482,12 +485,23 @@ def compare_sites(site_ids: str):
 
     return {"comparison": comparison}
 
+    # ============================================================================
+    # AI Chat Endpoint (Under Construction)
+    # ============================================================================
+
+    return {"comparison": comparison}
+
 
 # ============================================================================
-# AI Chat Endpoint (Under Construction)
+# Agent Layer — LLM-backed chat and deep research
 # ============================================================================
 
-# Knowledge base for common groundwater/agriculture queries
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Rule-based fallback KB (used when LLM agent cannot be initialised)
+# ---------------------------------------------------------------------------
+
 GROUNDWATER_KB = {
     "irrigation": {
         "keywords": ["irrigat", "water", "crop", "plant", "farm"],
@@ -509,10 +523,8 @@ GROUNDWATER_KB = {
         "keywords": ["crop", "plant", "grow", "vegetable", "citrus", "tomato"],
         "info": (
             "Different crops have varying water table tolerances: "
-            "Citrus: 3-6ft optimal depth. "
-            "Tomatoes: 2-4ft optimal. "
-            "Sugarcane: tolerates 1-3ft. "
-            "Most vegetables prefer 2-5ft water table depth."
+            "Citrus: 3-6ft optimal depth. Tomatoes: 2-4ft optimal. "
+            "Sugarcane: tolerates 1-3ft. Most vegetables prefer 2-5ft."
         ),
     },
     "saltwater": {
@@ -537,8 +549,7 @@ GROUNDWATER_KB = {
             "Florida has three main aquifer systems: "
             "1) Surficial (unconfined, shallow) "
             "2) Biscayne (SE Florida, highly productive) "
-            "3) Floridan (deep, artesian in some areas). "
-            "Each has different characteristics for well placement."
+            "3) Floridan (deep, artesian in some areas)."
         ),
     },
     "well": {
@@ -546,111 +557,225 @@ GROUNDWATER_KB = {
         "info": (
             "Well permits required from local Water Management District. "
             "Residential wells typically 20-100ft deep. "
-            "Agricultural wells may be 100-500ft for Floridan Aquifer access. "
-            "Pumping rates affect neighboring wells - check sustainable yield."
+            "Agricultural wells may be 100-500ft for Floridan Aquifer access."
         ),
     },
 }
 
 
-def get_site_context(county: str = None) -> str:
-    """Get context about available sites for AI response."""
-    sites_by_county = {}
+def _get_site_context(county: Optional[str] = None) -> str:
+    """Get context string about available monitoring sites."""
+    sites_by_county: dict[str, list[str]] = {}
     for site_id, meta in SITE_METADATA.items():
         c = meta.get("county", "Unknown")
-        if c not in sites_by_county:
-            sites_by_county[c] = []
-        sites_by_county[c].append(meta.get("name", site_id))
+        sites_by_county.setdefault(c, []).append(meta.get("name", site_id))
 
     if county and county in sites_by_county:
         sites_list = ", ".join(sites_by_county[county][:5])
         return f"Available monitoring sites in {county}: {sites_list}"
 
-    site_count = len(SITE_METADATA)
-    county_count = len(sites_by_county)
-    return f"Monitoring {site_count} USGS sites across {county_count} Florida counties."
+    n_sites = len(SITE_METADATA)
+    n_counties = len(sites_by_county)
+    return f"Monitoring {n_sites} USGS sites across {n_counties} Florida counties."
 
 
-def simple_ai_response(query: str) -> dict:
-    """Generate a simple rule-based AI response.
-
-    This is a placeholder until full LLM integration.
-    Uses keyword matching and knowledge base lookup.
-    """
+def _fallback_response(query: str) -> dict:
+    """Rule-based fallback when LLM agent is unavailable."""
     query_lower = query.lower()
-
-    # Find matching knowledge entries
     matches = []
     for topic, data in GROUNDWATER_KB.items():
-        for keyword in data["keywords"]:
-            if keyword in query_lower:
+        for kw in data["keywords"]:
+            if kw in query_lower:
                 matches.append((topic, data["info"]))
                 break
 
-    # Extract county mention
     county_mentioned = None
     for county in ["Miami-Dade", "Lee", "Collier", "Sarasota", "Hendry"]:
         if county.lower() in query_lower:
             county_mentioned = county
             break
 
-    # Build response
     if matches:
-        response = " ".join([m[1] for m in matches[:2]])  # Max 2 topics
-        context = get_site_context(county_mentioned)
+        response_text = " ".join(m[1] for m in matches[:2])
         sources = [f"GroundwaterGPT KB: {m[0]}" for m in matches]
     else:
-        response = (
+        response_text = (
             "I can help with groundwater questions about irrigation, crops, "
             "soil moisture, aquifers, wells, saltwater intrusion, and seasonal patterns. "
             "Try asking about water levels for farming or which crops suit your area."
         )
-        context = get_site_context()
         sources = ["GroundwaterGPT Knowledge Base"]
 
     return {
-        "response": response,
-        "context": context,
+        "response": response_text,
+        "context": _get_site_context(county_mentioned),
         "sources": sources,
-        "status": "beta",
-        "note": "AI chat is under construction. Full LLM integration coming soon.",
+        "mode": "fallback",
+        "status": "ok",
     }
+
+
+# ---------------------------------------------------------------------------
+# Try to initialise real agents (graceful fallback on import/init failure)
+# ---------------------------------------------------------------------------
+
+_chat_agent = None
+_research_agent = None
+
+try:
+    # Ensure src/ is on the path so relative imports inside the agent package work
+    _src_dir = str(Path(__file__).parent.parent / "src")
+    if _src_dir not in sys.path:
+        sys.path.insert(0, _src_dir)
+
+    from src.agent.groundwater_agent import create_agent as _create_chat_agent
+    from src.agent.research_agent import DeepResearchAgent
+
+    _chat_agent = _create_chat_agent(verbose=False)
+    _research_agent = DeepResearchAgent(
+        max_depth=3,
+        timeout_seconds=120,
+    )
+    logger.info("✅ LLM-backed agents initialised successfully")
+except Exception as exc:
+    logger.warning(
+        f"⚠️  Could not initialise LLM agents — " f"falling back to rule-based chat. Reason: {exc}"
+    )
+    _chat_agent = None
+    _research_agent = None
+
+
+# ---------------------------------------------------------------------------
+# POST /api/chat — conversational agent endpoint
+# ---------------------------------------------------------------------------
 
 
 @app.post("/api/chat")
 def chat_endpoint(query: dict):
     """AI chat endpoint for groundwater questions.
 
-    Currently uses rule-based responses.
-    Full LLM integration planned for Phase 5.
+    Uses the GroundwaterAgent when available; falls back to rule-based KB
+    when the LLM provider is not configured or unreachable.
+
+    Request body: { "message": "..." }
     """
     user_query = query.get("message", "")
     if not user_query:
         raise HTTPException(status_code=400, detail="Message is required")
 
-    response = simple_ai_response(user_query)
-    return response
+    # --- Try real agent first ---
+    if _chat_agent is not None:
+        try:
+            response_text = _chat_agent.chat(user_query)
+            return {
+                "response": response_text,
+                "context": _get_site_context(),
+                "sources": ["GroundwaterGPT Agent (LLM-backed)"],
+                "mode": "agent",
+                "status": "ok",
+            }
+        except Exception as exc:
+            logger.error(f"Agent chat error: {exc}")
+            # Fall through to rule-based fallback
+
+    # --- Fallback ---
+    return _fallback_response(user_query)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/research — deep research endpoint
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/research")
+def research_endpoint(query: dict):
+    """Deep research endpoint — runs the iterative research agent.
+
+    Request body:
+        {
+            "question": "...",
+            "max_depth": 3,       # optional (default 3)
+            "timeout": 120        # optional seconds (default 120)
+        }
+
+    Returns a structured research report with sourced insights.
+    Falls back to a simple KB lookup when the research agent is unavailable.
+    """
+    question = query.get("question", "")
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required")
+
+    max_depth = int(query.get("max_depth", 3))
+    timeout = float(query.get("timeout", 120))
+
+    if _research_agent is not None:
+        try:
+            result = _research_agent.research(
+                query=question,
+                max_depth=max_depth,
+                timeout=timeout,
+            )
+            return {
+                "status": "ok",
+                "mode": "deep_research",
+                "report": result.get("report", ""),
+                "insights": result.get("insights", []),
+                "sources": result.get("sources", []),
+                "search_history": result.get("search_history", []),
+                "depth_reached": result.get("depth_reached", 0),
+                "elapsed_seconds": result.get("elapsed_seconds", 0),
+            }
+        except Exception as exc:
+            logger.error(f"Research agent error: {exc}\n{traceback.format_exc()}")
+            # Fall through to fallback
+
+    # --- Fallback: return whatever the rule-based KB can provide ---
+    fb = _fallback_response(question)
+    return {
+        "status": "ok",
+        "mode": "fallback",
+        "report": fb["response"],
+        "insights": [],
+        "sources": fb["sources"],
+        "search_history": [],
+        "depth_reached": 0,
+        "elapsed_seconds": 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /api/chat/status — system health for chat subsystem
+# ---------------------------------------------------------------------------
 
 
 @app.get("/api/chat/status")
 def chat_status():
-    """Get AI chat system status."""
+    """Get AI chat and research system status."""
+    agent_available = _chat_agent is not None
+    research_available = _research_agent is not None
     return {
-        "status": "beta",
-        "version": "0.1.0",
-        "features": [
-            "Irrigation planning advice",
-            "Crop water requirements",
-            "Seasonal patterns",
-            "Aquifer information",
-            "Well guidance",
-        ],
-        "coming_soon": [
-            "Full LLM integration",
-            "RAG with hydrogeology documents",
-            "Site-specific recommendations",
-            "Predictive insights",
-        ],
+        "status": "ok" if agent_available else "fallback",
+        "version": "1.0.0",
+        "agent_available": agent_available,
+        "research_available": research_available,
+        "features": (
+            [
+                "Conversational groundwater Q&A",
+                "RAG with hydrogeology documents",
+                "Seasonal pattern analysis",
+                "Anomaly detection",
+                "Data quality reports",
+                "Deep research with iterative search",
+            ]
+            if agent_available
+            else [
+                "Rule-based groundwater Q&A (fallback mode)",
+                "Irrigation planning advice",
+                "Crop water requirements",
+                "Seasonal patterns",
+                "Aquifer information",
+            ]
+        ),
     }
 
 
