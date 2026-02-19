@@ -19,9 +19,9 @@ import pandas as pd
 import requests
 
 # Add parent to path for config
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from config import ACTIVE_REGION, CDS_API_KEY, CDS_URL, DATA_DIR, REGIONS, TIME_CONFIG  # noqa: E402
+from config.config import ACTIVE_REGION, CDS_API_KEY, CDS_URL, DATA_DIR, REGIONS, TIME_CONFIG  # noqa: E402
 
 # =============================================================================
 # USGS CONFIGURATION
