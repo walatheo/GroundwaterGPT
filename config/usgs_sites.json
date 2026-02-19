@@ -1,0 +1,73 @@
+{
+  "description": "USGS Groundwater Monitoring Sites - Florida (36 total)",
+  "source": "U.S. Geological Survey National Water Information System (NWIS)",
+  "last_verified": "2026-02-18",
+  "total_sites": 36,
+  "aquifers": {
+    "biscayne": {
+      "name": "Biscayne Aquifer",
+      "description": "Supplies water to Miami-Dade and Broward counties",
+      "counties": ["Miami-Dade", "Broward"],
+      "sites": [
+        {"site_id": "251241080385301", "name": "Miami-Dade G-3764", "county": "Miami-Dade", "lat": 25.2114, "lng": -80.6481},
+        {"site_id": "251457080395802", "name": "Miami-Dade G-3777", "county": "Miami-Dade", "lat": 25.2492, "lng": -80.6661},
+        {"site_id": "251922080340701", "name": "Miami-Dade G-1251", "county": "Miami-Dade", "lat": 25.3228, "lng": -80.5686},
+        {"site_id": "252007080335701", "name": "Miami-Dade G-3336", "county": "Miami-Dade", "lat": 25.3353, "lng": -80.5658},
+        {"site_id": "252036080293501", "name": "Miami-Dade G-5004", "county": "Miami-Dade", "lat": 25.3433, "lng": -80.4931},
+        {"site_id": "252332080300501", "name": "Miami-Dade G-3355", "county": "Miami-Dade", "lat": 25.3922, "lng": -80.5014},
+        {"site_id": "252502080253901", "name": "Miami-Dade G-3356", "county": "Miami-Dade", "lat": 25.4172, "lng": -80.4275},
+        {"site_id": "252612080300701", "name": "Miami-Dade G-864", "county": "Miami-Dade", "lat": 25.4367, "lng": -80.5019},
+        {"site_id": "252918080234201", "name": "Miami-Dade G-1183", "county": "Miami-Dade", "lat": 25.4883, "lng": -80.3950},
+        {"site_id": "253029080295601", "name": "Miami-Dade S-196A", "county": "Miami-Dade", "lat": 25.5081, "lng": -80.4989},
+        {"site_id": "253215080282101", "name": "Miami-Dade G-2051", "county": "Miami-Dade", "lat": 25.5375, "lng": -80.4725},
+        {"site_id": "253445080310401", "name": "Miami-Dade G-3353", "county": "Miami-Dade", "lat": 25.5792, "lng": -80.5178},
+        {"site_id": "253516080265301", "name": "Miami-Dade G-3362", "county": "Miami-Dade", "lat": 25.5878, "lng": -80.4481},
+        {"site_id": "253618080333301", "name": "Miami-Dade G-3454", "county": "Miami-Dade", "lat": 25.6050, "lng": -80.5592},
+        {"site_id": "253643080301701", "name": "Miami-Dade G-3365", "county": "Miami-Dade", "lat": 25.6119, "lng": -80.5047},
+        {"site_id": "253714080304501", "name": "Miami-Dade G-3366", "county": "Miami-Dade", "lat": 25.6206, "lng": -80.5125}
+      ]
+    },
+    "floridan": {
+      "name": "Floridan Aquifer System",
+      "description": "Largest aquifer in Florida, primary drinking water source",
+      "counties": ["Lee", "Collier", "Sarasota", "Hendry"],
+      "sites": [
+        {"site_id": "262724081260701", "name": "Lee County L-2194", "county": "Lee", "lat": 26.4567, "lng": -81.4356},
+        {"site_id": "263525081193601", "name": "Lee County L-581", "county": "Lee", "lat": 26.5903, "lng": -81.3267},
+        {"site_id": "264211080555901", "name": "Lee County L-1999", "county": "Lee", "lat": 26.7031, "lng": -80.9331},
+        {"site_id": "265532081213801", "name": "Lee County L-3112", "county": "Lee", "lat": 26.9256, "lng": -81.3606},
+        {"site_id": "263156082022801", "name": "Charlotte County C-1", "county": "Charlotte", "lat": 26.5267, "lng": -82.0411},
+        {"site_id": "271453082165901", "name": "Sarasota County S-1", "county": "Sarasota", "lat": 27.2425, "lng": -82.2831},
+        {"site_id": "271845082015201", "name": "Sarasota County S-2", "county": "Sarasota", "lat": 27.3125, "lng": -82.0256},
+        {"site_id": "273612082240601", "name": "Sarasota County S-3", "county": "Sarasota", "lat": 27.6033, "lng": -82.4017},
+        {"site_id": "265203081422101", "name": "Collier County C-951R", "county": "Collier", "lat": 26.8672, "lng": -81.7058},
+        {"site_id": "265447081410801", "name": "Collier County C-953R", "county": "Collier", "lat": 26.9131, "lng": -81.6856},
+        {"site_id": "270419081483101", "name": "Collier County C-1004", "county": "Collier", "lat": 27.0719, "lng": -81.8086},
+        {"site_id": "271238081532301", "name": "Collier County C-1059", "county": "Collier", "lat": 27.2106, "lng": -81.8897},
+        {"site_id": "271949081444401", "name": "Collier County C-1089", "county": "Collier", "lat": 27.3303, "lng": -81.7456},
+        {"site_id": "264812081392701", "name": "Hendry County HE-1042", "county": "Hendry", "lat": 26.8033, "lng": -81.6575},
+        {"site_id": "265236081385301", "name": "Hendry County HE-859", "county": "Hendry", "lat": 26.8767, "lng": -81.6481},
+        {"site_id": "265642081475001", "name": "Hendry County HE-1076", "county": "Hendry", "lat": 26.9450, "lng": -81.7917},
+        {"site_id": "270142081492101", "name": "Hendry County HE-1136", "county": "Hendry", "lat": 27.0283, "lng": -81.8225}
+      ]
+    },
+    "surficial": {
+      "name": "Surficial Aquifer",
+      "description": "Shallow aquifer across Florida",
+      "counties": ["Martin", "Palm Beach", "St. Lucie"],
+      "sites": [
+        {"site_id": "270915080161501", "name": "Martin County M-1", "county": "Martin", "lat": 27.1542, "lng": -80.2708},
+        {"site_id": "265532080091401", "name": "Palm Beach County P-1", "county": "Palm Beach", "lat": 26.9256, "lng": -80.1517},
+        {"site_id": "272038080334501", "name": "St. Lucie County SL-1", "county": "St. Lucie", "lat": 27.3439, "lng": -80.5575}
+      ]
+    }
+  },
+  "data_source": "U.S. Geological Survey, 2026. National Water Information System data available on the World Wide Web (USGS Water Data for the Nation), at https://waterdata.usgs.gov/nwis/",
+  "usgs_nwis_api": "https://waterservices.usgs.gov/nwis/",
+  "parameter_codes": {
+    "72019": "Depth to water level, ft below land surface",
+    "72020": "Water level altitude, ft above datum",
+    "62610": "Groundwater level relative to datum, ft",
+    "62611": "Water level altitude, ft above NAVD 88"
+  }
+}
