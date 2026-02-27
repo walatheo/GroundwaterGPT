@@ -80,13 +80,12 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Validate config
-        run: python -c "import config; print('Config OK')"
+        run: python -c "from config.config import *; print('Config OK')"
 
       - name: Check module imports
         run: |
-          python -c "import train_groundwater; print('train_groundwater OK')"
-          python -c "import dashboard; print('dashboard OK')"
-          python -c "import download_data; print('download_data OK')"
+          python -c "from api.main import app; print('API app OK')"
+          python -c "from api.site_metadata import SITE_METADATA; print(f'Site metadata OK: {len(SITE_METADATA)} sites')"
 
   model-quality:
     name: Model Quality Gate
@@ -106,12 +105,12 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Download test data
-        run: python download_data.py
+        run: python -c "from src.data.continuous_learning import ContinuousLearner; print('Data module OK')"
         continue-on-error: true
 
       - name: Train and validate model
         run: |
-          python train_groundwater.py
+          python -m src.ml.train_groundwater
           # Check R² meets threshold
           python -c "
           import pandas as pd

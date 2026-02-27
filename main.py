@@ -5,14 +5,16 @@ Run the application with:
     python main.py [command]
 
 Commands:
+    server      - Start FastAPI backend + Vite frontend dev servers
     app         - Start the main Streamlit research interface
-    viz         - Start the integrated visualization app (NEW!)
+    viz         - Start the integrated visualization app
     dashboard   - Open the dashboard visualization (HTML)
     learn       - Run continuous learning to fetch USGS data
     train       - Train ML models
     test        - Run test suite
 
 Examples:
+    python main.py server       # Start API + React dashboard
     python main.py app          # Start research chat
     python main.py viz          # Start visualization app
     python main.py learn        # Fetch new USGS data
@@ -29,11 +31,61 @@ SRC_DIR = ROOT_DIR / "src"
 sys.path.insert(0, str(SRC_DIR))
 
 
+def run_server():
+    """Start FastAPI backend (port 8000) and Vite frontend (port 3000)."""
+    import signal
+
+    print("🌊 Starting GroundwaterGPT Dashboard...")
+    print("   API:      http://127.0.0.1:8000/docs")
+    print("   Frontend: http://localhost:3000")
+    print("   Press Ctrl+C to stop both servers.\n")
+
+    api_proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "api.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8000",
+            "--reload",
+        ],
+        cwd=str(ROOT_DIR),
+    )
+
+    frontend_dir = ROOT_DIR / "frontend"
+    vite_proc = subprocess.Popen(
+        ["npx", "vite", "--port", "3000"],
+        cwd=str(frontend_dir),
+    )
+
+    def _shutdown(sig, frame):
+        api_proc.terminate()
+        vite_proc.terminate()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
+    try:
+        api_proc.wait()
+    except KeyboardInterrupt:
+        _shutdown(None, None)
+
+
 def run_app():
     """Start the Streamlit research chat interface."""
     print("🌊 Starting GroundwaterGPT Research Interface...")
     subprocess.run(
-        ["streamlit", "run", str(SRC_DIR / "ui" / "research_chat.py"), "--server.port", "8502"]
+        [
+            "streamlit",
+            "run",
+            str(SRC_DIR / "ui" / "research_chat.py"),
+            "--server.port",
+            "8502",
+        ]
     )
 
 
@@ -83,10 +135,12 @@ def show_help():
     """Show help message."""
     print(__doc__)
     print("\n📁 Project Structure:")
+    print("  api/           - FastAPI backend (routes, helpers)")
+    print("  frontend/      - React + Vite dashboard")
     print("  src/agent/     - AI research agent")
     print("  src/data/      - Data collection")
     print("  src/ml/        - Machine learning")
-    print("  src/ui/        - User interfaces")
+    print("  src/ui/        - Streamlit interfaces")
     print("  docs/          - Documentation")
     print("  resources/     - PDFs & references")
     print("  knowledge_base/ - ChromaDB vector store")
@@ -95,6 +149,7 @@ def show_help():
 
 if __name__ == "__main__":
     commands = {
+        "server": run_server,
         "app": run_app,
         "viz": run_viz,
         "visualization": run_viz,

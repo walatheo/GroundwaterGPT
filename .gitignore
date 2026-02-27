@@ -56,4 +56,6 @@ outputs/
 # - *.py (source code)
 # - *.md (documentation)
 # - *.txt (requirements, reports)
-# - *.pdf (reference documents in resources/)
+
+# Large reference PDFs (too big for git; keep small docs in resources/pdfs/)
+resources/pdfs/references/

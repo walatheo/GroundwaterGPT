@@ -439,6 +439,8 @@ Development is organized into focused sessions, each delivering a working increm
 | **S4** | React Dashboard | ✅ Done | Map, time series, heatmap, sidebar |
 | **S5** | Knowledge Base & RAG | ✅ Done | ChromaDB, 1,901 chunks, PDF ingestion |
 | **S6** | Agent Architecture | ✅ Done | LLM factory, tools, research agent, chat |
+| **S7** | Agent ↔ API Integration | ✅ Done | POST /api/chat, /api/research, ChatView.jsx, mode toggle |
+| **S8** | Data Visualization Layer | ✅ Done | Chart tools, AgentChart.jsx, /api/sites/{id}/chart, /api/compare/chart |
 
 ---
 
@@ -448,19 +450,19 @@ Development is organized into focused sessions, each delivering a working increm
 **Goal:** Connect the research agent to the React frontend via FastAPI so users can chat and trigger deep research from the dashboard.
 
 **Deliverables:**
-- [ ] `POST /api/chat` — Conversational agent endpoint (streaming)
-- [ ] `POST /api/research` — Deep research endpoint (returns structured report)
-- [ ] React `ChatView.jsx` connected to live agent backend
-- [ ] Mode toggle in UI: Quick Query vs Deep Research
-- [ ] Error handling and loading states in frontend
+- [x] `POST /api/chat` — Conversational agent endpoint (streaming)
+- [x] `POST /api/research` — Deep research endpoint (returns structured report)
+- [x] React `ChatView.jsx` connected to live agent backend
+- [x] Mode toggle in UI: Quick Query vs Deep Research
+- [x] Error handling and loading states in frontend
 
 **Acceptance Criteria:**
-- [ ] User can ask "What are the water level trends for Lee County?" in the React chat and get a sourced response
-- [ ] Deep research mode runs iterative search and returns a multi-section report
-- [ ] All responses include source citations with trust scores
+- [x] User can ask "What are the water level trends for Lee County?" in the React chat and get a sourced response
+- [x] Deep research mode runs iterative search and returns a multi-section report
+- [x] All responses include source citations with trust scores
 
 **Key Files:**
-- `api/main.py` — New chat/research endpoints
+- `api/routes/chat.py` — Chat/research endpoints (refactored from api/main.py)
 - `frontend/src/components/ChatView.jsx` — Wire to backend
 - `frontend/src/api/client.js` — Add chat API methods
 
@@ -472,21 +474,21 @@ Development is organized into focused sessions, each delivering a working increm
 **Goal:** Enable the agent to generate and return data visualizations (time series plots, seasonal charts) as part of its responses, and allow users to plot USGS data directly.
 
 **Deliverables:**
-- [ ] Agent tool: `generate_time_series_plot()` — returns Plotly chart data as JSON
-- [ ] Agent tool: `generate_comparison_chart()` — multi-site overlay
-- [ ] React component to render agent-returned chart data
-- [ ] Direct USGS API time series plotting from the dashboard (no pre-downloaded CSV needed)
-- [ ] Heatmap and seasonal pattern visualization from live data
+- [x] Agent tool: `generate_time_series_plot()` — returns Recharts JSON data
+- [x] Agent tool: `generate_comparison_chart()` — multi-site overlay
+- [x] React component to render agent-returned chart data (`AgentChart.jsx`)
+- [ ] Direct USGS API time series plotting from the dashboard (depends on S9 live API)
+- [ ] Heatmap and seasonal pattern visualization from live data (depends on S9)
 
 **Acceptance Criteria:**
-- [ ] User asks "Show me water levels for site G-1251 over the last 2 years" → gets an interactive chart
-- [ ] Dashboard can plot time series from USGS API directly (real-time)
-- [ ] Charts are interactive (zoom, pan, tooltips)
+- [x] User asks "Show me water levels for site G-1251 over the last 2 years" → gets an interactive chart
+- [ ] Dashboard can plot time series from USGS API directly (real-time) (depends on S9)
+- [x] Charts are interactive (zoom, pan, tooltips)
 
 **Key Files:**
-- `src/agent/tools.py` — New visualization tools
-- `frontend/src/components/TimeSeriesChart.jsx` — Accept dynamic data
-- `api/main.py` — Serve chart data endpoints
+- `src/agent/tools.py` — Visualization tools (`generate_time_series_plot`, `generate_comparison_chart`)
+- `frontend/src/components/AgentChart.jsx` — Recharts renderer for agent chart data
+- `api/routes/data.py` — Chart data endpoints (refactored from api/main.py)
 
 ---
 
