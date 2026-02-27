@@ -1,8 +1,8 @@
 # GroundwaterGPT - Active Checklist & Goals
 
-**Last Updated:** February 4, 2026
+**Last Updated:** February 27, 2026
 **Current Phase:** Phase 5 - AI Research Integration
-**Sprint:** Feb 4-10, 2026
+**Sprint:** Feb 27 - Mar 6, 2026
 
 ---
 
@@ -17,7 +17,7 @@
 | **AI Chat (Beta)** | ✅ Complete | 17/17 | Rule-based responses |
 | **ML Models** | ✅ Complete | - | R² = 0.93 (7-day) |
 
-**Total Tests:** 89 passing, 4 skipped
+**Total Tests:** 170 passing, 7 skipped
 
 ---
 
@@ -47,24 +47,24 @@
 
 ---
 
-## 📅 Current Sprint (Feb 4-10)
+## 📅 Current Sprint (Feb 27 - Mar 6)
 
-### Priority 1: Research Integrity ✅
-- [x] Create ENGINEERING_STANDARDS.md
-- [x] Create USGS data integrity tests (13 tests)
-- [x] Consolidate documentation (7 → 4 files)
-- [x] Clean unused files from repo
+### Priority 1: Operational Hardening (In Progress)
+- [x] Stabilize tests for local CSV snapshot artifacts
+- [x] Make KB accuracy tests robust when embedding dependency is unavailable
+- [x] Restore pre-commit compliance without bypass
+- [ ] Add KB runtime health endpoint (`/api/knowledge/status`)
+- [ ] Add graceful 503 responses for ingestion/search runtime dependency failures
 
-### Priority 2: AI Assistant Upgrade
-- [ ] Integrate LLM for natural language queries
-- [ ] Connect RAG to chat endpoint
-- [ ] Add source citations to responses
-- [ ] Expand farmer knowledge base
+### Priority 2: Research Workflow Productization
+- [ ] Expose experiment-plan/run/paper-draft flow as first-class API contract
+- [ ] Add frontend workflow surface for researchers (plan → run logs → manuscript draft)
+- [ ] Enforce reproducibility metadata for runs/artifacts
 
-### Priority 3: Testing
-- [ ] Write RAG accuracy tests BEFORE implementation
-- [ ] Add hallucination detection tests
-- [ ] Ensure all existing tests pass
+### Priority 3: Evaluation & Citation Integrity
+- [ ] Add automated retrieval/report benchmark harness in CI
+- [ ] Add claim-level citation schema for deep research reports
+- [ ] Define quality thresholds for factual accuracy and citation completeness
 
 ---
 

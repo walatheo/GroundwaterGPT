@@ -1,6 +1,6 @@
 # GroundwaterGPT - Project Status & Roadmap
 
-**Last Updated:** February 3, 2026
+**Last Updated:** February 27, 2026
 **Location:** Florida (Miami-Dade, Lee, Collier, Sarasota, Hendry Counties)
 **Data Source:** USGS National Water Information System (NWIS) - Verified Authentic
 
@@ -179,21 +179,34 @@
 
 ---
 
-## 🚀 Next Phase: Research Platform
+## 🚀 Active Development Plan
 
-### Phase 5: AI Research Integration (Planned)
-- [ ] Natural language query interface
-- [ ] RAG with hydrogeology documents
-- [ ] Automated trend reports
-- [ ] Predictive forecasting display
-- [ ] Multi-horizon predictions (7, 14, 30 days)
+### Sprint 1 (Current): Operational Hardening
+- [x] Knowledge ingestion pipeline + API endpoints added
+- [x] Research workflow tools added (plan, run logging, paper draft)
+- [x] Full test suite stabilized for local data artifacts
+- [ ] Runtime readiness endpoint for KB dependency/storage health
+- [ ] Graceful 503 handling for missing embedding runtime dependencies
 
-### Phase 6: Production Deployment (Planned)
-- [ ] Cloud hosting (AWS/GCP)
-- [ ] Real-time data refresh automation
-- [ ] Email/SMS alerts for anomalies
-- [ ] Public API access
-- [ ] Mobile-responsive design
+### Sprint 2: Research Workflow Productization
+- [ ] Expose experiment workflows to frontend/API users end-to-end
+- [ ] Add reproducibility schema checks for run configs and metrics
+- [ ] Persist manuscript provenance and citations in generated drafts
+
+### Sprint 3: Quality & Citation Integrity
+- [ ] Add evaluation harness for retrieval/report quality in CI
+- [ ] Add structured claim-to-source citation output
+- [ ] Set minimum quality thresholds before production rollout
+
+### Sprint 4: Multi-Agent Research Architecture
+- [ ] Implement orchestrator-worker model (`LeadResearcher` + `SubAgent`s)
+- [ ] Add planner/reflection/checkpoint loop for long-running research
+- [ ] Add budget-aware controls for complex multi-hop queries
+
+### Sprint 5: Production Deployment
+- [ ] Cloud deployment + observability + alerts
+- [ ] Health probes for API, KB, and model runtime
+- [ ] Public-facing reliability and onboarding polish
 
 ---
 

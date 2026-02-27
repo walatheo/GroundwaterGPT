@@ -26,6 +26,7 @@ Example:
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import re
 from pathlib import Path
 from typing import Any, List, Optional
@@ -44,6 +45,7 @@ BASE_DIR = Path(__file__).parent.parent.parent  # src/agent -> src -> root
 CHROMA_DIR = BASE_DIR / "knowledge_base"
 PDF_DIR = BASE_DIR / "resources" / "pdfs"
 REFERENCE_DIR = PDF_DIR / "references"
+EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
 # Fallback to old paths if new structure not complete
 if not CHROMA_DIR.exists():
@@ -56,6 +58,34 @@ TRUST_RANK = {
     TrustLevel.TRUSTED: 3,
     TrustLevel.VERIFIED: 4,
 }
+
+
+def _is_package_available(package_name: str) -> bool:
+    """Return True when a Python package is importable."""
+    return importlib.util.find_spec(package_name) is not None
+
+
+def get_knowledge_runtime_status() -> dict[str, Any]:
+    """Report knowledge-base runtime readiness without loading embeddings."""
+    sentence_transformers_available = _is_package_available("sentence_transformers")
+    chroma_db_present = CHROMA_DIR.exists() and (CHROMA_DIR / "chroma.sqlite3").exists()
+    pdf_root_exists = PDF_DIR.exists()
+
+    return {
+        "embedding_model": EMBEDDING_MODEL_NAME,
+        "dependencies": {
+            "sentence_transformers": sentence_transformers_available,
+        },
+        "storage": {
+            "chroma_dir": str(CHROMA_DIR),
+            "chroma_db_present": chroma_db_present,
+            "pdf_root": str(PDF_DIR),
+            "pdf_root_exists": pdf_root_exists,
+        },
+        "search_ready": sentence_transformers_available and chroma_db_present,
+        "ingestion_ready": sentence_transformers_available and pdf_root_exists,
+        "status": "ok" if sentence_transformers_available else "degraded",
+    }
 
 
 def _build_text_splitter() -> RecursiveCharacterTextSplitter:
@@ -230,11 +260,23 @@ def _load_pdf_documents(
 
 def get_embeddings():
     """Get the embedding model used for the knowledge base."""
-    return HuggingFaceEmbeddings(
-        model_name="BAAI/bge-small-en-v1.5",
-        model_kwargs={"device": "cpu"},
-        encode_kwargs={"normalize_embeddings": True},
-    )
+    if not _is_package_available("sentence_transformers"):
+        raise RuntimeError(
+            "sentence-transformers is not installed. "
+            "Install with: pip install sentence-transformers"
+        )
+
+    try:
+        return HuggingFaceEmbeddings(
+            model_name=EMBEDDING_MODEL_NAME,
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
+        )
+    except Exception as exc:  # pragma: no cover - environment-specific failures
+        raise RuntimeError(
+            "Embedding model initialization failed. "
+            "Ensure model download access or a local cache is available."
+        ) from exc
 
 
 def get_vectorstore() -> Chroma:

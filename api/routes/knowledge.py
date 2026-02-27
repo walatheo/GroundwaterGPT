@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
-from src.agent.knowledge import get_knowledge_stats, ingest_pdfs
+from src.agent.knowledge import get_knowledge_runtime_status, get_knowledge_stats, ingest_pdfs
 from src.agent.source_verification import TrustLevel
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
@@ -30,9 +30,21 @@ def _parse_trust_level(raw: str) -> TrustLevel:
 @router.get("/stats")
 def knowledge_stats():
     """Return current knowledge-base statistics."""
+    runtime = get_knowledge_runtime_status()
     return {
         "status": "ok",
         "knowledge_base": get_knowledge_stats(),
+        "runtime": runtime,
+    }
+
+
+@router.get("/status")
+def knowledge_runtime_status():
+    """Return runtime readiness and dependency status for KB operations."""
+    runtime = get_knowledge_runtime_status()
+    return {
+        "status": runtime.get("status", "unknown"),
+        "runtime": runtime,
     }
 
 
@@ -56,15 +68,20 @@ def ingest_documents(payload: Optional[dict] = None):
     min_trust_raw = str(data.get("min_trust", TrustLevel.MODERATE.value))
     min_trust = _parse_trust_level(min_trust_raw)
 
-    result = ingest_pdfs(
-        path=path,
-        recursive=recursive,
-        min_trust=min_trust,
-        force=force,
-    )
+    try:
+        result = ingest_pdfs(
+            path=path,
+            recursive=recursive,
+            min_trust=min_trust,
+            force=force,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    runtime = get_knowledge_runtime_status()
     return {
         "status": "ok",
         "ingestion": result,
         "knowledge_base": get_knowledge_stats(),
+        "runtime": runtime,
     }

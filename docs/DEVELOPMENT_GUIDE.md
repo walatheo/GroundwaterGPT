@@ -574,16 +574,17 @@ Development is organized into focused sessions, each delivering a working increm
 **Goal:** Streamlined pipeline for adding new research documents (PDFs, papers) to the knowledge base, with automatic chunking, embedding, and verification.
 
 **Deliverables:**
-- [ ] CLI command: `python main.py ingest --path <file_or_dir>`
-- [ ] Automatic PDF parsing, chunking (512 chars), embedding
-- [ ] Source verification before ingestion (trust score ≥ 0.7)
-- [ ] Metadata extraction (title, author, date, DOI if available)
-- [ ] KB statistics endpoint (`GET /api/knowledge/stats`)
+- [x] CLI command: `python main.py ingest --path <file_or_dir>`
+- [x] Automatic PDF parsing, chunking (512 chars), embedding
+- [x] Source verification before ingestion (trust score ≥ 0.7)
+- [x] Metadata extraction (title, author, date, DOI if available)
+- [x] KB statistics endpoint (`GET /api/knowledge/stats`)
+- [x] KB runtime health endpoint (`GET /api/knowledge/status`)
 
 **Acceptance Criteria:**
-- [ ] Drop a PDF into `resources/pdfs/` → run ingest → KB updated
+- [x] Drop a PDF into `resources/pdfs/` → run ingest → KB updated
 - [ ] Agent can answer questions from newly ingested documents
-- [ ] Duplicate detection prevents re-ingesting the same document
+- [x] Duplicate detection prevents re-ingesting the same document
 
 **Key Files:**
 - `src/agent/knowledge.py` — Ingest pipeline
@@ -1548,6 +1549,47 @@ From `resources/pdfs/references/Training LLM on Env Data/Scientific agents/`:
 ---
 
 ### 🗺️ Implementation Roadmap (Research-Informed)
+
+### Current Development Execution Plan (As of February 27, 2026)
+
+The next implementation cycle is intentionally ordered to reduce rework:
+stability first, then workflow exposure, then multi-agent scaling.
+
+#### Sprint 1 — Operational Hardening (In Progress)
+- [x] Normalize style/quality gates so pre-commit passes without bypass.
+- [x] Stabilize test suite behavior across local environments and data snapshots.
+- [ ] Add explicit KB runtime readiness checks (embedding dependencies + storage state).
+- [ ] Surface KB runtime health in API responses/endpoints.
+- [ ] Add graceful 503 errors for ingestion/search when runtime requirements are missing.
+
+**Why first:** This removes high-probability runtime failures that would otherwise
+invalidate downstream work in ingestion, UI integration, and multi-agent orchestration.
+
+#### Sprint 2 — Research Workflow Productization
+- [ ] Expose experiment-plan/run/paper-draft tools as first-class API flows.
+- [ ] Add frontend workflow UI: create plan → log runs → generate draft manuscript.
+- [ ] Enforce reproducibility schema for run configs, metrics, and artifacts.
+- [ ] Persist provenance metadata with manuscript drafts.
+
+**Why second:** These capabilities already exist at the tool layer; making them
+user-facing creates direct researcher value with limited architectural risk.
+
+#### Sprint 3 — Evaluation + Citation Integrity
+- [ ] Add retrieval and report-quality benchmark harness in CI.
+- [ ] Add claim-to-source citation structure in deep research reports.
+- [ ] Track confidence/trust per section in generated research outputs.
+- [ ] Define quality thresholds for factual accuracy and citation coverage.
+
+**Why third:** Quality gates are critical before scaling to a multi-agent pipeline.
+
+#### Sprint 4 — Multi-Agent Research Architecture
+- [ ] Implement `LeadResearcher`, `SubAgent`, and `CitationAgent`.
+- [ ] Add planner-based subtask decomposition and parallel execution.
+- [ ] Add checkpoint/resume support for long research sessions.
+- [ ] Add budget controls for depth/tool usage by query complexity.
+
+**Why fourth:** Multi-agent complexity is justified only after stable runtime,
+usable workflows, and objective quality evaluation are in place.
 
 #### Near-Term (Sessions 8-11)
 - [ ] **Dashboard NL filtering** — LLM interprets "show dry season data" to filter charts (Stock et al. pattern)

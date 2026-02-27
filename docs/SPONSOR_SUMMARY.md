@@ -154,10 +154,11 @@ Clean architecture with comprehensive testing (89 automated tests).
 
 ## 📈 Next Steps
 
-1. **LLM Integration** - Connect OpenAI/Claude for natural language responses
-2. **RAG Enhancement** - Improve document retrieval accuracy
-3. **Multi-Horizon Forecasts** - Add 14-day and 30-day predictions
-4. **Production Deployment** - Cloud hosting with user authentication
+1. **Operational Hardening (Current)** - Runtime health checks, graceful degradation, and deterministic CI stability
+2. **Research Workflow Productization** - Expose experiment planning, run logging, and paper drafting end-to-end
+3. **Evaluation & Citation Integrity** - Add automated quality scoring and claim-to-source attribution
+4. **Multi-Agent Research Scaling** - Implement orchestrator-worker research architecture for complex questions
+5. **Production Deployment** - Cloud hosting, observability, and reliability hardening
 
 ---
 

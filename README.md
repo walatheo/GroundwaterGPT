@@ -270,8 +270,16 @@ feature/your-feature
 | 2. Quality | ✅ Complete | CI/CD, testing, documentation |
 | 3. Enhancement | ✅ Complete | Multi-site expansion, React frontend |
 | 4. Dashboard | ✅ Complete | AI Chat (Beta), 36 USGS sites, interactive maps |
-| 5. Research | � Current | AI Research Integration, advanced analytics |
+| 5. Research | 🔄 Current | AI Research Integration, advanced analytics |
 | 6. Production | 📋 Planned | API, web hosting, alerts |
+
+### Current Implementation Plan
+
+1. **Operational Hardening (Now)**: runtime dependency checks, KB health endpoints, graceful 503 fallbacks.
+2. **Workflow Productization**: researcher-facing experiment planning, run logging, manuscript drafting UX.
+3. **Quality & Citation Integrity**: automated evaluation harness and claim-to-source output structure.
+4. **Multi-Agent Scaling**: orchestrator-worker architecture for deep research tasks.
+5. **Production Readiness**: deployment, observability, and reliability controls.
 
 See [CHECKLIST.md](docs/CHECKLIST.md) for detailed status.
 
