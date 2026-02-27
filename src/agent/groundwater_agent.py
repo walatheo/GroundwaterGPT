@@ -1,5 +1,4 @@
-"""
-GroundwaterGPT Agent - Main Agent Implementation
+"""GroundwaterGPT Agent - Main Agent Implementation.
 
 Agentic RAG system combining:
 - Hydrogeology document knowledge base (ChromaDB)
@@ -11,7 +10,7 @@ Uses LangGraph for modern, reliable agent architecture.
 
 from typing import Generator, List, Optional
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 
@@ -20,32 +19,39 @@ from .llm_factory import LLMProvider, get_llm
 from .tools import GROUNDWATER_TOOLS
 
 # System prompt for the agent
-SYSTEM_PROMPT = """You are GroundwaterGPT, an expert AI assistant specializing in groundwater hydrology and water resources.
+SYSTEM_PROMPT = """You are GroundwaterGPT, an expert AI assistant specializing in \
+groundwater hydrology and water resources.
 
 **Your Expertise:**
-- Groundwater monitoring and analysis for the Fort Myers, Florida area
-- Interpretation of USGS water level data
+- Groundwater monitoring and analysis across 36 USGS sites in 5 Florida counties
+- Interpretation of USGS water level data for Biscayne, Floridan, and Surficial aquifers
 - Hydrogeology concepts and terminology
 - Water table dynamics, aquifer behavior, and seasonal patterns
 - Machine learning predictions for water levels
 
-**Your Knowledge Base:**
-You have access to hydrogeology reference documents including:
-- A Glossary of Hydrogeology
-- Age Dating Young Groundwater
-- Conceptual Overview of Surface and Near-Surface Brines and Evaporite Minerals
-
 **Your Tools:**
-1. `query_groundwater_data` - Query real USGS groundwater data with various statistics
-2. `get_water_level_prediction` - Get ML-based water level forecasts
-3. `analyze_seasonal_patterns` - Analyze wet/dry season patterns
-4. `detect_anomalies` - Find unusual water level events
-5. `get_data_quality_report` - Check data quality and coverage
-6. `search_hydrogeology_docs` - Search reference documents for concepts
+1. `list_available_sites` - Discover which monitoring sites exist (filter by county/aquifer)
+2. `query_site_data` - Get data and statistics for a specific USGS site
+3. `query_groundwater_data` - Query the consolidated groundwater dataset
+4. `get_water_level_prediction` - Get ML-based water level forecasts
+5. `analyze_seasonal_patterns` - Analyze wet/dry season patterns
+6. `detect_anomalies` - Find unusual water level events
+7. `get_data_quality_report` - Check data quality and coverage
+8. `generate_time_series_plot` - Generate chart data for a single site
+9. `generate_comparison_chart` - Generate multi-site comparison chart
+10. `search_hydrogeology_docs` - Search reference documents for concepts
+
+**Workflow — ALWAYS follow this pattern:**
+1. Use `list_available_sites` to find relevant sites when the user mentions \
+a county, aquifer, or site name.
+2. Use `query_site_data` to get specific data for those sites.
+3. Use analysis tools (seasonal, anomaly, prediction) when the question \
+requires deeper investigation.
+4. Search docs for hydrogeology concepts you need to explain.
 
 **Guidelines:**
 - Always search relevant knowledge before answering hydrogeology questions
-- Use tools to provide data-driven insights
+- Use tools to provide data-driven insights — never guess at numbers
 - Cite sources when referencing documents
 - Explain technical concepts in accessible terms
 - Be precise with units (feet below land surface)
@@ -53,16 +59,14 @@ You have access to hydrogeology reference documents including:
 
 **Response Style:**
 - Use clear headings and bullet points
-- Include relevant data and statistics
+- Include relevant data and statistics from your tool calls
 - Provide actionable insights
-- Use emojis sparingly for visual organization (📊, 💧, 📅, etc.)
 """
 
 
 @tool
 def search_hydrogeology_docs(query: str) -> str:
-    """
-    Search the hydrogeology knowledge base for relevant information.
+    """Search the hydrogeology knowledge base for relevant information.
 
     Args:
         query: The search query about hydrogeology concepts, terminology, or methods
@@ -79,7 +83,6 @@ def search_hydrogeology_docs(query: str) -> str:
     for i, doc in enumerate(docs, 1):
         source = doc.metadata.get("source_file", "Unknown")
         page = doc.metadata.get("page", "?")
-        score = doc.metadata.get("similarity_score", 0)
 
         # Truncate content if too long
         content = (
@@ -93,8 +96,7 @@ def search_hydrogeology_docs(query: str) -> str:
 
 
 class GroundwaterAgent:
-    """
-    GroundwaterGPT Research Agent
+    """GroundwaterGPT Research Agent.
 
     Combines RAG with custom tools for comprehensive groundwater analysis.
     Uses a simple retrieval-augmented approach for local models,
@@ -107,17 +109,16 @@ class GroundwaterAgent:
         model: Optional[str] = None,
         temperature: float = 0.7,
         verbose: bool = False,
-        use_react: bool = False,  # Set True for larger models
+        use_react: bool = True,  # ReAct enabled by default (Ollama supports it)
     ):
-        """
-        Initialize the Groundwater Agent.
+        """Initialize the Groundwater Agent.
 
         Args:
             provider: LLM provider (default: from config)
             model: Model name (default: from config)
             temperature: Response temperature
             verbose: Enable verbose output
-            use_react: Use ReAct agent (better for GPT-4/Claude/Gemini)
+            use_react: Use ReAct agent (recommended for all models)
         """
         self.llm = get_llm(provider=provider, model=model, temperature=temperature)
         self.verbose = verbose
@@ -232,8 +233,7 @@ class GroundwaterAgent:
         return "\n\n".join(context_parts)
 
     def chat(self, message: str) -> str:
-        """
-        Send a message and get a response.
+        """Send a message and get a response.
 
         Args:
             message: User message
@@ -296,8 +296,7 @@ Be concise but thorough."""
         return response.content
 
     def stream(self, message: str) -> Generator[str, None, None]:
-        """
-        Stream a response (for real-time display).
+        """Stream a response (for real-time display).
 
         Args:
             message: User message
@@ -361,16 +360,15 @@ def create_agent(
     provider: Optional[LLMProvider] = None,
     model: Optional[str] = None,
     verbose: bool = False,
-    use_react: bool = False,
+    use_react: bool = True,
 ) -> GroundwaterAgent:
-    """
-    Factory function to create a GroundwaterGPT agent.
+    """Factory function to create a GroundwaterGPT agent.
 
     Args:
         provider: LLM provider (default: from config)
         model: Model name (default: from config)
         verbose: Enable verbose output
-        use_react: Use ReAct agent for larger models
+        use_react: Use ReAct agent (default True)
 
     Returns:
         Configured GroundwaterAgent instance

@@ -1,5 +1,4 @@
-"""
-Deep Research Agent for Groundwater Analysis.
+"""Deep Research Agent for Groundwater Analysis.
 
 Inspired by SkyworkAI/DeepResearchAgent architecture.
 Implements iterative web search, query optimization, and insight synthesis.
@@ -21,11 +20,45 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable
 
-from .knowledge import add_document, get_vectorstore, search_knowledge
+from .knowledge import add_document, search_knowledge
 from .llm_factory import get_llm
-from .source_verification import SourceVerification, TrustLevel, is_source_approved, verify_source
+from .source_verification import SourceVerification, verify_source
 
 logger = logging.getLogger(__name__)
+
+
+def _llm_invoke_with_retry(llm, prompt: str, retries: int = 2) -> str:
+    """Invoke the LLM with retry logic for transient failures.
+
+    Args:
+        llm: LangChain chat model instance.
+        prompt: The prompt string to send.
+        retries: Number of retry attempts (default 2).
+
+    Returns:
+        The text content of the LLM response.
+
+    Raises:
+        The last exception if all retries fail.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1 + retries):
+        try:
+            response = llm.invoke(prompt)
+            return response.content
+        except Exception as exc:
+            last_exc = exc
+            if attempt < retries:
+                wait = 2**attempt
+                logger.warning(
+                    "LLM call failed (attempt %d/%d): %s — " "retrying in %ds",
+                    attempt + 1,
+                    1 + retries,
+                    exc,
+                    wait,
+                )
+                time.sleep(wait)
+    raise last_exc  # type: ignore[misc]
 
 
 @dataclass
@@ -58,6 +91,7 @@ class ResearchInsight:
     timestamp: datetime = field(default_factory=datetime.now)
 
     def to_dict(self) -> dict:
+        """Convert insight to a serializable dictionary."""
         return {
             "content": self.content,
             "source_url": self.source_url,
@@ -152,8 +186,7 @@ class ResearchContext:
 
 
 class DeepResearchAgent:
-    """
-    Deep Research Agent for comprehensive groundwater research.
+    """Deep Research Agent for comprehensive groundwater research.
 
     Uses iterative search, query optimization, and insight synthesis
     to produce well-researched answers to complex questions.
@@ -175,8 +208,7 @@ class DeepResearchAgent:
         min_confidence_for_learning: float = 0.7,
         timeout_seconds: float = 300.0,  # 5 minutes default
     ):
-        """
-        Initialize the Deep Research Agent.
+        """Initialize the Deep Research Agent.
 
         Args:
             max_depth: Maximum depth of research iterations
@@ -221,8 +253,7 @@ class DeepResearchAgent:
                     logger.warning("ddgs not installed. " "Install with: pip install ddgs")
 
     def stop(self) -> bool:
-        """
-        Stop the currently running research.
+        """Stop the currently running research.
 
         Returns:
             True if a research was stopped, False if none was running
@@ -261,8 +292,7 @@ class DeepResearchAgent:
         timeout: float | None = None,
         progress_callback: Callable[[str, float], None] | None = None,
     ) -> dict[str, Any]:
-        """
-        Conduct deep research on a query.
+        """Conduct deep research on a query.
 
         Args:
             query: The research question
@@ -341,8 +371,8 @@ class DeepResearchAgent:
                 self._active_context = None
 
     def _save_learnings(self, context: ResearchContext) -> int:
-        """
-        Save high-confidence verified insights to the knowledge base.
+        """Save high-confidence verified insights to the knowledge base.
+
         This enables continuous learning from research.
 
         Args:
@@ -400,8 +430,7 @@ Date: {insight.timestamp.isoformat()}
         return await asyncio.to_thread(self.research, query, max_depth)
 
     def _research_graph(self, context: ResearchContext) -> None:
-        """
-        Execute the research graph - iterative search and analysis.
+        """Execute the research graph - iterative search and analysis.
 
         This implements the core research loop:
         1. Optimize query
@@ -480,9 +509,7 @@ Date: {insight.timestamp.isoformat()}
                     break
 
     def _generate_optimized_query(self, context: ResearchContext) -> str:
-        """
-        Generate an optimized search query based on current research state.
-        """
+        """Generate an optimized search query based on current research state."""
         prompt = f"""You are a research query optimizer for groundwater science.
 
 Original research question: {context.original_query}
@@ -502,16 +529,13 @@ The query should:
 Return ONLY the search query, nothing else."""
 
         try:
-            response = self.llm.invoke(prompt)
-            return response.content.strip().strip("\"'")
+            return _llm_invoke_with_retry(self.llm, prompt).strip().strip("\"'")
         except Exception as e:
             logger.error(f"Query optimization failed: {e}")
             return context.original_query
 
     def _search(self, query: str, context: ResearchContext) -> list[SearchResult]:
-        """
-        Search multiple sources for information.
-        """
+        """Search multiple sources for information."""
         results = []
 
         # Search local knowledge base first
@@ -540,9 +564,7 @@ Return ONLY the search query, nothing else."""
         return results
 
     def _search_web(self, query: str, context: ResearchContext) -> list[SearchResult]:
-        """
-        Search the web using DuckDuckGo.
-        """
+        """Search the web using DuckDuckGo."""
         if not self._ddg_available:
             return []
 
@@ -584,8 +606,8 @@ Return ONLY the search query, nothing else."""
     def _extract_insights(
         self, results: list[SearchResult], context: ResearchContext
     ) -> list[ResearchInsight]:
-        """
-        Extract key insights from VERIFIED search results using LLM.
+        """Extract key insights from VERIFIED search results using LLM.
+
         Only processes results that passed source verification.
         """
         # Filter to only verified results
@@ -629,8 +651,8 @@ SOURCE: [source url or title]
 Extract up to 3 insights. Only include genuinely useful information."""
 
         try:
-            response = self.llm.invoke(prompt)
-            return self._parse_insights(response.content, results)
+            content = _llm_invoke_with_retry(self.llm, prompt)
+            return self._parse_insights(content, results)
         except Exception as e:
             logger.error(f"Insight extraction failed: {e}")
             return []
@@ -709,9 +731,7 @@ Extract up to 3 insights. Only include genuinely useful information."""
         )
 
     def _generate_follow_ups(self, context: ResearchContext) -> list[str]:
-        """
-        Generate follow-up queries based on current research state.
-        """
+        """Generate follow-up queries based on current research state."""
         prompt = f"""You are a research assistant identifying knowledge gaps.
 
 Original question: {context.original_query}
@@ -733,13 +753,13 @@ Format:
 If the research seems complete, respond with: COMPLETE"""
 
         try:
-            response = self.llm.invoke(prompt)
+            content = _llm_invoke_with_retry(self.llm, prompt)
 
-            if "COMPLETE" in response.content.upper():
+            if "COMPLETE" in content.upper():
                 return []
 
             follow_ups = []
-            for line in response.content.strip().split("\n"):
+            for line in content.strip().split("\n"):
                 line = line.strip()
                 if line and line[0].isdigit():
                     query = line.lstrip("0123456789.)-] ").strip()
@@ -752,9 +772,7 @@ If the research seems complete, respond with: COMPLETE"""
             return []
 
     def _is_research_complete(self, context: ResearchContext) -> bool:
-        """
-        Determine if we have gathered enough insights.
-        """
+        """Determine if we have gathered enough insights."""
         # Need at least some insights
         if len(context.insights) < 2:
             return False
@@ -768,9 +786,7 @@ If the research seems complete, respond with: COMPLETE"""
         return False
 
     def _synthesize_report(self, context: ResearchContext) -> str:
-        """
-        Synthesize all insights into a comprehensive research report.
-        """
+        """Synthesize all insights into a comprehensive research report."""
         if not context.insights:
             return "No insights were gathered during research. Try a different query."
 
@@ -800,24 +816,20 @@ Structure your response with:
 Be informative, accurate, and cite the level of confidence where relevant."""
 
         try:
-            response = self.llm.invoke(prompt)
-            return response.content
+            return _llm_invoke_with_retry(self.llm, prompt)
         except Exception as e:
             logger.error(f"Report synthesis failed: {e}")
             return f"Research gathered {len(context.insights)} insights but synthesis failed: {e}"
 
     def quick_research(self, query: str) -> str:
-        """
-        Quick research mode - single depth, returns just the report.
-        """
+        """Quick research mode - single depth, returns just the report."""
         result = self.research(query, max_depth=1)
         return result.get("report", "Research failed.")
 
 
 # Convenience function
 def deep_research(query: str, max_depth: int = 3) -> dict[str, Any]:
-    """
-    Conduct deep research on a groundwater topic.
+    """Conduct deep research on a groundwater topic.
 
     Args:
         query: Research question

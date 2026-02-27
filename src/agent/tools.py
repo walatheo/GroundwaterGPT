@@ -3,6 +3,7 @@
 Tools for querying groundwater data, making predictions, and analyzing trends.
 """
 
+import json as _json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -12,10 +13,11 @@ import numpy as np
 import pandas as pd
 from langchain_core.tools import tool
 
-# Base directory for data
-BASE_DIR = Path(__file__).parent.parent
+# Project root: src/agent/tools.py -> src/agent -> src -> <project root>
+BASE_DIR = Path(__file__).parent.parent.parent
 DATA_DIR = BASE_DIR / "data"
 MODELS_DIR = BASE_DIR / "models"
+CONFIG_DIR = BASE_DIR / "config"
 
 
 @tool
@@ -571,7 +573,161 @@ def generate_comparison_chart(
         return json.dumps(chart)
 
     except Exception as exc:
-        return json.dumps({"type": "chart", "error": f"Comparison failed: {exc}"})
+        return _json.dumps({"type": "chart", "error": f"Comparison failed: {exc}"})
+
+
+# ---------------------------------------------------------------------------
+# Site-aware tools (Agent Enhancement Session)
+# ---------------------------------------------------------------------------
+
+
+def _load_site_metadata() -> Dict[str, Dict[str, Any]]:
+    """Load site metadata from config/usgs_sites.json.
+
+    Returns a flat ``{site_id: {name, aquifer, county, lat, lng}}`` dict.
+    """
+    meta_path = CONFIG_DIR / "usgs_sites.json"
+    if not meta_path.exists():
+        return {}
+    with open(meta_path) as fh:
+        raw = _json.load(fh)
+    flat: Dict[str, Dict[str, Any]] = {}
+    for _aq_key, aq_info in raw.get("aquifers", {}).items():
+        aquifer_name = aq_info.get("name", _aq_key)
+        for site in aq_info.get("sites", []):
+            sid = site["site_id"]
+            flat[sid] = {
+                "name": site.get("name", sid),
+                "aquifer": aquifer_name,
+                "county": site.get("county", "Unknown"),
+                "lat": site.get("lat"),
+                "lng": site.get("lng"),
+            }
+    return flat
+
+
+@tool
+def list_available_sites(
+    county: Optional[str] = None,
+    aquifer: Optional[str] = None,
+) -> str:
+    """List available USGS groundwater monitoring sites.
+
+    Use this tool to discover which sites exist, then use
+    ``query_site_data`` for detailed data about a specific site.
+
+    Args:
+        county: Optional filter by county name (e.g. "Lee", "Miami-Dade").
+        aquifer: Optional filter by aquifer (e.g. "Biscayne", "Floridan").
+
+    Returns:
+        Formatted list of sites with name, county, and aquifer.
+    """
+    meta = _load_site_metadata()
+    if not meta:
+        return "No site metadata available."
+
+    sites = list(meta.items())
+
+    if county:
+        county_lower = county.lower()
+        sites = [(sid, m) for sid, m in sites if county_lower in m.get("county", "").lower()]
+    if aquifer:
+        aq_lower = aquifer.lower()
+        sites = [(sid, m) for sid, m in sites if aq_lower in m.get("aquifer", "").lower()]
+
+    if not sites:
+        return "No sites match the given filters."
+
+    lines = [f"📍 **Available Sites** ({len(sites)} total):\n"]
+    for sid, m in sites:
+        has_data = (DATA_DIR / f"usgs_{sid}.csv").exists()
+        status = "✅" if has_data else "⬜"
+        lines.append(f"  {status} **{m['name']}** ({sid})" f" — {m['county']}, {m['aquifer']}")
+    return "\n".join(lines)
+
+
+@tool
+def query_site_data(
+    site_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    stat_type: str = "summary",
+) -> str:
+    """Query data for a specific USGS monitoring site.
+
+    This tool operates on per-site CSV files (``usgs_<site_id>.csv``).
+    Use ``list_available_sites`` first to find valid site IDs.
+
+    Args:
+        site_id: USGS site number (e.g. "262724081260701").
+        start_date: Optional start date YYYY-MM-DD.
+        end_date: Optional end date YYYY-MM-DD.
+        stat_type: 'summary', 'monthly', 'yearly', or 'raw'.
+
+    Returns:
+        Formatted string with site-specific groundwater analysis.
+    """
+    try:
+        df = _load_site_csv(site_id)
+    except FileNotFoundError:
+        return f"No data file found for site {site_id}."
+
+    meta = _load_site_metadata().get(site_id, {})
+    site_name = meta.get("name", site_id)
+
+    if start_date:
+        df = df[df["date"] >= pd.Timestamp(start_date)]
+    if end_date:
+        df = df[df["date"] <= pd.Timestamp(end_date)]
+
+    if df.empty:
+        return f"No data for site {site_name} in the requested range."
+
+    col = "water_level_ft"
+
+    if stat_type == "summary":
+        tail30 = df.tail(30)
+        recent_chg = tail30.iloc[-1][col] - tail30.iloc[0][col] if len(tail30) > 1 else 0.0
+        return (
+            f"📊 **{site_name}** (site {site_id})\n"
+            f"   Aquifer: {meta.get('aquifer', 'N/A')}, "
+            f"County: {meta.get('county', 'N/A')}\n"
+            f"   Date range: "
+            f"{df['date'].min():%Y-%m-%d} → {df['date'].max():%Y-%m-%d}\n"
+            f"   Records: {len(df):,}\n"
+            f"   Mean: {df[col].mean():.2f} ft | "
+            f"Min: {df[col].min():.2f} ft | "
+            f"Max: {df[col].max():.2f} ft\n"
+            f"   Std Dev: {df[col].std():.2f} ft\n"
+            f"   Recent 30-day change: {recent_chg:+.2f} ft"
+        )
+
+    if stat_type == "monthly":
+        df["month"] = df["date"].dt.to_period("M")
+        monthly = df.groupby("month")[col].agg(["mean", "min", "max"])
+        lines = [f"📅 **Monthly** — {site_name}:"]
+        for month, row in monthly.tail(12).iterrows():
+            lines.append(
+                f"  {month}: {row['mean']:.2f} ft " f"(range {row['min']:.2f}–{row['max']:.2f})"
+            )
+        return "\n".join(lines)
+
+    if stat_type == "yearly":
+        df["year"] = df["date"].dt.year
+        yearly = df.groupby("year")[col].agg(["mean", "count"])
+        lines = [f"📆 **Yearly** — {site_name}:"]
+        for year, row in yearly.iterrows():
+            lines.append(f"  {year}: avg {row['mean']:.2f} ft " f"({int(row['count'])} records)")
+        return "\n".join(lines)
+
+    if stat_type == "raw":
+        lines = [f"📋 **Recent 10 records** — {site_name}:"]
+        for _, row in df.tail(10).iterrows():
+            lines.append(f"  {row['date']:%Y-%m-%d}: {row[col]:.2f} ft")
+        return "\n".join(lines)
+
+    return f"Unknown stat_type: {stat_type}. " "Use 'summary', 'monthly', 'yearly', or 'raw'."
 
 
 # List of all available tools
@@ -583,4 +739,6 @@ GROUNDWATER_TOOLS = [
     get_data_quality_report,
     generate_time_series_plot,
     generate_comparison_chart,
+    list_available_sites,
+    query_site_data,
 ]
