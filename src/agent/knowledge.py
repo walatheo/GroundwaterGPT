@@ -1,5 +1,4 @@
-"""
-Knowledge Base - ChromaDB Vector Store for RAG.
+"""Knowledge Base - ChromaDB Vector Store for RAG.
 
 This module manages the vector database (ChromaDB) that stores:
 1. Hydrogeology PDF documents (chunked and embedded)
@@ -239,8 +238,7 @@ def get_embeddings():
 
 
 def get_vectorstore() -> Chroma:
-    """
-    Get or create the ChromaDB vector store.
+    """Get or create the ChromaDB vector store.
 
     Returns:
         Chroma vector store instance
@@ -265,8 +263,7 @@ def initialize_knowledge_base(
     recursive: bool = True,
     min_trust: TrustLevel = TrustLevel.MODERATE,
 ) -> Chroma:
-    """
-    Initialize the knowledge base with hydrogeology and literature PDFs.
+    """Initialize the knowledge base with hydrogeology and literature PDFs.
 
     Returns:
         Chroma vector store with embedded documents
@@ -337,8 +334,7 @@ def ingest_pdfs(
     min_trust: TrustLevel = TrustLevel.MODERATE,
     force: bool = False,
 ) -> dict[str, Any]:
-    """
-    Ingest PDF literature into the existing knowledge base.
+    """Ingest PDF literature into the existing knowledge base.
 
     Args:
         path: File or directory path; defaults to resources/pdfs
@@ -411,8 +407,7 @@ def ingest_pdfs(
 
 
 def search_knowledge(query: str, k: int = 5, score_threshold: float = 0.5) -> List[Document]:
-    """
-    Search the knowledge base for relevant documents.
+    """Search the knowledge base for relevant documents.
 
     Args:
         query: Search query
@@ -441,8 +436,7 @@ def search_knowledge(query: str, k: int = 5, score_threshold: float = 0.5) -> Li
 
 
 def get_retriever(k: int = 5):
-    """
-    Get a retriever for the knowledge base.
+    """Get a retriever for the knowledge base.
 
     Args:
         k: Number of documents to retrieve
@@ -460,8 +454,7 @@ def add_document(
     source_url: Optional[str] = None,
     require_verification: bool = True,
 ) -> bool:
-    """
-    Add a new document to the knowledge base with source verification.
+    """Add a new document to the knowledge base with source verification.
 
     Args:
         content: Document content
@@ -557,8 +550,7 @@ def search_usgs_data(
     include_trends: bool = True,
     k: int = 10,
 ) -> List[Document]:
-    """
-    Search specifically for USGS groundwater monitoring data.
+    """Search specifically for USGS groundwater monitoring data.
 
     This function uses optimized queries for retrieving USGS data,
     including statistics, annual averages, and trend information.
@@ -653,8 +645,7 @@ def search_with_fallback(
     score_threshold: float = 0.3,
     min_results: int = 3,
 ) -> List[Document]:
-    """
-    Search with automatic query expansion for better recall.
+    """Search with automatic query expansion for better recall.
 
     If the initial search returns fewer than min_results, this function
     automatically tries alternative query formulations.

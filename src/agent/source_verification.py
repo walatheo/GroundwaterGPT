@@ -1,5 +1,4 @@
-"""
-Source Verification Module.
+"""Source Verification Module.
 
 Validates that data sources are trusted and accurate before
 being added to the knowledge base or used in research.
@@ -77,6 +76,7 @@ class SourceVerification:
     priority_score: float = 0.5  # 0.0 to 1.0, higher = more valuable
 
     def to_dict(self) -> dict:
+        """Convert this verification result to a JSON-serializable dict."""
         return {
             "url": self.url,
             "trust_level": self.trust_level.value,
@@ -233,8 +233,7 @@ UNTRUSTED_PATTERNS = [
 
 
 def verify_source(url: str) -> SourceVerification:
-    """
-    Verify if a source URL is trusted for groundwater research.
+    """Verify if a source URL is trusted for groundwater research.
 
     Prioritizes sources in this order:
     1. Numerical data sources (USGS APIs, data portals) - priority 1.0
@@ -422,8 +421,7 @@ def verify_source(url: str) -> SourceVerification:
 
 
 def verify_usgs_data(site_id: str, response_data: dict) -> SourceVerification:
-    """
-    Verify that USGS data is authentic.
+    """Verify that USGS data is authentic.
 
     Args:
         site_id: USGS site identifier
@@ -459,8 +457,7 @@ def verify_document(
     file_path: str,
     content_sample: Optional[str] = None,
 ) -> SourceVerification:
-    """
-    Verify a document before adding to knowledge base.
+    """Verify a document before adding to knowledge base.
 
     Args:
         file_path: Path to the document
@@ -542,8 +539,7 @@ def verify_document(
 
 
 def filter_verified_sources(sources: list[str]) -> tuple[list[str], list[str]]:
-    """
-    Filter a list of sources into approved and rejected.
+    """Filter a list of sources into approved and rejected.
 
     Args:
         sources: List of URLs to verify
@@ -570,8 +566,7 @@ def get_minimum_trust_level() -> TrustLevel:
 
 
 def is_source_approved(url: str, min_trust: TrustLevel = TrustLevel.MODERATE) -> bool:
-    """
-    Quick check if a source meets minimum trust requirements.
+    """Quick check if a source meets minimum trust requirements.
 
     Args:
         url: Source URL to check
@@ -597,8 +592,7 @@ def is_source_approved(url: str, min_trust: TrustLevel = TrustLevel.MODERATE) ->
 
 
 def prioritize_sources(sources: list[str]) -> list[tuple[str, SourceVerification]]:
-    """
-    Sort sources by priority, favoring numerical data and research papers.
+    """Sort sources by priority, favoring numerical data and research papers.
 
     Priority order:
     1. Numerical data sources (USGS APIs, data portals)
@@ -620,8 +614,7 @@ def prioritize_sources(sources: list[str]) -> list[tuple[str, SourceVerification
 
 
 def filter_by_category(sources: list[str], categories: list[SourceCategory]) -> list[str]:
-    """
-    Filter sources to only include specific categories.
+    """Filter sources to only include specific categories.
 
     Args:
         sources: List of source URLs
@@ -639,8 +632,7 @@ def filter_by_category(sources: list[str], categories: list[SourceCategory]) -> 
 
 
 def get_high_value_sources(sources: list[str], min_priority: float = 0.85) -> list[str]:
-    """
-    Get only high-value sources (numerical data and research papers).
+    """Get only high-value sources (numerical data and research papers).
 
     Args:
         sources: List of source URLs
