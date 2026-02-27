@@ -1,6 +1,6 @@
 # GroundwaterGPT Development Guide
 
-**Last Updated:** February 12, 2026
+**Last Updated:** February 27, 2026
 **Purpose:** Engineering specification for an agentic deep-research platform for groundwater science, built on verified USGS data, modular AI agents, and interactive data visualization.
 
 **Core Goals:**
@@ -9,7 +9,10 @@
 3. **Modular, Extensible Architecture** — Cleanly separated layers (Presentation, Agent, Knowledge, Verification, Data/ML) so each can evolve independently
 4. **Research Integrity** — Every claim is source-verified; every data point traces back to USGS or peer-reviewed literature
 
-> **Reference:** Architecture patterns informed by [Awesome-Deep-Research](https://github.com/DavidZWZ/Awesome-Deep-Research) — a survey of agentic search systems including iterative RAG, multi-agent research, query optimization, and reinforcement-learning-based search agents.
+> **References:** Architecture patterns informed by:
+> - [Awesome-Deep-Research](https://github.com/DavidZWZ/Awesome-Deep-Research) — survey of 60+ agentic search systems (Zhang et al., 2025)
+> - [Anthropic Multi-Agent Research System](https://www.anthropic.com/engineering/built-multi-agent-research-system) — orchestrator-worker production architecture
+> - 35+ domain-specific papers in `resources/pdfs/references/` covering environmental AI, scientific agents, LLM dashboards, and FAIR data principles
 
 ---
 
@@ -587,28 +590,97 @@ Development is organized into focused sessions, each delivering a working increm
 
 ---
 
-### Session 13: Deep Research Agent v2
+### Session 13: Deep Research Agent v2 — Multi-Agent Architecture
 *Role Lead: Software Engineer*
 
-**Goal:** Enhance the research agent with patterns from Awesome-Deep-Research: multi-step planning, self-reflection, and structured report output.
+**Goal:** Re-architect the research agent using an **orchestrator-worker pattern** informed by Anthropic's multi-agent research system, the Awesome-Deep-Research survey (60+ papers), and domain-specific patterns from WaterGPT, GAIA, and LLM dashboard literature.
+
+> **Key Insight (Anthropic):** "Token usage by itself explains 80% of performance variance in browsing agent evaluations. Multi-agent architectures effectively scale token usage for tasks that exceed the limits of single agents." Multi-agent systems outperform single agents by 90.2% on research tasks.
+
+**Architecture — Orchestrator-Worker Pattern:**
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                     LeadResearcher                           │
+│  ├── Analyzes query complexity (simple / moderate / complex) │
+│  ├── Creates research plan (saved to memory)                 │
+│  ├── Spawns 1-N SubAgents based on complexity                │
+│  ├── Synthesizes subagent findings                           │
+│  ├── Decides: more research needed? → spawn more subagents   │
+│  └── Passes final report to CitationAgent                    │
+└──────────┬────────────────────────┬──────────────────────────┘
+           │                        │
+┌──────────▼──────────┐  ┌─────────▼───────────┐
+│    SubAgent A       │  │    SubAgent B        │
+│  (KB + PDF search)  │  │  (USGS data query)   │  ... SubAgent N
+│  ├── Web/KB search  │  │  ├── API queries     │
+│  ├── Evaluate results│  │  ├── Stat analysis   │
+│  ├── Refine query   │  │  ├── Trend detection  │
+│  └── Return findings│  │  └── Return findings  │
+└─────────────────────┘  └──────────────────────┘
+           │                        │
+┌──────────▼────────────────────────▼──────────────────────────┐
+│                    CitationAgent                              │
+│  ├── Processes documents + research report                   │
+│  ├── Identifies specific source locations for citations      │
+│  ├── Applies trust scoring (source_verification.py)          │
+│  └── Returns final cited report                              │
+└──────────────────────────────────────────────────────────────┘
+```
 
 **Deliverables:**
-- [ ] Research planner: Break complex questions into sub-queries
-- [ ] Self-reflection loop: Agent evaluates its own answer quality before responding
+- [ ] `LeadResearcher` class: query analysis, plan creation, subagent orchestration
+- [ ] `SubAgent` class: independent KB/web/data search with own context window
+- [ ] `CitationAgent`: source attribution and trust scoring post-processing
+- [ ] Research planner: break complex questions into parallelizable sub-queries
+- [ ] Self-reflection loop: agent evaluates answer quality before responding (WebSeer pattern)
 - [ ] Structured report output (sections, citations, confidence per section)
-- [ ] Configurable search depth and timeout
-- [ ] Research session persistence (resume interrupted research)
+- [ ] Configurable search depth, timeout, and token budget
+- [ ] Research session persistence (resume interrupted research via memory/checkpoints)
+- [ ] Effort scaling: 1 agent / 3-10 tool calls for simple queries → 5+ agents for complex
 
 **Acceptance Criteria:**
 - [ ] Complex question "What are the long-term impacts of sea level rise on the Biscayne Aquifer?" produces a multi-section report with 5+ sources
+- [ ] SubAgents execute in parallel (3-5 concurrent), reducing research time by ≥ 50%
 - [ ] Self-reflection catches low-confidence sections and triggers re-search
-- [ ] Research can be stopped and resumed
+- [ ] Research can be stopped and resumed (checkpoint persistence)
+- [ ] Token budget controls prevent runaway costs (≤ 15× single chat interaction)
+- [ ] LLM-as-judge evaluation scores ≥ 0.7 on factual accuracy, citation accuracy, completeness
 
-**Reference Patterns (from Awesome-Deep-Research):**
-- Iterative query optimization (SmartSearch, ReSeek)
-- Self-reflection for quality control (WebSeer)
-- Multi-agent decomposition (O-Researcher)
-- Budget-aware tool use for efficiency
+**Research-Backed Implementation Patterns:**
+
+| Pattern | Source Paper/System | How to Apply |
+|---------|-------------------|--------------|
+| **Orchestrator-Worker** | Anthropic Research System | LeadResearcher delegates to SubAgents with specific objectives, output format, tool guidance, and task boundaries |
+| **Iterative Query Optimization** | SmartSearch, ReSeek (2025) | SubAgents start with broad queries, evaluate results, then progressively narrow focus |
+| **Self-Reflection** | WebSeer (2025), Interleaved Thinking | After tool results, SubAgents use thinking to evaluate quality, identify gaps, refine next query |
+| **Context Summarization** | ReSum (2025) | Compress completed research phases to memory before proceeding; prevents context overflow |
+| **Budget-Aware Tool Use** | Budget-Aware (2025) | Embed scaling rules in prompts: simple fact-finding = 1 agent / 3-10 calls; complex research = 5+ agents |
+| **Filesystem Output** | Anthropic Appendix | SubAgents write findings to shared memory/filesystem, pass lightweight references to LeadResearcher |
+| **Atomic Thought Reward** | Atom-Searcher (2025) | Fine-grained reward signals for each reasoning step, not just final output |
+| **Process Reward** | HiPRAG, Process vs Outcome (2025) | Reward intermediate search decisions, not just final answer quality |
+
+**Prompt Engineering Principles (from Anthropic):**
+1. **Think like your agents** — simulate in console, watch step-by-step for failure modes
+2. **Teach delegation** — lead agent must give subagents: objective, output format, tool list, task boundaries
+3. **Scale effort to complexity** — explicit rules for agent count and tool call budget
+4. **Tool design is critical** — explicit heuristics: examine tools first, match to intent, prefer specialized over generic
+5. **Start wide, then narrow** — broad initial queries before drilling into specifics
+6. **Guide the thinking process** — extended thinking for planning, interleaved thinking after tool results
+7. **Parallel tool calling** — subagents use 3+ tools in parallel; lead spawns 3-5 subagents concurrently
+
+**Evaluation Strategy (from Anthropic):**
+- Start with ~20 representative queries covering real usage patterns
+- LLM-as-judge scoring (0.0-1.0) on: factual accuracy, citation accuracy, completeness, source quality, tool efficiency
+- Human evaluation to catch hallucinations, source selection biases, edge cases
+- End-state evaluation (judge outcome, not process) since agents take different valid paths
+
+**Key Files:**
+- `src/agent/research_agent.py` — Refactor into multi-agent architecture
+- `src/agent/lead_researcher.py` — New: orchestrator agent
+- `src/agent/sub_agent.py` — New: specialized worker agents
+- `src/agent/citation_agent.py` — New: post-processing citations
+- `src/agent/source_verification.py` — Trust scoring integration
 
 ---
 
@@ -1378,18 +1450,123 @@ Types:
 
 ## 🔮 Future Research Directions
 
-This project is designed as an extensible foundation for agentic groundwater research. The following directions are informed by the [Awesome-Deep-Research](https://github.com/DavidZWZ/Awesome-Deep-Research) survey and the project's domain needs.
+This project is designed as an extensible foundation for agentic groundwater research. The following directions synthesize insights from three bodies of literature:
 
-### Agentic Research Patterns (from literature)
+1. **Agentic Deep Research** — [Awesome-Deep-Research](https://github.com/DavidZWZ/Awesome-Deep-Research) survey (60+ papers, 20+ open-source implementations) and [Anthropic's multi-agent research system](https://www.anthropic.com/engineering/built-multi-agent-research-system)
+2. **Domain-Specific AI** — Reference PDFs in `resources/pdfs/references/` covering agentic data analysts, LLM dashboards, scientific agents, and environmental LLM applications
+3. **FAIR Data Principles** — Wilkinson et al. (2016) guidelines for findable, accessible, interoperable, reusable data
 
-| Pattern | Description | Applicable To |
-|---------|-------------|---------------|
-| **Iterative Query Optimization** | LLM rewrites search queries based on initial results (SmartSearch, ReSeek) | Deep research mode |
-| **Self-Reflection** | Agent evaluates its own outputs and re-searches weak areas (WebSeer) | Answer quality control |
-| **Multi-Agent Decomposition** | Complex questions split across specialized sub-agents (O-Researcher) | Multi-source research |
-| **Budget-Aware Tool Use** | Minimize LLM/API calls while maintaining quality | Cost efficiency |
-| **Reinforcement Learning for Search** | Train search policy from feedback (GRPO, M-GRPO) | Long-term improvement |
-| **Context Summarization** | Compress long search histories for LLM context windows (ReSum) | Long research sessions |
+---
+
+### 📖 Literature-Informed Architecture Patterns
+
+#### A. Multi-Agent Research Systems
+
+The state of the art in agentic deep research has converged on the **orchestrator-worker pattern** (Anthropic, DeerFlow, GPT-Researcher). Key findings:
+
+| Finding | Source | Implication for GroundwaterGPT |
+|---------|--------|-------------------------------|
+| Token usage explains 80% of research quality variance | Anthropic (2025) | Multi-agent architecture is essential for complex groundwater questions |
+| Multi-agent outperforms single-agent by 90.2% | Anthropic BrowseComp eval | Session 13 should implement full orchestrator-worker decomposition |
+| Agents use ~4× more tokens than chat; multi-agent uses ~15× | Anthropic production data | Budget controls critical — embed token limits in prompts |
+| Start wide, then narrow search queries | Anthropic, SimpleDeepSearcher | SubAgents should begin with "groundwater Florida aquifer" not "Biscayne aquifer saltwater intrusion 2024 USGS data" |
+| Subagent filesystem output reduces "telephone game" errors | Anthropic Appendix | SubAgents write to shared memory, pass lightweight references |
+| Context summarization prevents overflow | ReSum (2025) | Compress completed phases before spawning new subagents |
+
+**Open-Source Implementations to Study:**
+
+| Project | Architecture | Why Relevant |
+|---------|-------------|--------------|
+| [gemini-fullstack-langgraph-quickstart](https://github.com/google-gemini/gemini-fullstack-langgraph-quickstart) | LangGraph + Gemini fullstack | Closest to our stack (LangGraph + React) |
+| [DeerFlow](https://github.com/bytedance/deer-flow) | ByteDance research framework | Production-grade multi-agent with planning |
+| [GPT-Researcher](https://github.com/assafelovic/gpt-researcher) | Autonomous research agent | Iterative search + report synthesis |
+| [langgraph-deep-research](https://github.com/foreveryh/langgraph-deep-research) | LangGraph workflows | Direct LangGraph patterns for deep research |
+| [nanoDeepResearch](https://github.com/liyuan24/nanoDeepResearch) | Lightweight toolkit | Minimal implementation for learning |
+| [Anthropic multi-agent prompts](https://platform.claude.com/cookbook/patterns-agents-basic-workflows) | Cookbook patterns | Open-source prompts from production system |
+
+#### B. Reinforcement Learning for Search Agents
+
+The most active research frontier (2025-2026) is training search agents via RL:
+
+| Approach | Papers | Key Idea | Applicability |
+|----------|--------|----------|---------------|
+| **GRPO** (Group Relative Policy Optimization) | DeepResearcher, ReSeek, SmartSearch, Atom-Searcher | Train search policy from group-level reward comparisons | Future: fine-tune local model for groundwater search |
+| **Process Rewards** | HiPRAG, Process vs Outcome (2025) | Reward each search step, not just final answer | Improve intermediate tool selection in research agent |
+| **Self-Reflection** | WebSeer (2025) | Agent corrects itself after observing search results | Near-term: add reflection step to DeepResearchAgent |
+| **Self-Evolving Agents** | Dr. Zero (2026) | Agents improve without training data | Long-term: autonomous improvement loop |
+| **Budget-Aware Reasoning** | Budget-Aware Tool-Use (2025) | Scale effort to query complexity | Near-term: effort scaling in Session 13 |
+
+> **Practical Note:** Most RL approaches require Qwen2.5-7B+ class models. Our Ollama-first architecture supports this via local fine-tuning with `ollama create` from GGUF exports.
+
+#### C. Domain-Specific Environmental AI
+
+From the reference PDFs in `resources/pdfs/references/`:
+
+| Paper/System | Key Pattern | Application to GroundwaterGPT |
+|-------------|-------------|-------------------------------|
+| **GAIA** (Harsuko et al., 2026) | Agentic AI for geothermal analytics — automated field development with domain tools | Model for our groundwater analytics agent: domain-specific tools + LLM reasoning |
+| **WaterGPT** (Ren et al., 2024) | LLM for water/wastewater management tasks | Validates our approach: domain-adapted LLM + specialized tools for hydrology |
+| **Spec-Driven AI for Science** | Specification-driven agent design | Define formal specs for each tool's inputs/outputs/constraints |
+| **Understanding Agentic AI for Data Analysis** | Taxonomy of agentic data analysis patterns | Framework for classifying our agent's analysis capabilities |
+| **Eythorsson & Clark (2025)** | Toward automated scientific discovery in hydrology | Long-term vision: agent proposes and tests hypotheses |
+| **Zhang et al. (2025)** | Foundation models as assistive tools in hydrometeorology | Integration patterns for combining LLMs with numerical weather/hydro models |
+| **Iyer et al. (2025)** | GeoAI review | Best practices for geospatial AI applications |
+
+#### D. LLM-Powered Dashboard Patterns
+
+From `resources/pdfs/references/LLM dashboards/`:
+
+| Paper | Pattern | Relevance |
+|-------|---------|-----------|
+| **Becker et al. (2023)** — RIXA | Explaining AI in natural language alongside dashboards | Add natural language explanations to each chart/visualization |
+| **Jin et al. (2025)** — Chatting with LA Dashboard | Conversational interface layered on analytics dashboard | Our ChatView.jsx approach validated; extend with contextual suggestions |
+| **Stock et al. (2025)** — Dashboard Filtering via LLM | LLM interprets user intent to filter dashboard data | "Show me only drought months" → agent filters time series in real time |
+| **Shih et al. (2024)** — Data Science Workflows | LLM-orchestrated data science pipelines | Agent can generate and execute analysis code on demand |
+| **Mathur et al. (2025)** — PyEvoCell | LLM-augmented trajectory analysis | Pattern for LLM + domain-specific analysis tools working together |
+
+#### E. Scientific Agent Patterns
+
+From `resources/pdfs/references/Training LLM on Env Data/Scientific agents/`:
+
+| Paper | Key Contribution | Implementation Path |
+|-------|-----------------|---------------------|
+| **Boiko et al. (2023)** — Chemical agents with LLMs | Autonomous experimental design: plan → execute → analyze → iterate | Template for our research agent's iterative hypothesis-testing loop |
+| **Romera-Paredes et al. (2023)** — Math discovery | LLM discovers new mathematical relationships | Long-term: agent discovers novel groundwater correlations |
+| **Wang (2023)** — Scientific discovery in age of AI | Framework for AI-augmented research workflows | Validates our 5-layer architecture (Presentation → Agent → Knowledge → Verification → Data) |
+| **Zheng et al. (2025)** — LLMs for reticular chemistry | Domain-specific fine-tuning + tool use | Pattern for fine-tuning on groundwater literature |
+
+#### F. Research Integrity & Bias
+
+| Paper | Key Finding | Design Principle |
+|-------|-------------|-----------------|
+| **van der Ven (2025)** — AI bias in environmental challenges | LLMs can perpetuate biases in environmental data interpretation | Always verify agent claims against USGS numerical data; trust scores essential |
+| **Wilkinson et al. (2016)** — FAIR principles | Data must be Findable, Accessible, Interoperable, Reusable | All data endpoints include metadata; knowledge base maintains provenance |
+| **Larosa et al. (2025)** — LLM climate text analysis | LLMs effective for analyzing climate literature but prone to overconfidence | Self-reflection loop must flag uncertainty; present confidence intervals |
+
+---
+
+### 🗺️ Implementation Roadmap (Research-Informed)
+
+#### Near-Term (Sessions 8-11)
+- [ ] **Dashboard NL filtering** — LLM interprets "show dry season data" to filter charts (Stock et al. pattern)
+- [ ] **Contextual explanations** — ChatView generates plain-language summaries of visible charts (RIXA pattern)
+- [ ] **NOAA data integration** — Correlate rainfall/tide with water levels (multi-source research)
+- [ ] **FAIR metadata** — All API endpoints return source provenance and data lineage
+
+#### Medium-Term (Sessions 12-13)
+- [ ] **Multi-agent research** — Orchestrator-worker with parallel SubAgents (Anthropic pattern)
+- [ ] **Self-reflection loop** — Agent evaluates own answer quality before responding (WebSeer)
+- [ ] **Document ingestion pipeline** — Auto-ingest PDFs from `resources/pdfs/references/` with trust scoring
+- [ ] **LLM-as-judge evaluation** — Automated quality scoring for research outputs
+- [ ] **Research session memory** — Persist research state across sessions (context summarization)
+
+#### Long-Term (Post Session 14)
+- [ ] **RL-trained search agent** — GRPO fine-tuning on groundwater question-answer pairs
+- [ ] **Hypothesis generation** — Agent proposes testable groundwater hypotheses (Boiko et al. pattern)
+- [ ] **Satellite data fusion** — NDVI/soil moisture via NASA EarthData (GeoAI patterns)
+- [ ] **Causal inference** — Bayesian networks for climate → water level causation
+- [ ] **Automated scientific reports** — Monthly trend reports with citations (Multimodal DeepResearcher pattern)
+- [ ] **Cross-domain transfer** — Apply architecture to other environmental monitoring domains
 
 ### Data Sources (planned)
 - [ ] NOAA precipitation data (correlate rainfall with water levels)
@@ -1411,6 +1588,33 @@ This project is designed as an extensible foundation for agentic groundwater res
 
 ### Document Integration (planned)
 New research documents will be added to `resources/pdfs/` and ingested via the document pipeline (Session 12). The knowledge base is designed to grow over time while maintaining source verification standards.
+
+### 📚 Reference Library Index
+
+The following documents in `resources/pdfs/references/` inform this project's design:
+
+```
+resources/pdfs/references/
+├── Agentic Data Analysts/
+│   ├── GAIA Geothermal Analytics and Intelligent Agent.pdf    → Agent architecture model
+│   ├── Spec-Driven AI for Science.pdf                         → Formal tool specifications
+│   └── Understanding Agentic AI Systems for Data Analysis.pdf → Taxonomy of agent patterns
+├── FAIR data/
+│   └── Wilkinson et al 2016 FAIR guiding principles.pdf       → Data provenance standards
+├── LLM dashboards/
+│   ├── Becker et al 2023 RIXA (NL explanations).pdf          → Dashboard NL layer
+│   ├── Jin et al 2025 Chatting with LA Dashboard.pdf          → Conversational dashboard
+│   ├── Stock et al 2025 Dashboard Filtering via LLM.pdf       → NL-driven data filtering
+│   ├── Shih et al 2024 Data Science Workflows.pdf             → LLM-orchestrated analysis
+│   └── Mathur et al 2025 PyEvoCell.pdf                        → LLM + domain analysis
+├── Training LLM on Env Data/
+│   ├── General/ (WaterGPT, GeoAI, Foundation Models, etc.)   → Domain validation
+│   ├── Scientific agents/ (Chemical agents, Math discovery)   → Hypothesis-testing patterns
+│   ├── Text analysis/ (Climate NLP, bias detection)           → Literature mining
+│   └── Accuracy Score/ (Hydro LLM benchmark, LUR)            → Evaluation benchmarks
+└── Academic writing/
+    └── Editorial – Why it is a blessing to be rejected.pdf    → Publication guidance
+```
 
 ---
 
