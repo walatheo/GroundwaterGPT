@@ -1,6 +1,39 @@
 import { useState, useEffect, useRef } from 'react'
 import { Send, Bot, User, AlertCircle, Sparkles, Search, MessageCircle } from 'lucide-react'
 import { sendChatMessage, sendResearchQuery, fetchChatStatus } from '../api/client'
+import AgentChart from './AgentChart'
+
+/**
+ * Try to extract a Recharts-ready chart payload from a text response.
+ * The agent may embed a JSON block with chart_type / series / data.
+ * Returns { text, chart } where chart is null or the parsed object.
+ */
+function extractChart(text) {
+  if (!text) return { text, chart: null }
+
+  // Look for a JSON block that contains "chart_type"
+  const jsonBlockRe = /```json\s*([\s\S]*?)```/
+  const match = text.match(jsonBlockRe)
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[1])
+      if (parsed && parsed.chart_type && parsed.data) {
+        const cleaned = text.replace(jsonBlockRe, '').trim()
+        return { text: cleaned, chart: parsed }
+      }
+    } catch { /* not valid JSON, ignore */ }
+  }
+
+  // Also try if the entire response is JSON
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && parsed.chart_type && parsed.data) {
+      return { text: '', chart: parsed }
+    }
+  } catch { /* not JSON */ }
+
+  return { text, chart: null }
+}
 
 const EXAMPLE_QUESTIONS = [
   "What water table depth is best for citrus trees?",
@@ -60,13 +93,17 @@ export default function ChatView({ selectedSite }) {
         }])
 
         const data = await sendResearchQuery(text)
+        const { text: reportText, chart } = extractChart(
+          data.report || data.response || 'Research complete — no report generated.'
+        )
 
         // Remove progress indicator, add real response
         setMessages(prev => {
           const filtered = prev.filter(m => !m.isProgress)
           return [...filtered, {
             role: 'assistant',
-            content: data.report || data.response || 'Research complete — no report generated.',
+            content: reportText,
+            chart,
             context: `Depth reached: ${data.depth_reached} | Elapsed: ${Math.round(data.elapsed_seconds)}s`,
             sources: data.sources || [],
             insights: data.insights || [],
@@ -76,10 +113,12 @@ export default function ChatView({ selectedSite }) {
       } else {
         // Quick chat mode
         const data = await sendChatMessage(text)
+        const { text: replyText, chart } = extractChart(data.response)
 
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: data.response,
+          content: replyText,
+          chart,
           context: data.context,
           sources: data.sources || [],
           mode: data.mode,
@@ -177,6 +216,13 @@ export default function ChatView({ selectedSite }) {
               }`}
             >
               <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+
+              {/* Inline chart from agent visualization tools */}
+              {msg.chart && (
+                <div className="mt-3 -mx-1">
+                  <AgentChart chartData={msg.chart} />
+                </div>
+              )}
 
               {msg.context && (
                 <p className="text-xs mt-2 opacity-70 border-t border-slate-200 pt-2">

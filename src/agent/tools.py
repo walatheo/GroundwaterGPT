@@ -1,10 +1,9 @@
-"""
-Custom Tools for GroundwaterGPT Agent
+"""Custom Tools for GroundwaterGPT Agent.
 
 Tools for querying groundwater data, making predictions, and analyzing trends.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -23,8 +22,7 @@ MODELS_DIR = BASE_DIR / "models"
 def query_groundwater_data(
     start_date: Optional[str] = None, end_date: Optional[str] = None, stat_type: str = "summary"
 ) -> str:
-    """
-    Query real USGS groundwater data for Fort Myers, FL area.
+    """Query real USGS groundwater data for Fort Myers, FL area.
 
     Args:
         start_date: Start date in YYYY-MM-DD format (default: earliest available)
@@ -49,6 +47,8 @@ def query_groundwater_data(
 
         # Calculate statistics based on type
         if stat_type == "summary":
+            tail30 = df.tail(30)
+            recent_change = tail30.iloc[-1]["water_level_ft"] - tail30.iloc[0]["water_level_ft"]
             result = f"""
 📊 **Groundwater Data Summary**
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -63,9 +63,9 @@ def query_groundwater_data(
    • Std Dev: {df['water_level_ft'].std():.2f} ft
 
 📉 **Recent Trend** (last 30 days):
-   • Start: {df.tail(30).iloc[0]['water_level_ft']:.2f} ft
-   • End: {df.tail(30).iloc[-1]['water_level_ft']:.2f} ft
-   • Change: {df.tail(30).iloc[-1]['water_level_ft'] - df.tail(30).iloc[0]['water_level_ft']:+.2f} ft
+   • Start: {tail30.iloc[0]['water_level_ft']:.2f} ft
+   • End: {tail30.iloc[-1]['water_level_ft']:.2f} ft
+   • Change: {recent_change:+.2f} ft
 """
 
         elif stat_type == "monthly":
@@ -73,7 +73,10 @@ def query_groundwater_data(
             monthly = df.groupby("month")["water_level_ft"].agg(["mean", "min", "max", "std"])
             result = "📅 **Monthly Averages** (last 12 months):\n"
             for month, row in monthly.tail(12).iterrows():
-                result += f"   • {month}: {row['mean']:.2f} ft (range: {row['min']:.2f} - {row['max']:.2f})\n"
+                result += (
+                    f"   • {month}: {row['mean']:.2f} ft"
+                    f" (range: {row['min']:.2f} - {row['max']:.2f})\n"
+                )
 
         elif stat_type == "yearly":
             df["year"] = df["date"].dt.year
@@ -107,8 +110,7 @@ def query_groundwater_data(
 
 @tool
 def get_water_level_prediction(days_ahead: int = 7) -> str:
-    """
-    Get water level predictions using the trained ML model.
+    """Get water level predictions using the trained ML model.
 
     Args:
         days_ahead: Number of days to predict (1-30, default: 7)
@@ -125,7 +127,7 @@ def get_water_level_prediction(days_ahead: int = 7) -> str:
         if not model_path.exists():
             return "❌ Prediction model not found. Please run train_groundwater.py first."
 
-        model = joblib.load(model_path)
+        _model = joblib.load(model_path)  # noqa: F841 — loaded for future use
 
         # Load recent data for features
         df = pd.read_csv(DATA_DIR / "groundwater.csv", parse_dates=["date"])
@@ -185,8 +187,7 @@ def get_water_level_prediction(days_ahead: int = 7) -> str:
 
 @tool
 def analyze_seasonal_patterns() -> str:
-    """
-    Analyze seasonal patterns in groundwater levels.
+    """Analyze seasonal patterns in groundwater levels.
 
     Returns:
         Seasonal analysis including wet/dry season comparisons
@@ -268,8 +269,7 @@ def analyze_seasonal_patterns() -> str:
 
 @tool
 def detect_anomalies(threshold: float = 2.0) -> str:
-    """
-    Detect anomalies in groundwater levels using statistical methods.
+    """Detect anomalies in groundwater levels using statistical methods.
 
     Args:
         threshold: Standard deviation threshold for anomaly detection (default: 2.0)
@@ -305,7 +305,10 @@ def detect_anomalies(threshold: float = 2.0) -> str:
             if len(high_anomalies) > 0:
                 result += f"\n📈 **Unusually Deep Water** ({len(high_anomalies)} events):\n"
                 for _, row in high_anomalies.head(5).iterrows():
-                    result += f"   • {row['date'].strftime('%Y-%m-%d')}: {row['water_level_ft']:.2f} ft (z={row['z_score']:.1f})\n"
+                    d = row["date"].strftime("%Y-%m-%d")
+                    lvl = row["water_level_ft"]
+                    z = row["z_score"]
+                    result += f"   • {d}: {lvl:.2f} ft (z={z:.1f})\n"
                 if len(high_anomalies) > 5:
                     result += f"   ... and {len(high_anomalies) - 5} more\n"
 
@@ -314,7 +317,10 @@ def detect_anomalies(threshold: float = 2.0) -> str:
             if len(low_anomalies) > 0:
                 result += f"\n📉 **Unusually Shallow Water** ({len(low_anomalies)} events):\n"
                 for _, row in low_anomalies.head(5).iterrows():
-                    result += f"   • {row['date'].strftime('%Y-%m-%d')}: {row['water_level_ft']:.2f} ft (z={row['z_score']:.1f})\n"
+                    d = row["date"].strftime("%Y-%m-%d")
+                    lvl = row["water_level_ft"]
+                    z = row["z_score"]
+                    result += f"   • {d}: {lvl:.2f} ft (z={z:.1f})\n"
                 if len(low_anomalies) > 5:
                     result += f"   ... and {len(low_anomalies) - 5} more\n"
         else:
@@ -334,8 +340,7 @@ def detect_anomalies(threshold: float = 2.0) -> str:
 
 @tool
 def get_data_quality_report() -> str:
-    """
-    Generate a data quality report for the groundwater dataset.
+    """Generate a data quality report for the groundwater dataset.
 
     Returns:
         Data quality metrics including completeness, gaps, and source info
@@ -378,19 +383,195 @@ def get_data_quality_report() -> str:
                     f"      - {int(row['gap'])} days ending {row['date'].strftime('%Y-%m-%d')}\n"
                 )
 
+        wl_min = df["water_level_ft"].min()
+        wl_max = df["water_level_ft"].max()
+        if completeness > 90:
+            quality = "Good"
+        elif completeness > 70:
+            quality = "Fair"
+        else:
+            quality = "Poor"
+
         result += f"""
 📈 **Value Range**:
-   • Minimum: {df['water_level_ft'].min():.2f} ft
-   • Maximum: {df['water_level_ft'].max():.2f} ft
-   • Range: {df['water_level_ft'].max() - df['water_level_ft'].min():.2f} ft
+   • Minimum: {wl_min:.2f} ft
+   • Maximum: {wl_max:.2f} ft
+   • Range: {wl_max - wl_min:.2f} ft
 
-✅ **Status**: {"Good" if completeness > 90 else "Fair" if completeness > 70 else "Poor"} quality dataset
+✅ **Status**: {quality} quality dataset
 """
 
         return result
 
     except Exception as e:
         return f"❌ Error generating quality report: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
+# Visualization tools (Session 8)
+# ---------------------------------------------------------------------------
+
+
+def _load_site_csv(site_id: str) -> pd.DataFrame:
+    """Load CSV for a single USGS site and return a date-indexed DataFrame.
+
+    The per-site CSVs use columns ``datetime`` and ``value``.
+    This helper normalises them to ``date`` and ``water_level_ft``
+    so that downstream tools can use a consistent schema.
+    """
+    csv_path = DATA_DIR / f"usgs_{site_id}.csv"
+    if not csv_path.exists():
+        raise FileNotFoundError(f"No data file for site {site_id}")
+    df = pd.read_csv(csv_path, parse_dates=["datetime"])
+    df = df.rename(columns={"datetime": "date", "value": "water_level_ft"})
+    df = df.sort_values("date")
+    return df
+
+
+@tool
+def generate_time_series_plot(
+    site_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    include_rolling_avg: bool = True,
+) -> str:
+    """Generate time-series chart data for a USGS site.
+
+    Returns a JSON string with ``type: "chart"`` that the frontend can
+    render as an interactive Recharts line chart.
+
+    Args:
+        site_id: USGS site number (e.g. "262724081260701")
+        start_date: Optional start date YYYY-MM-DD
+        end_date: Optional end date YYYY-MM-DD
+        include_rolling_avg: Include a 30-day rolling average line
+
+    Returns:
+        JSON string with chart_type, title, series, and data arrays.
+    """
+    import json
+
+    try:
+        df = _load_site_csv(site_id)
+
+        if start_date:
+            df = df[df["date"] >= pd.Timestamp(start_date)]
+        if end_date:
+            df = df[df["date"] <= pd.Timestamp(end_date)]
+
+        if df.empty:
+            return json.dumps({"type": "chart", "error": "No data for the requested range."})
+
+        records = []
+        levels = df["water_level_ft"].tolist()
+        dates = df["date"].dt.strftime("%Y-%m-%d").tolist()
+
+        window = 30
+        for i, (d, lvl) in enumerate(zip(dates, levels)):
+            entry: Dict[str, Any] = {"date": d, "level": round(lvl, 2)}
+            if include_rolling_avg and i >= window - 1:
+                avg = float(np.mean(levels[max(0, i - window + 1) : i + 1]))
+                entry["rollingAvg"] = round(avg, 2)
+            records.append(entry)
+
+        chart = {
+            "type": "chart",
+            "chart_type": "time_series",
+            "title": f"Water Level — Site {site_id}",
+            "x_label": "Date",
+            "y_label": "Water Level (ft)",
+            "series": [
+                {"key": "level", "name": "Water Level", "color": "#3b82f6"},
+            ],
+            "data": records,
+        }
+        if include_rolling_avg:
+            chart["series"].append({"key": "rollingAvg", "name": "30-Day Avg", "color": "#f59e0b"})
+
+        return json.dumps(chart)
+
+    except FileNotFoundError as exc:
+        return json.dumps({"type": "chart", "error": str(exc)})
+    except Exception as exc:
+        return json.dumps({"type": "chart", "error": f"Chart generation failed: {exc}"})
+
+
+@tool
+def generate_comparison_chart(
+    site_ids: List[str],
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> str:
+    """Generate a multi-site comparison chart overlaying water levels.
+
+    Args:
+        site_ids: List of USGS site numbers to compare (max 5).
+        start_date: Optional start date YYYY-MM-DD.
+        end_date: Optional end date YYYY-MM-DD.
+
+    Returns:
+        JSON string with chart data for all requested sites.
+    """
+    import json
+
+    COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6"]
+
+    try:
+        if len(site_ids) > 5:
+            site_ids = site_ids[:5]
+
+        # Collect data per site
+        all_dates: set = set()
+        site_data: Dict[str, Dict[str, float]] = {}
+
+        for sid in site_ids:
+            try:
+                df = _load_site_csv(sid)
+                if start_date:
+                    df = df[df["date"] >= pd.Timestamp(start_date)]
+                if end_date:
+                    df = df[df["date"] <= pd.Timestamp(end_date)]
+                mapping = dict(
+                    zip(
+                        df["date"].dt.strftime("%Y-%m-%d"),
+                        df["water_level_ft"].round(2),
+                    )
+                )
+                site_data[sid] = mapping
+                all_dates.update(mapping.keys())
+            except FileNotFoundError:
+                continue
+
+        if not site_data:
+            return json.dumps({"type": "chart", "error": "No data found for any site."})
+
+        sorted_dates = sorted(all_dates)
+        records = []
+        for d in sorted_dates:
+            entry: Dict[str, Any] = {"date": d}
+            for sid in site_data:
+                if d in site_data[sid]:
+                    entry[sid] = site_data[sid][d]
+            records.append(entry)
+
+        series = [
+            {"key": sid, "name": f"Site {sid[-6:]}", "color": COLORS[i % len(COLORS)]}
+            for i, sid in enumerate(site_data)
+        ]
+
+        chart = {
+            "type": "chart",
+            "chart_type": "comparison",
+            "title": f"Water Level Comparison — {len(site_data)} Sites",
+            "x_label": "Date",
+            "y_label": "Water Level (ft)",
+            "series": series,
+            "data": records,
+        }
+        return json.dumps(chart)
+
+    except Exception as exc:
+        return json.dumps({"type": "chart", "error": f"Comparison failed: {exc}"})
 
 
 # List of all available tools
@@ -400,4 +581,6 @@ GROUNDWATER_TOOLS = [
     analyze_seasonal_patterns,
     detect_anomalies,
     get_data_quality_report,
+    generate_time_series_plot,
+    generate_comparison_chart,
 ]

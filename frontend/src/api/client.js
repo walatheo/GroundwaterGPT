@@ -40,6 +40,40 @@ export async function compareSites(siteIds) {
 }
 
 // ---------------------------------------------------------------------------
+// Chart / Visualization endpoints (Session 8)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch Recharts-ready time-series JSON for a single site.
+ * @param {string} siteId
+ * @param {{ startDate?: string, endDate?: string, rollingWindow?: number }} params
+ */
+export async function fetchSiteChart(siteId, { startDate, endDate, rollingWindow } = {}) {
+  const qs = new URLSearchParams()
+  if (startDate) qs.set('start_date', startDate)
+  if (endDate) qs.set('end_date', endDate)
+  if (rollingWindow) qs.set('rolling_window', rollingWindow)
+  const query = qs.toString() ? `?${qs}` : ''
+  const response = await fetch(`${API_BASE}/sites/${siteId}/chart${query}`)
+  if (!response.ok) throw new Error(`Failed to fetch chart for site ${siteId}`)
+  return response.json()
+}
+
+/**
+ * Fetch Recharts-ready multi-site comparison JSON.
+ * @param {string[]} siteIds – up to 5 site IDs
+ * @param {{ startDate?: string, endDate?: string }} params
+ */
+export async function fetchComparisonChart(siteIds, { startDate, endDate } = {}) {
+  const qs = new URLSearchParams({ site_ids: siteIds.join(',') })
+  if (startDate) qs.set('start_date', startDate)
+  if (endDate) qs.set('end_date', endDate)
+  const response = await fetch(`${API_BASE}/compare/chart?${qs}`)
+  if (!response.ok) throw new Error('Failed to fetch comparison chart')
+  return response.json()
+}
+
+// ---------------------------------------------------------------------------
 // Chat & Research endpoints (Session 7)
 // ---------------------------------------------------------------------------
 
