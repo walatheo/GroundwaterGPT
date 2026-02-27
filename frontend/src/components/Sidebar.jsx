@@ -1,4 +1,12 @@
-import { Map, BarChart3, LineChart, Activity, Droplets, MessageSquare } from 'lucide-react'
+import {
+  Map,
+  BarChart3,
+  LineChart,
+  Activity,
+  Droplets,
+  MessageSquare,
+  FlaskConical,
+} from 'lucide-react'
 
 const navItems = [
   { id: 'map', label: 'Map', icon: Map },
@@ -6,6 +14,7 @@ const navItems = [
   { id: 'heatmap', label: 'Heatmap', icon: BarChart3 },
   { id: 'analysis', label: 'Analysis', icon: Activity },
   { id: 'chat', label: 'AI Assistant', icon: MessageSquare, badge: 'Beta' },
+  { id: 'research_workflow', label: 'Research Lab', icon: FlaskConical, badge: 'New' },
 ]
 
 export default function Sidebar({ sites, selectedSite, onSiteSelect, activeTab, setActiveTab }) {

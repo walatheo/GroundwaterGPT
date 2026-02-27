@@ -3,8 +3,9 @@ import TimeSeriesChart from './TimeSeriesChart'
 import HeatmapChart from './HeatmapChart'
 import AnalysisView from './AnalysisView'
 import ChatView from './ChatView'
+import ResearchWorkflowView from './ResearchWorkflowView'
 import StatsCard from './StatsCard'
-import { TrendingUp, TrendingDown, Minus, Droplet, Calendar, Database, Activity } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Droplet, Database, Activity } from 'lucide-react'
 
 export default function Dashboard({ site, data, heatmapData, stats, sites, loading, error, activeTab, setSelectedSite }) {
   const getTrendIcon = (trend) => {
@@ -35,6 +36,7 @@ export default function Dashboard({ site, data, heatmapData, stats, sites, loadi
           {activeTab === 'heatmap' && '🌡️ Water Level Heatmap'}
           {activeTab === 'analysis' && '📊 Statistical Analysis'}
           {activeTab === 'chat' && '🤖 AI Assistant'}
+          {activeTab === 'research_workflow' && '🧪 Research Workflow Lab'}
         </h2>
         <p className="text-slate-500 mt-1">
           {activeTab === 'map' && 'Interactive map of Florida groundwater monitoring sites'}
@@ -42,6 +44,7 @@ export default function Dashboard({ site, data, heatmapData, stats, sites, loadi
           {activeTab === 'heatmap' && 'Temporal patterns by month and year'}
           {activeTab === 'analysis' && 'Detailed statistics and distributions'}
           {activeTab === 'chat' && 'Ask questions about groundwater, irrigation, and crops'}
+          {activeTab === 'research_workflow' && 'Plan experiments, enforce reproducibility metadata, and draft papers with provenance'}
         </p>
       </header>
 
@@ -54,7 +57,7 @@ export default function Dashboard({ site, data, heatmapData, stats, sites, loadi
       )}
 
       {/* Stats Cards (shown when site selected) */}
-      {site && stats && !loading && (
+      {site && stats && !loading && activeTab !== 'research_workflow' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <StatsCard
             title="Min Level"
@@ -88,7 +91,7 @@ export default function Dashboard({ site, data, heatmapData, stats, sites, loadi
       )}
 
       {/* Site Info Banner */}
-      {site && (
+      {site && activeTab !== 'research_workflow' && (
         <div className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl p-4 mb-6 text-white">
           <div className="flex items-center justify-between">
             <div>
@@ -122,10 +125,11 @@ export default function Dashboard({ site, data, heatmapData, stats, sites, loadi
         {activeTab === 'chat' && (
           <ChatView selectedSite={site} />
         )}
+        {activeTab === 'research_workflow' && <ResearchWorkflowView />}
       </div>
 
       {/* No site selected message */}
-      {!site && activeTab !== 'map' && (
+      {!site && !['map', 'research_workflow'].includes(activeTab) && (
         <div className="flex items-center justify-center h-96 text-slate-400">
           <div className="text-center">
             <Droplet className="w-12 h-12 mx-auto mb-4 opacity-50" />

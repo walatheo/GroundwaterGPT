@@ -798,6 +798,13 @@ VALID_RESEARCH_PLAN_STATUSES = {
     "drafted",
 }
 
+REQUIRED_REPRODUCIBILITY_FIELDS = {
+    "random_seed",
+    "code_commit",
+    "environment",
+    "executor",
+}
+
 
 def _clean_string_list(values: Optional[List[str]]) -> List[str]:
     """Return a trimmed list of non-empty strings."""
@@ -807,6 +814,94 @@ def _clean_string_list(values: Optional[List[str]]) -> List[str]:
         if text:
             cleaned.append(text)
     return cleaned
+
+
+def _validate_reproducibility_metadata(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Validate reproducibility metadata required for experiment replay."""
+    if not isinstance(metadata, dict):
+        raise ValueError("reproducibility metadata must be a JSON object.")
+
+    normalized: Dict[str, Any] = {}
+    for key, value in metadata.items():
+        if isinstance(value, str):
+            trimmed = value.strip()
+            if trimmed:
+                normalized[key] = trimmed
+        elif value is not None:
+            normalized[key] = value
+
+    missing = [
+        field for field in sorted(REQUIRED_REPRODUCIBILITY_FIELDS) if field not in normalized
+    ]
+    if missing:
+        joined = ", ".join(missing)
+        raise ValueError(f"Missing reproducibility fields: {joined}.")
+
+    commit = str(normalized.get("code_commit", "")).strip()
+    if len(commit) < 7:
+        raise ValueError("code_commit must be at least 7 characters (git short SHA).")
+
+    seed = normalized.get("random_seed")
+    if not isinstance(seed, int):
+        raise ValueError("random_seed must be an integer.")
+
+    return normalized
+
+
+def _normalize_artifact_records(
+    artifact_records: Optional[List[Dict[str, Any]]]
+) -> List[Dict[str, Any]]:
+    """Validate artifact records used for reproducibility and paper provenance."""
+    normalized: List[Dict[str, Any]] = []
+    for record in artifact_records or []:
+        if not isinstance(record, dict):
+            raise ValueError("artifact records must be JSON objects.")
+
+        path = str(record.get("path", "")).strip()
+        checksum = str(record.get("sha256", "")).strip().lower()
+        kind = str(record.get("kind", "artifact")).strip() or "artifact"
+        description = str(record.get("description", "")).strip()
+
+        if not path:
+            raise ValueError("artifact record path is required.")
+        if checksum and len(checksum) != 64:
+            raise ValueError("artifact sha256 must be a 64-character hex string when provided.")
+
+        normalized.append(
+            {
+                "path": path,
+                "sha256": checksum,
+                "kind": kind,
+                "description": description,
+            }
+        )
+
+    return normalized
+
+
+def _clean_citations(citations: Optional[List[str]]) -> List[str]:
+    """Normalize citation entries and remove duplicates while preserving order."""
+    seen: set = set()
+    cleaned: List[str] = []
+    for citation in citations or []:
+        text = str(citation).strip()
+        if text and text not in seen:
+            cleaned.append(text)
+            seen.add(text)
+    return cleaned
+
+
+def _default_reproducibility_metadata(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Build default reproducibility metadata for tool-driven logging."""
+    seed = config.get("seed")
+    random_seed = seed if isinstance(seed, int) else 0
+
+    return {
+        "random_seed": random_seed,
+        "code_commit": "unknown",
+        "environment": "tool_runtime",
+        "executor": "groundwater_tool",
+    }
 
 
 def _normalize_plan_status(status: Optional[str]) -> Optional[str]:
@@ -924,6 +1019,8 @@ def log_experiment_run_entry(
     metrics: Dict[str, Any],
     findings: str = "",
     artifacts: Optional[List[str]] = None,
+    reproducibility_metadata: Optional[Dict[str, Any]] = None,
+    artifact_records: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Append a run entry to an existing experiment plan."""
     if not isinstance(config, dict):
@@ -935,7 +1032,13 @@ def log_experiment_run_entry(
     if not run_name:
         raise ValueError("run_name is required.")
 
+    reproducibility = _validate_reproducibility_metadata(reproducibility_metadata)
+    normalized_records = _normalize_artifact_records(artifact_records)
+
     plan = get_experiment_plan(plan_id)
+    artifact_paths = _clean_string_list(artifacts) or [
+        record["path"] for record in normalized_records
+    ]
     run = {
         "run_id": f"run_{len(plan.get('runs', [])) + 1:03d}",
         "name": run_name,
@@ -943,7 +1046,9 @@ def log_experiment_run_entry(
         "config": config,
         "metrics": metrics,
         "findings": findings.strip(),
-        "artifacts": _clean_string_list(artifacts),
+        "artifacts": artifact_paths,
+        "artifact_records": normalized_records,
+        "reproducibility": reproducibility,
     }
 
     runs = plan.setdefault("runs", [])
@@ -956,6 +1061,7 @@ def log_experiment_run_entry(
         "plan": plan,
         "run": run,
         "numeric_metrics": _numeric_metrics(metrics),
+        "reproducibility": reproducibility,
     }
 
 
@@ -963,6 +1069,7 @@ def generate_research_paper_draft(
     plan_id: str,
     target_venue: str = "arXiv",
     include_methods_detail: bool = True,
+    citations: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Generate and persist a research paper draft from a saved plan."""
     plan = get_experiment_plan(plan_id)
@@ -1006,6 +1113,46 @@ def generate_research_paper_draft(
         else "- No runs logged yet."
     )
 
+    citation_candidates: List[str] = []
+    citation_candidates.extend(_clean_citations(citations))
+    citation_candidates.extend([f"Dataset: {d}" for d in plan.get("datasets", [])])
+    citation_candidates.extend([f"Baseline: {b}" for b in plan.get("baselines", [])])
+
+    for run in runs:
+        for record in run.get("artifact_records", []):
+            path = record.get("path")
+            if path:
+                citation_candidates.append(f"Artifact ({record.get('kind', 'artifact')}): {path}")
+
+    normalized_citations = _clean_citations(citation_candidates)
+    citations_section = (
+        "\n".join([f"- {citation}" for citation in normalized_citations])
+        if normalized_citations
+        else "- No explicit citations provided."
+    )
+
+    provenance = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "plan_id": plan.get("plan_id"),
+        "plan_status_before_draft": plan.get("status"),
+        "plan_updated_at_before_draft": plan.get("updated_at"),
+        "run_count": len(runs),
+        "best_run_id": best_run.get("run_id") if best_run else None,
+        "target_venue": target_venue,
+        "include_methods_detail": bool(include_methods_detail),
+    }
+    provenance_section = "\n".join(
+        [
+            f"- Generated At: {provenance['generated_at']}",
+            f"- Plan ID: {provenance['plan_id']}",
+            f"- Plan Status (pre-draft): {provenance['plan_status_before_draft']}",
+            f"- Plan Updated At (pre-draft): {provenance['plan_updated_at_before_draft']}",
+            f"- Run Count: {provenance['run_count']}",
+            f"- Best Run ID: {provenance['best_run_id'] or 'n/a'}",
+            f"- Target Venue: {provenance['target_venue']}",
+        ]
+    )
+
     draft = f"""# {plan.get("title", "Untitled Study")}
 
 ## Target Venue
@@ -1030,6 +1177,12 @@ writing are integrated into one research loop.
 ### Run Log Summary
 {runs_summary}
 
+## Citations
+{citations_section}
+
+## Provenance
+{provenance_section}
+
 ## Discussion
 The results indicate opportunities to advance agentic AI for research by standardizing
 experiment plans, metadata, and evidence-backed reporting.
@@ -1049,8 +1202,19 @@ accelerate scientific writing while preserving transparency.
         MANUSCRIPTS_DIR
         / f"{plan['plan_id']}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.md"
     )
+    provenance_path = draft_path.with_suffix(".provenance.json")
     with open(draft_path, "w") as fh:
         fh.write(draft)
+    with open(provenance_path, "w") as fh:
+        _json.dump(
+            {
+                "draft_path": str(draft_path),
+                "provenance": provenance,
+                "citations": normalized_citations,
+            },
+            fh,
+            indent=2,
+        )
 
     plan["status"] = "drafted"
     plan["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -1060,8 +1224,11 @@ accelerate scientific writing while preserving transparency.
         "plan": plan,
         "draft": draft,
         "path": str(draft_path),
+        "provenance_path": str(provenance_path),
         "best_run": best_run,
         "key_findings": key_findings,
+        "provenance": provenance,
+        "citations": normalized_citations,
     }
 
 
@@ -1185,6 +1352,7 @@ def log_experiment_run(
             metrics=metrics,
             findings=findings,
             artifacts=artifacts,
+            reproducibility_metadata=_default_reproducibility_metadata(config),
         )
     except (ValueError, FileNotFoundError) as exc:
         return f"❌ {exc}"

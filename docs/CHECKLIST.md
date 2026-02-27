@@ -58,8 +58,8 @@
 
 ### Priority 2: Research Workflow Productization
 - [x] Expose experiment-plan/run/paper-draft flow as first-class API contract
-- [ ] Add frontend workflow surface for researchers (plan → run logs → manuscript draft)
-- [ ] Enforce reproducibility metadata for runs/artifacts
+- [x] Add frontend workflow surface for researchers (plan → run logs → manuscript draft)
+- [x] Enforce reproducibility metadata for runs/artifacts
 
 ### Priority 3: Evaluation & Citation Integrity
 - [ ] Add automated retrieval/report benchmark harness in CI

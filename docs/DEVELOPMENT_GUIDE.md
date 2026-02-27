@@ -1570,9 +1570,9 @@ invalidate downstream work in ingestion, UI integration, and multi-agent orchest
 
 #### Sprint 2 — Research Workflow Productization
 - [x] Expose experiment-plan/run/paper-draft tools as first-class API flows.
-- [ ] Add frontend workflow UI: create plan → log runs → generate draft manuscript.
-- [ ] Enforce reproducibility schema for run configs, metrics, and artifacts.
-- [ ] Persist provenance metadata with manuscript drafts.
+- [x] Add frontend workflow UI: create plan → log runs → generate draft manuscript.
+- [x] Enforce reproducibility schema for run configs, metrics, and artifacts.
+- [x] Persist provenance metadata with manuscript drafts.
 
 **Why second:** These capabilities already exist at the tool layer; making them
 user-facing creates direct researcher value with limited architectural risk.

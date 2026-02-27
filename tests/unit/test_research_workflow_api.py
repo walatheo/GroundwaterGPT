@@ -13,6 +13,13 @@ from api.routes import research_workflow as research_routes  # noqa: E402
 
 client = TestClient(app)
 
+VALID_REPRO = {
+    "random_seed": 42,
+    "code_commit": "abc1234",
+    "environment": "local-dev",
+    "executor": "pytest",
+}
+
 
 class TestCreatePlanEndpoint:
     """Tests for POST /api/research/plans."""
@@ -157,6 +164,7 @@ class TestRunLoggingEndpoint:
 
     def test_log_run_returns_201(self, monkeypatch):
         def fake_log_experiment_run_entry(**kwargs):
+            assert kwargs["reproducibility_metadata"]["random_seed"] == 42
             return {
                 "plan": {
                     "plan_id": kwargs["plan_id"],
@@ -169,6 +177,7 @@ class TestRunLoggingEndpoint:
                     "metrics": kwargs["metrics"],
                 },
                 "numeric_metrics": {"f1": 0.82},
+                "reproducibility": kwargs["reproducibility_metadata"],
             }
 
         monkeypatch.setattr(
@@ -181,6 +190,7 @@ class TestRunLoggingEndpoint:
                 "run_name": "baseline",
                 "config": {"model": "ridge", "seed": 42},
                 "metrics": {"f1": 0.82},
+                "reproducibility": VALID_REPRO,
             },
         )
         assert resp.status_code == 201
@@ -188,6 +198,7 @@ class TestRunLoggingEndpoint:
         assert body["status"] == "ok"
         assert body["plan_id"] == "exp_abc"
         assert body["run"]["run_id"] == "run_001"
+        assert body["reproducibility"]["code_commit"] == "abc1234"
 
     def test_log_run_missing_plan_returns_404(self, monkeypatch):
         def fake_log_experiment_run_entry(**kwargs):
@@ -203,9 +214,21 @@ class TestRunLoggingEndpoint:
                 "run_name": "baseline",
                 "config": {"model": "ridge"},
                 "metrics": {"f1": 0.82},
+                "reproducibility": VALID_REPRO,
             },
         )
         assert resp.status_code == 404
+
+    def test_log_run_missing_reproducibility_returns_422(self):
+        resp = client.post(
+            "/api/research/plans/exp_abc/runs",
+            json={
+                "run_name": "baseline",
+                "config": {"model": "ridge"},
+                "metrics": {"f1": 0.82},
+            },
+        )
+        assert resp.status_code == 422
 
 
 class TestDraftEndpoint:
@@ -213,13 +236,19 @@ class TestDraftEndpoint:
 
     def test_draft_returns_200(self, monkeypatch):
         def fake_generate_research_paper_draft(**kwargs):
+            assert kwargs["citations"] == ["USGS 2026", "DOI:10.1234/demo"]
             return {
                 "plan": {
                     "plan_id": kwargs["plan_id"],
                     "status": "drafted",
                 },
                 "path": "outputs/research/manuscripts/exp_abc_20260227_180000.md",
+                "provenance_path": (
+                    "outputs/research/manuscripts/" "exp_abc_20260227_180000.provenance.json"
+                ),
                 "draft": "# Draft\n\n## Abstract",
+                "provenance": {"run_count": 3},
+                "citations": kwargs["citations"],
             }
 
         monkeypatch.setattr(
@@ -230,13 +259,20 @@ class TestDraftEndpoint:
 
         resp = client.post(
             "/api/research/plans/exp_abc/draft",
-            json={"target_venue": "NeurIPS", "include_methods_detail": True},
+            json={
+                "target_venue": "NeurIPS",
+                "include_methods_detail": True,
+                "citations": ["USGS 2026", "DOI:10.1234/demo"],
+            },
         )
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "ok"
         assert body["plan_id"] == "exp_abc"
         assert body["draft"]["target_venue"] == "NeurIPS"
+        assert body["draft"]["provenance_path"].endswith(".provenance.json")
+        assert body["provenance"]["run_count"] == 3
+        assert len(body["citations"]) == 2
 
     def test_draft_missing_plan_returns_404(self, monkeypatch):
         def fake_generate_research_paper_draft(**kwargs):

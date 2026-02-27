@@ -29,6 +29,25 @@ class CreatePlanRequest(BaseModel):
     notes: str = ""
 
 
+class ReproducibilityMetadata(BaseModel):
+    """Required metadata for replaying an experiment run."""
+
+    random_seed: int
+    code_commit: str = Field(min_length=7)
+    environment: str = Field(min_length=1)
+    executor: str = Field(min_length=1)
+    dependency_lock: str = ""
+
+
+class ArtifactRecord(BaseModel):
+    """Artifact manifest entry for one run output."""
+
+    path: str = Field(min_length=1)
+    sha256: str = ""
+    kind: str = "artifact"
+    description: str = ""
+
+
 class LogRunRequest(BaseModel):
     """Request payload for logging one experiment run."""
 
@@ -36,7 +55,8 @@ class LogRunRequest(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
     metrics: Dict[str, Any] = Field(default_factory=dict)
     findings: str = ""
-    artifacts: List[str] = Field(default_factory=list)
+    reproducibility: ReproducibilityMetadata
+    artifacts: List[ArtifactRecord] = Field(default_factory=list)
 
 
 class DraftRequest(BaseModel):
@@ -44,6 +64,14 @@ class DraftRequest(BaseModel):
 
     target_venue: str = "arXiv"
     include_methods_detail: bool = True
+    citations: List[str] = Field(default_factory=list)
+
+
+def _model_to_dict(model: Any) -> Dict[str, Any]:
+    """Compat helper for Pydantic v1/v2 model export."""
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
 
 
 def _plan_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
@@ -122,6 +150,9 @@ def get_plan(plan_id: str):
 @router.post("/plans/{plan_id}/runs", status_code=201)
 def log_run(plan_id: str, payload: LogRunRequest):
     """Log an experiment run for an existing plan."""
+    artifact_records = [_model_to_dict(artifact) for artifact in payload.artifacts]
+    artifact_paths = [record.get("path", "") for record in artifact_records]
+
     try:
         result = log_experiment_run_entry(
             plan_id=plan_id,
@@ -129,7 +160,9 @@ def log_run(plan_id: str, payload: LogRunRequest):
             config=payload.config,
             metrics=payload.metrics,
             findings=payload.findings,
-            artifacts=payload.artifacts,
+            artifacts=artifact_paths,
+            reproducibility_metadata=_model_to_dict(payload.reproducibility),
+            artifact_records=artifact_records,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -145,6 +178,7 @@ def log_run(plan_id: str, payload: LogRunRequest):
         "run_count": len(plan.get("runs", [])),
         "run": run,
         "numeric_metrics": result.get("numeric_metrics", {}),
+        "reproducibility": result.get("reproducibility", {}),
     }
 
 
@@ -156,6 +190,7 @@ def draft_plan_paper(plan_id: str, payload: DraftRequest):
             plan_id=plan_id,
             target_venue=payload.target_venue,
             include_methods_detail=payload.include_methods_detail,
+            citations=payload.citations,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -169,7 +204,10 @@ def draft_plan_paper(plan_id: str, payload: DraftRequest):
         "plan_status": plan.get("status"),
         "draft": {
             "path": result["path"],
+            "provenance_path": result.get("provenance_path", ""),
             "markdown": result["draft"],
             "target_venue": payload.target_venue,
         },
+        "provenance": result.get("provenance", {}),
+        "citations": result.get("citations", []),
     }

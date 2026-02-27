@@ -190,8 +190,8 @@
 
 ### Sprint 2: Research Workflow Productization
 - [x] Expose experiment workflows to frontend/API users end-to-end
-- [ ] Add reproducibility schema checks for run configs and metrics
-- [ ] Persist manuscript provenance and citations in generated drafts
+- [x] Add reproducibility schema checks for run configs and metrics
+- [x] Persist manuscript provenance and citations in generated drafts
 
 ### Sprint 3: Quality & Citation Integrity
 - [ ] Add evaluation harness for retrieval/report quality in CI
