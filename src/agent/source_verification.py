@@ -35,6 +35,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -468,9 +469,9 @@ def verify_document(
     Returns:
         SourceVerification with approval status
     """
-    import os
-
-    filename = os.path.basename(file_path).lower()
+    path = Path(file_path)
+    filename = path.name.lower()
+    normalized = str(path.as_posix()).lower()
 
     # Known verified documents (pre-approved hydrogeology references)
     verified_docs = [
@@ -499,6 +500,34 @@ def verify_document(
             organization="Unknown",
             is_approved=False,
             reason="Only PDF documents are accepted for knowledge base",
+        )
+
+    # Curated local literature library (kept out of git because of size):
+    # treat as moderate trust so documents can flow through the ingestion
+    # pipeline while still being distinguished from pre-verified sources.
+    if "resources/pdfs/references/" in normalized:
+        return SourceVerification(
+            url=f"file://{file_path}",
+            trust_level=TrustLevel.MODERATE,
+            source_type="document",
+            organization="GroundwaterGPT Curated Literature Library",
+            is_approved=True,
+            reason="Curated local reference library (minimum trust threshold met)",
+            category=SourceCategory.RESEARCH_PAPER,
+            priority_score=0.7,
+        )
+
+    # Project reference PDFs in resources/pdfs are considered trusted input.
+    if "resources/pdfs/" in normalized:
+        return SourceVerification(
+            url=f"file://{file_path}",
+            trust_level=TrustLevel.TRUSTED,
+            source_type="document",
+            organization="GroundwaterGPT Reference Documents",
+            is_approved=True,
+            reason="Project-managed PDF in resources/pdfs",
+            category=SourceCategory.RESEARCH_PAPER,
+            priority_score=0.85,
         )
 
     # Unknown document - requires manual approval

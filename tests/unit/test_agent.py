@@ -97,9 +97,12 @@ class TestAgentConstruction:
         names = {t.name for t in agent.tools}
         assert "query_site_data" in names
         assert "list_available_sites" in names
+        assert "create_research_experiment_plan" in names
+        assert "log_experiment_run" in names
+        assert "draft_research_paper" in names
         assert "search_hydrogeology_docs" in names
-        # Should have 9 data tools + 1 doc search = 10
-        assert len(agent.tools) == 10
+        # Should have 13 registered tools + 1 doc search = 14
+        assert len(agent.tools) == 14
 
     @patch("src.agent.groundwater_agent.get_llm")
     def test_factory_function(self, mock_get_llm):

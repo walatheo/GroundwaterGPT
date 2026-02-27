@@ -4,9 +4,10 @@ Tools for querying groundwater data, making predictions, and analyzing trends.
 """
 
 import json as _json
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 import joblib
 import numpy as np
@@ -18,6 +19,61 @@ BASE_DIR = Path(__file__).parent.parent.parent
 DATA_DIR = BASE_DIR / "data"
 MODELS_DIR = BASE_DIR / "models"
 CONFIG_DIR = BASE_DIR / "config"
+OUTPUTS_DIR = BASE_DIR / "outputs"
+RESEARCH_DIR = OUTPUTS_DIR / "research"
+EXPERIMENTS_DIR = RESEARCH_DIR / "experiments"
+MANUSCRIPTS_DIR = RESEARCH_DIR / "manuscripts"
+
+
+def _ensure_research_dirs() -> None:
+    """Ensure research workflow directories exist."""
+    EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    MANUSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _experiment_file_path(plan_id: str) -> Path:
+    """Return storage path for an experiment plan."""
+    return EXPERIMENTS_DIR / f"{plan_id}.json"
+
+
+def _load_experiment_plan(plan_id: str) -> Dict[str, Any]:
+    """Load an experiment plan by ID."""
+    _ensure_research_dirs()
+    plan_path = _experiment_file_path(plan_id)
+    if not plan_path.exists():
+        raise FileNotFoundError(f"Experiment plan not found: {plan_id}")
+    with open(plan_path) as fh:
+        return _json.load(fh)
+
+
+def _save_experiment_plan(plan: Dict[str, Any]) -> Path:
+    """Persist an experiment plan and return its file path."""
+    _ensure_research_dirs()
+    plan_path = _experiment_file_path(plan["plan_id"])
+    with open(plan_path, "w") as fh:
+        _json.dump(plan, fh, indent=2)
+    return plan_path
+
+
+def _parse_json_object(raw: str, field_name: str) -> Dict[str, Any]:
+    """Parse a JSON object with clear error messaging."""
+    try:
+        parsed = _json.loads(raw)
+    except Exception as exc:
+        raise ValueError(f"{field_name} must be valid JSON: {exc}") from exc
+
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{field_name} must be a JSON object.")
+    return parsed
+
+
+def _numeric_metrics(metrics: Dict[str, Any]) -> Dict[str, float]:
+    """Extract numeric metrics only."""
+    numeric: Dict[str, float] = {}
+    for key, value in metrics.items():
+        if isinstance(value, (int, float)):
+            numeric[key] = float(value)
+    return numeric
 
 
 @tool
@@ -730,6 +786,290 @@ def query_site_data(
     return f"Unknown stat_type: {stat_type}. " "Use 'summary', 'monthly', 'yearly', or 'raw'."
 
 
+# ---------------------------------------------------------------------------
+# Research workflow tools (Experiment planning + paper drafting)
+# ---------------------------------------------------------------------------
+
+
+@tool
+def create_research_experiment_plan(
+    title: str,
+    research_question: str,
+    hypothesis: str,
+    methodology: str,
+    datasets: Optional[List[str]] = None,
+    metrics: Optional[List[str]] = None,
+    baselines: Optional[List[str]] = None,
+    notes: str = "",
+) -> str:
+    """Create and persist a research experiment plan.
+
+    Use this tool when a researcher wants a structured experiment protocol
+    that can later be tracked and converted into a paper draft.
+
+    Args:
+        title: Experiment title.
+        research_question: Core question this experiment answers.
+        hypothesis: Testable hypothesis statement.
+        methodology: Experimental methodology and setup summary.
+        datasets: Optional dataset list.
+        metrics: Optional evaluation metric list.
+        baselines: Optional baseline model/system list.
+        notes: Optional implementation notes and constraints.
+
+    Returns:
+        A formatted plan summary with a persistent plan ID.
+    """
+    _ensure_research_dirs()
+    now = datetime.now(timezone.utc).isoformat()
+    plan_id = f"exp_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
+
+    plan: Dict[str, Any] = {
+        "plan_id": plan_id,
+        "created_at": now,
+        "updated_at": now,
+        "status": "planned",
+        "title": title.strip(),
+        "research_question": research_question.strip(),
+        "hypothesis": hypothesis.strip(),
+        "methodology": methodology.strip(),
+        "datasets": datasets or [],
+        "metrics": metrics or [],
+        "baselines": baselines or [],
+        "notes": notes.strip(),
+        "runs": [],
+    }
+
+    plan_path = _save_experiment_plan(plan)
+
+    return (
+        f"🧪 **Experiment Plan Created**\n"
+        f"   • Plan ID: `{plan_id}`\n"
+        f"   • Title: {plan['title']}\n"
+        f"   • Status: {plan['status']}\n"
+        f"   • Datasets: {len(plan['datasets'])}\n"
+        f"   • Metrics: {len(plan['metrics'])}\n"
+        f"   • Baselines: {len(plan['baselines'])}\n"
+        f"   • Saved to: {plan_path}\n\n"
+        "Next steps:\n"
+        "1. Run experiments externally.\n"
+        "2. Log each run with `log_experiment_run`.\n"
+        "3. Draft a manuscript with `draft_research_paper`."
+    )
+
+
+@tool
+def list_research_experiment_plans(status: Optional[str] = None, limit: int = 10) -> str:
+    """List saved experiment plans.
+
+    Args:
+        status: Optional status filter (planned, in_progress, completed, drafted).
+        limit: Maximum plans to return (1-50).
+
+    Returns:
+        Formatted list of plans with IDs and run counts.
+    """
+    _ensure_research_dirs()
+    limit = max(1, min(50, int(limit)))
+    plan_files = sorted(
+        EXPERIMENTS_DIR.glob("exp_*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
+
+    plans: List[Dict[str, Any]] = []
+    for path in plan_files:
+        try:
+            with open(path) as fh:
+                plan = _json.load(fh)
+            if status and plan.get("status") != status:
+                continue
+            plans.append(plan)
+        except Exception:
+            continue
+
+    if not plans:
+        return "No experiment plans found."
+
+    lines = [f"🗂️ **Experiment Plans** ({min(len(plans), limit)} shown):"]
+    for plan in plans[:limit]:
+        lines.append(
+            f"   • `{plan.get('plan_id', 'unknown')}` | {plan.get('title', 'Untitled')} | "
+            f"status={plan.get('status', 'unknown')} | runs={len(plan.get('runs', []))}"
+        )
+    return "\n".join(lines)
+
+
+@tool
+def log_experiment_run(
+    plan_id: str,
+    run_name: str,
+    config_json: str,
+    metrics_json: str,
+    findings: str = "",
+    artifacts: Optional[List[str]] = None,
+) -> str:
+    """Log an experiment run for a previously created plan.
+
+    Args:
+        plan_id: Existing experiment plan ID.
+        run_name: Run identifier/name (e.g. "ablation_lr_1e-4").
+        config_json: JSON object with run configuration.
+        metrics_json: JSON object with evaluation metrics.
+        findings: Optional qualitative observations.
+        artifacts: Optional list of file paths to outputs/figures/tables.
+
+    Returns:
+        Confirmation summary including total runs for the plan.
+    """
+    try:
+        plan = _load_experiment_plan(plan_id)
+    except FileNotFoundError as exc:
+        return f"❌ {exc}"
+
+    try:
+        config = _parse_json_object(config_json, "config_json")
+        metrics = _parse_json_object(metrics_json, "metrics_json")
+    except ValueError as exc:
+        return f"❌ {exc}"
+
+    run = {
+        "run_id": f"run_{len(plan.get('runs', [])) + 1:03d}",
+        "name": run_name.strip(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "config": config,
+        "metrics": metrics,
+        "findings": findings.strip(),
+        "artifacts": artifacts or [],
+    }
+
+    runs = plan.setdefault("runs", [])
+    runs.append(run)
+    plan["status"] = "in_progress" if len(runs) < 3 else "completed"
+    plan["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _save_experiment_plan(plan)
+
+    numeric = _numeric_metrics(metrics)
+    metric_preview = ", ".join(f"{k}={v:.4g}" for k, v in list(numeric.items())[:5]) or "none"
+
+    return (
+        f"✅ **Run Logged**\n"
+        f"   • Plan ID: `{plan_id}`\n"
+        f"   • Run: `{run['run_id']}` ({run['name']})\n"
+        f"   • Total Runs: {len(runs)}\n"
+        f"   • Status: {plan['status']}\n"
+        f"   • Numeric Metrics: {metric_preview}"
+    )
+
+
+@tool
+def draft_research_paper(
+    plan_id: str,
+    target_venue: str = "arXiv",
+    include_methods_detail: bool = True,
+) -> str:
+    """Generate a manuscript draft from an experiment plan and logged runs.
+
+    Args:
+        plan_id: Existing experiment plan ID.
+        target_venue: Intended venue/journal/conference.
+        include_methods_detail: Include detailed methodology paragraph.
+
+    Returns:
+        Markdown-formatted paper draft and saved draft path.
+    """
+    try:
+        plan = _load_experiment_plan(plan_id)
+    except FileNotFoundError as exc:
+        return f"❌ {exc}"
+
+    runs = plan.get("runs", [])
+    best_run: Optional[Dict[str, Any]] = None
+    best_score = float("-inf")
+
+    for run in runs:
+        numeric = _numeric_metrics(run.get("metrics", {}))
+        if not numeric:
+            continue
+        score = sum(numeric.values()) / len(numeric)
+        if score > best_score:
+            best_score = score
+            best_run = run
+
+    key_findings = "No quantitative results logged yet."
+    if best_run:
+        metrics_text = ", ".join(
+            f"{k}: {v:.4g}" for k, v in _numeric_metrics(best_run.get("metrics", {})).items()
+        )
+        key_findings = (
+            f"Best run `{best_run.get('name', best_run.get('run_id'))}` achieved: {metrics_text}."
+        )
+
+    methods_detail = (
+        f"{plan.get('methodology', '')}\n\n"
+        f"Datasets: {', '.join(plan.get('datasets', [])) or 'TBD'}.\n"
+        f"Baselines: {', '.join(plan.get('baselines', [])) or 'TBD'}.\n"
+        f"Metrics: {', '.join(plan.get('metrics', [])) or 'TBD'}."
+        if include_methods_detail
+        else plan.get("methodology", "")
+    )
+
+    runs_summary = (
+        "\n".join([f"- {r.get('run_id')} ({r.get('name')}): {r.get('metrics', {})}" for r in runs])
+        if runs
+        else "- No runs logged yet."
+    )
+
+    draft = f"""# {plan.get("title", "Untitled Study")}
+
+## Target Venue
+{target_venue}
+
+## Abstract (Draft)
+This study investigates: {plan.get("research_question", "TBD")}. We test the hypothesis that
+{plan.get("hypothesis", "TBD")}. Our preliminary workflow uses an agent-assisted experiment
+protocol with explicit tracking of configurations and metrics. {key_findings}
+
+## Introduction
+Groundwater research increasingly relies on agentic AI for reproducible analysis workflows.
+This paper formalizes an experiment-centric process where planning, execution logging, and
+writing are integrated into one research loop.
+
+## Methods
+{methods_detail}
+
+## Results
+{key_findings}
+
+### Run Log Summary
+{runs_summary}
+
+## Discussion
+The results indicate opportunities to advance agentic AI for research by standardizing
+experiment plans, metadata, and evidence-backed reporting.
+
+## Limitations
+- Automated drafts require expert revision before submission.
+- Metric interpretation depends on task-specific optimization goals.
+- External validity depends on dataset representativeness.
+
+## Conclusion
+This work presents a reproducible workflow for using agentic AI to support experiments and
+accelerate scientific writing while preserving transparency.
+"""
+
+    _ensure_research_dirs()
+    draft_path = (
+        MANUSCRIPTS_DIR / f"{plan_id}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.md"
+    )
+    with open(draft_path, "w") as fh:
+        fh.write(draft)
+
+    plan["status"] = "drafted"
+    plan["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _save_experiment_plan(plan)
+
+    return f"📝 Draft saved to: {draft_path}\n\n{draft}"
+
+
 # List of all available tools
 GROUNDWATER_TOOLS = [
     query_groundwater_data,
@@ -741,4 +1081,8 @@ GROUNDWATER_TOOLS = [
     generate_comparison_chart,
     list_available_sites,
     query_site_data,
+    create_research_experiment_plan,
+    list_research_experiment_plans,
+    log_experiment_run,
+    draft_research_paper,
 ]

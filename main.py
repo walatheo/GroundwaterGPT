@@ -10,6 +10,7 @@ Commands:
     viz         - Start the integrated visualization app
     dashboard   - Open the dashboard visualization (HTML)
     learn       - Run continuous learning to fetch USGS data
+    ingest      - Ingest PDF documents into the knowledge base
     train       - Train ML models
     test        - Run test suite
 
@@ -119,6 +120,68 @@ def run_learn():
     print(f"✅ Learning complete: {stats}")
 
 
+def run_ingest(args: list[str] | None = None):
+    """Ingest PDFs into the knowledge base."""
+    import argparse
+
+    from src.agent.knowledge import get_knowledge_stats, ingest_pdfs
+    from src.agent.source_verification import TrustLevel
+
+    parser = argparse.ArgumentParser(
+        prog="python main.py ingest",
+        description="Ingest PDF documents into the GroundwaterGPT knowledge base",
+    )
+    parser.add_argument(
+        "--path",
+        default=str(ROOT_DIR / "resources" / "pdfs" / "references"),
+        help="File or directory path to ingest",
+    )
+    parser.add_argument(
+        "--non-recursive",
+        action="store_true",
+        help="Only ingest PDFs directly in --path (no nested folders)",
+    )
+    parser.add_argument(
+        "--min-trust",
+        choices=[t.value for t in TrustLevel],
+        default=TrustLevel.MODERATE.value,
+        help="Minimum trust level required for ingestion",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass trust and duplicate checks",
+    )
+
+    parsed = parser.parse_args(args or [])
+    min_trust = TrustLevel(parsed.min_trust)
+
+    print(f"📥 Ingesting PDFs from: {parsed.path}")
+    result = ingest_pdfs(
+        path=parsed.path,
+        recursive=not parsed.non_recursive,
+        min_trust=min_trust,
+        force=parsed.force,
+    )
+
+    stats = get_knowledge_stats()
+    print("✅ Ingestion complete")
+    print(f"   Scanned files:      {result.get('scanned_files', 0)}")
+    print(f"   Ingested files:     {result.get('ingested_files', 0)}")
+    print(f"   Ingested chunks:    {result.get('ingested_chunks', 0)}")
+    print(f"   Skipped duplicates: {result.get('skipped_duplicates', 0)}")
+    print(f"   Skipped unverified: {result.get('skipped_unverified', 0)}")
+    print(f"   Skipped low trust:  {result.get('skipped_low_trust', 0)}")
+
+    errors = result.get("errors", [])
+    if errors:
+        print(f"   Errors:             {len(errors)}")
+        for err in errors[:5]:
+            print(f"      - {err}")
+
+    print(f"📚 Knowledge base chunks: {stats.get('total_chunks', 0)}")
+
+
 def run_train():
     """Train ML models."""
     print("🎯 Training models...")
@@ -155,6 +218,7 @@ if __name__ == "__main__":
         "visualization": run_viz,
         "dashboard": run_dashboard,
         "learn": run_learn,
+        "ingest": run_ingest,
         "train": run_train,
         "test": run_tests,
         "help": show_help,
@@ -168,7 +232,10 @@ if __name__ == "__main__":
 
     cmd = sys.argv[1].lower()
     if cmd in commands:
-        commands[cmd]()
+        if cmd == "ingest":
+            commands[cmd](sys.argv[2:])
+        else:
+            commands[cmd]()
     else:
         print(f"❌ Unknown command: {cmd}")
         show_help()

@@ -39,7 +39,11 @@ groundwater hydrology and water resources.
 7. `get_data_quality_report` - Check data quality and coverage
 8. `generate_time_series_plot` - Generate chart data for a single site
 9. `generate_comparison_chart` - Generate multi-site comparison chart
-10. `search_hydrogeology_docs` - Search reference documents for concepts
+10. `create_research_experiment_plan` - Create a structured experiment protocol
+11. `list_research_experiment_plans` - List saved experiment plans
+12. `log_experiment_run` - Log run configs, metrics, and findings
+13. `draft_research_paper` - Generate a manuscript draft from logged experiments
+14. `search_hydrogeology_docs` - Search reference documents for concepts
 
 **Workflow — ALWAYS follow this pattern:**
 1. Use `list_available_sites` to find relevant sites when the user mentions \
@@ -47,7 +51,8 @@ a county, aquifer, or site name.
 2. Use `query_site_data` to get specific data for those sites.
 3. Use analysis tools (seasonal, anomaly, prediction) when the question \
 requires deeper investigation.
-4. Search docs for hydrogeology concepts you need to explain.
+4. For researcher workflows, create a plan, log runs, then draft a paper.
+5. Search docs for hydrogeology concepts you need to explain.
 
 **Guidelines:**
 - Always search relevant knowledge before answering hydrogeology questions

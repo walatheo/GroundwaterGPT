@@ -24,8 +24,12 @@ Example:
     ...     print(doc.page_content[:100])
 """
 
+from __future__ import annotations
+
+import hashlib
+import re
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import chromadb
 from langchain_chroma import Chroma
@@ -34,17 +38,195 @@ from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from .source_verification import TrustLevel, verify_document
+
 # Configuration - Updated paths for new structure
 BASE_DIR = Path(__file__).parent.parent.parent  # src/agent -> src -> root
 CHROMA_DIR = BASE_DIR / "knowledge_base"
 PDF_DIR = BASE_DIR / "resources" / "pdfs"
-PDF_FILES = list(PDF_DIR.glob("*.pdf")) if PDF_DIR.exists() else []
+REFERENCE_DIR = PDF_DIR / "references"
 
 # Fallback to old paths if new structure not complete
 if not CHROMA_DIR.exists():
     CHROMA_DIR = BASE_DIR / "chroma_db"
-if not PDF_FILES:
-    PDF_FILES = list(BASE_DIR.glob("*.pdf"))
+
+TRUST_RANK = {
+    TrustLevel.UNTRUSTED: 0,
+    TrustLevel.UNKNOWN: 1,
+    TrustLevel.MODERATE: 2,
+    TrustLevel.TRUSTED: 3,
+    TrustLevel.VERIFIED: 4,
+}
+
+
+def _build_text_splitter() -> RecursiveCharacterTextSplitter:
+    """Create the standard text splitter used for KB document chunking."""
+    return RecursiveCharacterTextSplitter(
+        chunk_size=512,
+        chunk_overlap=50,
+        length_function=len,
+        separators=["\n\n", "\n", ". ", " ", ""],
+    )
+
+
+def _discover_pdf_files(path: Optional[Path] = None, recursive: bool = True) -> list[Path]:
+    """Discover PDF files from a file or directory path."""
+    target = (path or PDF_DIR).expanduser()
+    if not target.exists():
+        return []
+
+    if target.is_file():
+        return [target] if target.suffix.lower() == ".pdf" else []
+
+    pattern = "**/*.pdf" if recursive else "*.pdf"
+    files = sorted(p for p in target.glob(pattern) if p.is_file())
+
+    # Backward compatibility for older layouts with root-level PDFs.
+    if not files and target == PDF_DIR:
+        files = sorted(p for p in BASE_DIR.glob("*.pdf") if p.is_file())
+
+    return files
+
+
+def _compute_file_hash(file_path: Path) -> str:
+    """Compute a stable SHA-256 hash for duplicate detection."""
+    digest = hashlib.sha256()
+    with open(file_path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(8192), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _extract_pdf_metadata(file_path: Path) -> dict[str, str]:
+    """Extract lightweight metadata (title/author/date/doi) from a PDF."""
+    metadata = {
+        "title": file_path.stem.replace("_", " "),
+        "author": "",
+        "publication_date": "",
+        "doi": "",
+    }
+
+    try:
+        from pypdf import PdfReader  # type: ignore
+
+        reader = PdfReader(str(file_path))
+        raw = reader.metadata or {}
+
+        title = raw.get("/Title")
+        author = raw.get("/Author")
+        created = raw.get("/CreationDate")
+
+        if title:
+            metadata["title"] = str(title).strip()
+        if author:
+            metadata["author"] = str(author).strip()
+        if created:
+            metadata["publication_date"] = str(created).strip()
+
+        sample_text = ""
+        for page in reader.pages[:2]:
+            page_text = page.extract_text() or ""
+            sample_text += "\n" + page_text
+
+        doi_match = re.search(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\b", sample_text, re.IGNORECASE)
+        if doi_match:
+            metadata["doi"] = doi_match.group(0).strip()
+    except Exception:
+        # Metadata extraction is best-effort; ingestion should continue.
+        pass
+
+    return metadata
+
+
+def _classify_pdf(file_path: Path) -> tuple[str, str]:
+    """Return (doc_type, category) for a PDF path."""
+    try:
+        rel = file_path.relative_to(PDF_DIR)
+        rel_parts = rel.parts
+    except ValueError:
+        rel_parts = file_path.parts
+
+    if "references" in rel_parts:
+        idx = rel_parts.index("references")
+        category = rel_parts[idx + 1] if len(rel_parts) > idx + 1 else "references"
+        return "literature_reference", category
+
+    return "hydrogeology_reference", "hydrogeology"
+
+
+def _is_trust_eligible(
+    trust_level: TrustLevel,
+    min_trust: TrustLevel,
+    force: bool,
+) -> bool:
+    """Check whether a trust level meets the configured minimum."""
+    if force:
+        return True
+    return TRUST_RANK[trust_level] >= TRUST_RANK[min_trust]
+
+
+def _get_or_create_empty_vectorstore() -> Chroma:
+    """Load or create the Chroma collection without implicit document ingestion."""
+    return Chroma(
+        persist_directory=str(CHROMA_DIR),
+        embedding_function=get_embeddings(),
+        collection_name="hydrogeology_docs",
+    )
+
+
+def _existing_doc_hashes(vectorstore: Chroma) -> set[str]:
+    """Return all known document hashes currently indexed in Chroma."""
+    hashes: set[str] = set()
+    try:
+        rows = vectorstore._collection.get(include=["metadatas"])  # noqa: SLF001
+        for meta in rows.get("metadatas", []) or []:
+            if isinstance(meta, dict) and meta.get("doc_hash"):
+                hashes.add(str(meta["doc_hash"]))
+    except Exception:
+        pass
+    return hashes
+
+
+def _load_pdf_documents(
+    file_path: Path,
+    file_hash: str,
+    trust_level: TrustLevel,
+    verification_reason: str,
+) -> list[Document]:
+    """Load a PDF as LangChain documents with standardized metadata."""
+    loader = PyPDFLoader(str(file_path))
+    docs = loader.load()
+    if not docs:
+        return []
+
+    parsed = _extract_pdf_metadata(file_path)
+    doc_type, category = _classify_pdf(file_path)
+    try:
+        source_path = str(file_path.relative_to(BASE_DIR))
+    except ValueError:
+        source_path = str(file_path)
+
+    for doc in docs:
+        page = doc.metadata.get("page")
+        doc.metadata.update(
+            {
+                "source_file": file_path.name,
+                "source_path": source_path,
+                "doc_type": doc_type,
+                "literature_category": category,
+                "doc_hash": file_hash,
+                "title": parsed["title"],
+                "author": parsed["author"],
+                "publication_date": parsed["publication_date"],
+                "doi": parsed["doi"],
+                "trust_level": trust_level.value,
+                "verified": True,
+                "verification_reason": verification_reason,
+                "page": int(page) if page is not None else 0,
+            }
+        )
+
+    return docs
 
 
 def get_embeddings():
@@ -68,20 +250,23 @@ def get_vectorstore() -> Chroma:
     # Check if ChromaDB exists
     if CHROMA_DIR.exists() and (CHROMA_DIR / "chroma.sqlite3").exists():
         # Load existing database
-        vectorstore = Chroma(
+        return Chroma(
             persist_directory=str(CHROMA_DIR),
             embedding_function=embeddings,
             collection_name="hydrogeology_docs",
         )
-        return vectorstore
     else:
         # Create new database and load PDFs
         return initialize_knowledge_base()
 
 
-def initialize_knowledge_base() -> Chroma:
+def initialize_knowledge_base(
+    path: Optional[Path] = None,
+    recursive: bool = True,
+    min_trust: TrustLevel = TrustLevel.MODERATE,
+) -> Chroma:
     """
-    Initialize the knowledge base with hydrogeology PDFs.
+    Initialize the knowledge base with hydrogeology and literature PDFs.
 
     Returns:
         Chroma vector store with embedded documents
@@ -89,41 +274,47 @@ def initialize_knowledge_base() -> Chroma:
     print("📚 Initializing knowledge base...")
 
     embeddings = get_embeddings()
+    pdf_files = _discover_pdf_files(path=path, recursive=recursive)
     documents = []
+    seen_hashes: set[str] = set()
 
     # Load all PDF files
-    for pdf_path in PDF_FILES:
-        if pdf_path.exists():
-            print(f"   Loading: {pdf_path.name}")
-            try:
-                loader = PyPDFLoader(str(pdf_path))
-                docs = loader.load()
+    for pdf_path in pdf_files:
+        if not pdf_path.exists():
+            continue
 
-                # Add metadata
-                for doc in docs:
-                    doc.metadata["source_file"] = pdf_path.name
-                    doc.metadata["doc_type"] = "hydrogeology_reference"
+        print(f"   Loading: {pdf_path.name}")
+        try:
+            verification = verify_document(str(pdf_path))
+            if not verification.is_approved:
+                print(f"   ⚠️ Skipping unverified PDF: {pdf_path.name}")
+                continue
+            if not _is_trust_eligible(verification.trust_level, min_trust=min_trust, force=False):
+                print(f"   ⚠️ Skipping low-trust PDF: {pdf_path.name}")
+                continue
 
-                documents.extend(docs)
-            except Exception as e:
-                print(f"   ⚠️ Error loading {pdf_path.name}: {e}")
+            file_hash = _compute_file_hash(pdf_path)
+            if file_hash in seen_hashes:
+                continue
+
+            docs = _load_pdf_documents(
+                file_path=pdf_path,
+                file_hash=file_hash,
+                trust_level=verification.trust_level,
+                verification_reason=verification.reason,
+            )
+            documents.extend(docs)
+            seen_hashes.add(file_hash)
+        except Exception as e:
+            print(f"   ⚠️ Error loading {pdf_path.name}: {e}")
 
     if not documents:
         print("   ⚠️ No documents found to load")
         # Create empty vectorstore
-        return Chroma(
-            persist_directory=str(CHROMA_DIR),
-            embedding_function=embeddings,
-            collection_name="hydrogeology_docs",
-        )
+        return _get_or_create_empty_vectorstore()
 
     # Split documents into chunks
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=512,
-        chunk_overlap=50,
-        length_function=len,
-        separators=["\n\n", "\n", ". ", " ", ""],
-    )
+    text_splitter = _build_text_splitter()
 
     chunks = text_splitter.split_documents(documents)
     print(f"   Split into {len(chunks)} chunks")
@@ -138,6 +329,85 @@ def initialize_knowledge_base() -> Chroma:
 
     print(f"✅ Knowledge base initialized with {len(chunks)} document chunks")
     return vectorstore
+
+
+def ingest_pdfs(
+    path: Optional[str] = None,
+    recursive: bool = True,
+    min_trust: TrustLevel = TrustLevel.MODERATE,
+    force: bool = False,
+) -> dict[str, Any]:
+    """
+    Ingest PDF literature into the existing knowledge base.
+
+    Args:
+        path: File or directory path; defaults to resources/pdfs
+        recursive: Whether to include nested folders
+        min_trust: Minimum trust level required
+        force: If True, bypass trust and duplicate checks
+
+    Returns:
+        Summary stats for the ingestion run.
+    """
+    target = Path(path).expanduser() if path else PDF_DIR
+    pdf_files = _discover_pdf_files(path=target, recursive=recursive)
+
+    summary: dict[str, Any] = {
+        "target_path": str(target),
+        "scanned_files": len(pdf_files),
+        "ingested_files": 0,
+        "ingested_chunks": 0,
+        "skipped_duplicates": 0,
+        "skipped_unverified": 0,
+        "skipped_low_trust": 0,
+        "errors": [],
+    }
+
+    if not pdf_files:
+        summary["status"] = "no_files_found"
+        return summary
+
+    vectorstore = _get_or_create_empty_vectorstore()
+    existing_hashes = set() if force else _existing_doc_hashes(vectorstore)
+    splitter = _build_text_splitter()
+
+    for pdf_path in pdf_files:
+        try:
+            verification = verify_document(str(pdf_path))
+            if not verification.is_approved and not force:
+                summary["skipped_unverified"] += 1
+                continue
+
+            if not _is_trust_eligible(verification.trust_level, min_trust=min_trust, force=force):
+                summary["skipped_low_trust"] += 1
+                continue
+
+            file_hash = _compute_file_hash(pdf_path)
+            if file_hash in existing_hashes and not force:
+                summary["skipped_duplicates"] += 1
+                continue
+
+            docs = _load_pdf_documents(
+                file_path=pdf_path,
+                file_hash=file_hash,
+                trust_level=verification.trust_level,
+                verification_reason=verification.reason,
+            )
+            if not docs:
+                summary["errors"].append(f"No parseable content: {pdf_path}")
+                continue
+
+            chunks = splitter.split_documents(docs)
+            vectorstore.add_documents(chunks)
+
+            existing_hashes.add(file_hash)
+            summary["ingested_files"] += 1
+            summary["ingested_chunks"] += len(chunks)
+        except Exception as exc:
+            summary["errors"].append(f"{pdf_path}: {exc}")
+
+    summary["status"] = "ok"
+    return summary
 
 
 def search_knowledge(query: str, k: int = 5, score_threshold: float = 0.5) -> List[Document]:
@@ -202,7 +472,7 @@ def add_document(
     Returns:
         True if document was added, False if rejected
     """
-    from .source_verification import TrustLevel, verify_source
+    from .source_verification import verify_source
 
     # Verify source if URL provided
     if source_url and require_verification:
@@ -243,21 +513,38 @@ def add_document(
 
 def get_knowledge_stats() -> dict:
     """Get statistics about the knowledge base."""
+    discovered_pdfs = _discover_pdf_files(path=PDF_DIR, recursive=True)
     try:
         client = chromadb.PersistentClient(path=str(CHROMA_DIR))
         collection = client.get_collection("hydrogeology_docs")
         count = collection.count()
+        rows = collection.get(include=["metadatas"])
+        metadatas = rows.get("metadatas", []) or []
+
+        indexed_paths = sorted(
+            {
+                str(meta.get("source_path") or meta.get("source_file"))
+                for meta in metadatas
+                if isinstance(meta, dict) and (meta.get("source_path") or meta.get("source_file"))
+            }
+        )
+        indexed_names = [Path(p).name for p in indexed_paths]
 
         return {
             "total_chunks": count,
-            "pdf_files": len(PDF_FILES),
-            "pdf_names": [p.name for p in PDF_FILES],
+            "pdf_files": len(indexed_paths) if indexed_paths else len(discovered_pdfs),
+            "pdf_names": indexed_names if indexed_names else [p.name for p in discovered_pdfs],
+            "pdf_files_on_disk": len(discovered_pdfs),
+            "indexed_pdf_files": len(indexed_paths),
             "status": "loaded",
         }
     except Exception as e:
         return {
             "total_chunks": 0,
-            "pdf_files": len(PDF_FILES),
+            "pdf_files": len(discovered_pdfs),
+            "pdf_names": [p.name for p in discovered_pdfs],
+            "pdf_files_on_disk": len(discovered_pdfs),
+            "indexed_pdf_files": 0,
             "status": f"error: {str(e)}",
         }
 
