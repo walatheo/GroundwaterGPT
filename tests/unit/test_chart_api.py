@@ -14,12 +14,12 @@ from pathlib import Path
 
 import pytest
 
-# Ensure api/ is importable
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "api"))
+# Add project root to path so ``api`` package is importable
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from main import SITE_METADATA, app  # noqa: E402
+from api.main import SITE_METADATA, app  # noqa: E402
 
 client = TestClient(app)
 
@@ -191,14 +191,20 @@ class TestChartDataIntegrity:
         chart = client.get(f"/api/sites/{sid}/chart").json()
         data = client.get(f"/api/sites/{sid}/data").json()
 
-        # Build lookup from data endpoint
-        data_lookup = {r["date"][:10]: r["level"] for r in data["data"][:50]}
+        # Build lookup from data endpoint — collect *all* levels per
+        # truncated date to account for multiple readings per day.
+        from collections import defaultdict
+
+        day_levels: dict[str, list[float]] = defaultdict(list)
+        for r in data["data"][:200]:
+            day_levels[r["date"][:10]].append(r["level"])
 
         mismatches = 0
         for row in chart["data"][:50]:
             d = row["date"]
-            if d in data_lookup:
-                if abs(row["level"] - data_lookup[d]) > 0.01:
+            if d in day_levels:
+                # Accept if the chart value matches *any* reading that day
+                if not any(abs(row["level"] - lv) <= 0.01 for lv in day_levels[d]):
                     mismatches += 1
 
         assert mismatches == 0, f"{mismatches} level mismatches between chart and data endpoints"

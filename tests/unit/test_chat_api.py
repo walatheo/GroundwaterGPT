@@ -14,13 +14,13 @@ from pathlib import Path
 
 import pytest
 
-# Add api directory to path for imports (must be before main import)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "api"))
+# Add project root to path so ``api`` package is importable
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # FastAPI test client — avoids starting a real server
 from fastapi.testclient import TestClient  # noqa: E402
 
-from main import GROUNDWATER_KB, _fallback_response, _get_site_context, app  # noqa: E402
+from api.main import GROUNDWATER_KB, _fallback_response, _get_site_context, app  # noqa: E402
 
 client = TestClient(app)
 
