@@ -68,7 +68,9 @@ The system is organized into five layers. Data flows downward for queries and up
 │  ├── GET /api/sites/{id}/heatmap — Monthly averages          │
 │  ├── GET /api/compare            — Multi-site comparison     │
 │  ├── POST /api/chat              — Agent chat endpoint       │
-│  └── POST /api/research          — Deep research endpoint    │
+│  ├── POST /api/research          — Deep research endpoint    │
+│  ├── POST /api/research/plans    — Create experiment plan    │
+│  └── POST /api/research/plans/{id}/runs — Log experiment run │
 └──────────────────────────┬───────────────────────────────────┘
                            │
 ┌──────────────────────────▼───────────────────────────────────┐
@@ -155,7 +157,8 @@ The system is organized into five layers. Data flows downward for queries and up
 ```
 GroundwaterGPT/
 ├── api/                          # FastAPI backend
-│   └── main.py                   #   REST API endpoints + chat/research routes
+│   ├── main.py                   #   REST API endpoint registration
+│   └── routes/research_workflow.py # Research plan/run/draft endpoints
 ├── frontend/                     # React frontend (Vite + Tailwind)
 │   ├── src/
 │   │   ├── App.jsx               #   Main application shell
@@ -1558,15 +1561,15 @@ stability first, then workflow exposure, then multi-agent scaling.
 #### Sprint 1 — Operational Hardening (In Progress)
 - [x] Normalize style/quality gates so pre-commit passes without bypass.
 - [x] Stabilize test suite behavior across local environments and data snapshots.
-- [ ] Add explicit KB runtime readiness checks (embedding dependencies + storage state).
-- [ ] Surface KB runtime health in API responses/endpoints.
-- [ ] Add graceful 503 errors for ingestion/search when runtime requirements are missing.
+- [x] Add explicit KB runtime readiness checks (embedding dependencies + storage state).
+- [x] Surface KB runtime health in API responses/endpoints.
+- [x] Add graceful 503 errors for ingestion/search when runtime requirements are missing.
 
 **Why first:** This removes high-probability runtime failures that would otherwise
 invalidate downstream work in ingestion, UI integration, and multi-agent orchestration.
 
 #### Sprint 2 — Research Workflow Productization
-- [ ] Expose experiment-plan/run/paper-draft tools as first-class API flows.
+- [x] Expose experiment-plan/run/paper-draft tools as first-class API flows.
 - [ ] Add frontend workflow UI: create plan → log runs → generate draft manuscript.
 - [ ] Enforce reproducibility schema for run configs, metrics, and artifacts.
 - [ ] Persist provenance metadata with manuscript drafts.

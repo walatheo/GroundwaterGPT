@@ -791,8 +791,40 @@ def query_site_data(
 # ---------------------------------------------------------------------------
 
 
-@tool
-def create_research_experiment_plan(
+VALID_RESEARCH_PLAN_STATUSES = {
+    "planned",
+    "in_progress",
+    "completed",
+    "drafted",
+}
+
+
+def _clean_string_list(values: Optional[List[str]]) -> List[str]:
+    """Return a trimmed list of non-empty strings."""
+    cleaned: List[str] = []
+    for value in values or []:
+        text = str(value).strip()
+        if text:
+            cleaned.append(text)
+    return cleaned
+
+
+def _normalize_plan_status(status: Optional[str]) -> Optional[str]:
+    """Validate and normalize an optional plan status filter."""
+    if status is None:
+        return None
+
+    normalized = status.strip()
+    if not normalized:
+        return None
+
+    if normalized not in VALID_RESEARCH_PLAN_STATUSES:
+        allowed = ", ".join(sorted(VALID_RESEARCH_PLAN_STATUSES))
+        raise ValueError(f"Invalid status '{status}'. Allowed: {allowed}.")
+    return normalized
+
+
+def create_experiment_plan(
     title: str,
     research_question: str,
     hypothesis: str,
@@ -801,25 +833,22 @@ def create_research_experiment_plan(
     metrics: Optional[List[str]] = None,
     baselines: Optional[List[str]] = None,
     notes: str = "",
-) -> str:
-    """Create and persist a research experiment plan.
+) -> Dict[str, Any]:
+    """Create and persist a structured experiment plan."""
+    title = title.strip()
+    research_question = research_question.strip()
+    hypothesis = hypothesis.strip()
+    methodology = methodology.strip()
 
-    Use this tool when a researcher wants a structured experiment protocol
-    that can later be tracked and converted into a paper draft.
+    if not title:
+        raise ValueError("title is required.")
+    if not research_question:
+        raise ValueError("research_question is required.")
+    if not hypothesis:
+        raise ValueError("hypothesis is required.")
+    if not methodology:
+        raise ValueError("methodology is required.")
 
-    Args:
-        title: Experiment title.
-        research_question: Core question this experiment answers.
-        hypothesis: Testable hypothesis statement.
-        methodology: Experimental methodology and setup summary.
-        datasets: Optional dataset list.
-        metrics: Optional evaluation metric list.
-        baselines: Optional baseline model/system list.
-        notes: Optional implementation notes and constraints.
-
-    Returns:
-        A formatted plan summary with a persistent plan ID.
-    """
     _ensure_research_dirs()
     now = datetime.now(timezone.utc).isoformat()
     plan_id = f"exp_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
@@ -829,50 +858,35 @@ def create_research_experiment_plan(
         "created_at": now,
         "updated_at": now,
         "status": "planned",
-        "title": title.strip(),
-        "research_question": research_question.strip(),
-        "hypothesis": hypothesis.strip(),
-        "methodology": methodology.strip(),
-        "datasets": datasets or [],
-        "metrics": metrics or [],
-        "baselines": baselines or [],
+        "title": title,
+        "research_question": research_question,
+        "hypothesis": hypothesis,
+        "methodology": methodology,
+        "datasets": _clean_string_list(datasets),
+        "metrics": _clean_string_list(metrics),
+        "baselines": _clean_string_list(baselines),
         "notes": notes.strip(),
         "runs": [],
     }
-
     plan_path = _save_experiment_plan(plan)
-
-    return (
-        f"🧪 **Experiment Plan Created**\n"
-        f"   • Plan ID: `{plan_id}`\n"
-        f"   • Title: {plan['title']}\n"
-        f"   • Status: {plan['status']}\n"
-        f"   • Datasets: {len(plan['datasets'])}\n"
-        f"   • Metrics: {len(plan['metrics'])}\n"
-        f"   • Baselines: {len(plan['baselines'])}\n"
-        f"   • Saved to: {plan_path}\n\n"
-        "Next steps:\n"
-        "1. Run experiments externally.\n"
-        "2. Log each run with `log_experiment_run`.\n"
-        "3. Draft a manuscript with `draft_research_paper`."
-    )
+    return {"plan": plan, "path": str(plan_path)}
 
 
-@tool
-def list_research_experiment_plans(status: Optional[str] = None, limit: int = 10) -> str:
-    """List saved experiment plans.
-
-    Args:
-        status: Optional status filter (planned, in_progress, completed, drafted).
-        limit: Maximum plans to return (1-50).
-
-    Returns:
-        Formatted list of plans with IDs and run counts.
-    """
+def list_experiment_plans(status: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
+    """Return saved experiment plans sorted by most-recent update."""
     _ensure_research_dirs()
-    limit = max(1, min(50, int(limit)))
+    normalized_status = _normalize_plan_status(status)
+
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("limit must be an integer between 1 and 50.") from exc
+    limit = max(1, min(50, limit))
+
     plan_files = sorted(
-        EXPERIMENTS_DIR.glob("exp_*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+        EXPERIMENTS_DIR.glob("exp_*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
     )
 
     plans: List[Dict[str, Any]] = []
@@ -880,65 +894,56 @@ def list_research_experiment_plans(status: Optional[str] = None, limit: int = 10
         try:
             with open(path) as fh:
                 plan = _json.load(fh)
-            if status and plan.get("status") != status:
-                continue
-            plans.append(plan)
         except Exception:
             continue
 
-    if not plans:
-        return "No experiment plans found."
+        if normalized_status and plan.get("status") != normalized_status:
+            continue
 
-    lines = [f"🗂️ **Experiment Plans** ({min(len(plans), limit)} shown):"]
-    for plan in plans[:limit]:
-        lines.append(
-            f"   • `{plan.get('plan_id', 'unknown')}` | {plan.get('title', 'Untitled')} | "
-            f"status={plan.get('status', 'unknown')} | runs={len(plan.get('runs', []))}"
-        )
-    return "\n".join(lines)
+        plan.setdefault("runs", [])
+        plans.append(plan)
+
+    return plans[:limit]
 
 
-@tool
-def log_experiment_run(
+def get_experiment_plan(plan_id: str) -> Dict[str, Any]:
+    """Return one experiment plan by ID."""
+    normalized = plan_id.strip()
+    if not normalized:
+        raise ValueError("plan_id is required.")
+
+    plan = _load_experiment_plan(normalized)
+    plan.setdefault("runs", [])
+    return plan
+
+
+def log_experiment_run_entry(
     plan_id: str,
     run_name: str,
-    config_json: str,
-    metrics_json: str,
+    config: Dict[str, Any],
+    metrics: Dict[str, Any],
     findings: str = "",
     artifacts: Optional[List[str]] = None,
-) -> str:
-    """Log an experiment run for a previously created plan.
+) -> Dict[str, Any]:
+    """Append a run entry to an existing experiment plan."""
+    if not isinstance(config, dict):
+        raise ValueError("config must be a JSON object.")
+    if not isinstance(metrics, dict):
+        raise ValueError("metrics must be a JSON object.")
 
-    Args:
-        plan_id: Existing experiment plan ID.
-        run_name: Run identifier/name (e.g. "ablation_lr_1e-4").
-        config_json: JSON object with run configuration.
-        metrics_json: JSON object with evaluation metrics.
-        findings: Optional qualitative observations.
-        artifacts: Optional list of file paths to outputs/figures/tables.
+    run_name = run_name.strip()
+    if not run_name:
+        raise ValueError("run_name is required.")
 
-    Returns:
-        Confirmation summary including total runs for the plan.
-    """
-    try:
-        plan = _load_experiment_plan(plan_id)
-    except FileNotFoundError as exc:
-        return f"❌ {exc}"
-
-    try:
-        config = _parse_json_object(config_json, "config_json")
-        metrics = _parse_json_object(metrics_json, "metrics_json")
-    except ValueError as exc:
-        return f"❌ {exc}"
-
+    plan = get_experiment_plan(plan_id)
     run = {
         "run_id": f"run_{len(plan.get('runs', [])) + 1:03d}",
-        "name": run_name.strip(),
+        "name": run_name,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "config": config,
         "metrics": metrics,
         "findings": findings.strip(),
-        "artifacts": artifacts or [],
+        "artifacts": _clean_string_list(artifacts),
     }
 
     runs = plan.setdefault("runs", [])
@@ -947,41 +952,22 @@ def log_experiment_run(
     plan["updated_at"] = datetime.now(timezone.utc).isoformat()
     _save_experiment_plan(plan)
 
-    numeric = _numeric_metrics(metrics)
-    metric_preview = ", ".join(f"{k}={v:.4g}" for k, v in list(numeric.items())[:5]) or "none"
-
-    return (
-        f"✅ **Run Logged**\n"
-        f"   • Plan ID: `{plan_id}`\n"
-        f"   • Run: `{run['run_id']}` ({run['name']})\n"
-        f"   • Total Runs: {len(runs)}\n"
-        f"   • Status: {plan['status']}\n"
-        f"   • Numeric Metrics: {metric_preview}"
-    )
+    return {
+        "plan": plan,
+        "run": run,
+        "numeric_metrics": _numeric_metrics(metrics),
+    }
 
 
-@tool
-def draft_research_paper(
+def generate_research_paper_draft(
     plan_id: str,
     target_venue: str = "arXiv",
     include_methods_detail: bool = True,
-) -> str:
-    """Generate a manuscript draft from an experiment plan and logged runs.
-
-    Args:
-        plan_id: Existing experiment plan ID.
-        target_venue: Intended venue/journal/conference.
-        include_methods_detail: Include detailed methodology paragraph.
-
-    Returns:
-        Markdown-formatted paper draft and saved draft path.
-    """
-    try:
-        plan = _load_experiment_plan(plan_id)
-    except FileNotFoundError as exc:
-        return f"❌ {exc}"
-
+) -> Dict[str, Any]:
+    """Generate and persist a research paper draft from a saved plan."""
+    plan = get_experiment_plan(plan_id)
     runs = plan.get("runs", [])
+
     best_run: Optional[Dict[str, Any]] = None
     best_score = float("-inf")
 
@@ -1013,7 +999,9 @@ def draft_research_paper(
     )
 
     runs_summary = (
-        "\n".join([f"- {r.get('run_id')} ({r.get('name')}): {r.get('metrics', {})}" for r in runs])
+        "\n".join(
+            [f"- {run.get('run_id')} ({run.get('name')}): {run.get('metrics', {})}" for run in runs]
+        )
         if runs
         else "- No runs logged yet."
     )
@@ -1058,7 +1046,8 @@ accelerate scientific writing while preserving transparency.
 
     _ensure_research_dirs()
     draft_path = (
-        MANUSCRIPTS_DIR / f"{plan_id}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.md"
+        MANUSCRIPTS_DIR
+        / f"{plan['plan_id']}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.md"
     )
     with open(draft_path, "w") as fh:
         fh.write(draft)
@@ -1067,7 +1056,181 @@ accelerate scientific writing while preserving transparency.
     plan["updated_at"] = datetime.now(timezone.utc).isoformat()
     _save_experiment_plan(plan)
 
-    return f"📝 Draft saved to: {draft_path}\n\n{draft}"
+    return {
+        "plan": plan,
+        "draft": draft,
+        "path": str(draft_path),
+        "best_run": best_run,
+        "key_findings": key_findings,
+    }
+
+
+@tool
+def create_research_experiment_plan(
+    title: str,
+    research_question: str,
+    hypothesis: str,
+    methodology: str,
+    datasets: Optional[List[str]] = None,
+    metrics: Optional[List[str]] = None,
+    baselines: Optional[List[str]] = None,
+    notes: str = "",
+) -> str:
+    """Create and persist a research experiment plan.
+
+    Use this tool when a researcher wants a structured experiment protocol
+    that can later be tracked and converted into a paper draft.
+
+    Args:
+        title: Experiment title.
+        research_question: Core question this experiment answers.
+        hypothesis: Testable hypothesis statement.
+        methodology: Experimental methodology and setup summary.
+        datasets: Optional dataset list.
+        metrics: Optional evaluation metric list.
+        baselines: Optional baseline model/system list.
+        notes: Optional implementation notes and constraints.
+
+    Returns:
+        A formatted plan summary with a persistent plan ID.
+    """
+    try:
+        result = create_experiment_plan(
+            title=title,
+            research_question=research_question,
+            hypothesis=hypothesis,
+            methodology=methodology,
+            datasets=datasets,
+            metrics=metrics,
+            baselines=baselines,
+            notes=notes,
+        )
+    except ValueError as exc:
+        return f"❌ {exc}"
+
+    plan = result["plan"]
+    return (
+        f"🧪 **Experiment Plan Created**\n"
+        f"   • Plan ID: `{plan['plan_id']}`\n"
+        f"   • Title: {plan['title']}\n"
+        f"   • Status: {plan['status']}\n"
+        f"   • Datasets: {len(plan['datasets'])}\n"
+        f"   • Metrics: {len(plan['metrics'])}\n"
+        f"   • Baselines: {len(plan['baselines'])}\n"
+        f"   • Saved to: {result['path']}\n\n"
+        "Next steps:\n"
+        "1. Run experiments externally.\n"
+        "2. Log each run with `log_experiment_run`.\n"
+        "3. Draft a manuscript with `draft_research_paper`."
+    )
+
+
+@tool
+def list_research_experiment_plans(status: Optional[str] = None, limit: int = 10) -> str:
+    """List saved experiment plans.
+
+    Args:
+        status: Optional status filter (planned, in_progress, completed, drafted).
+        limit: Maximum plans to return (1-50).
+
+    Returns:
+        Formatted list of plans with IDs and run counts.
+    """
+    try:
+        plans = list_experiment_plans(status=status, limit=limit)
+    except ValueError as exc:
+        return f"❌ {exc}"
+
+    if not plans:
+        return "No experiment plans found."
+
+    lines = [f"🗂️ **Experiment Plans** ({len(plans)} shown):"]
+    for plan in plans:
+        lines.append(
+            f"   • `{plan.get('plan_id', 'unknown')}` | {plan.get('title', 'Untitled')} | "
+            f"status={plan.get('status', 'unknown')} | runs={len(plan.get('runs', []))}"
+        )
+    return "\n".join(lines)
+
+
+@tool
+def log_experiment_run(
+    plan_id: str,
+    run_name: str,
+    config_json: str,
+    metrics_json: str,
+    findings: str = "",
+    artifacts: Optional[List[str]] = None,
+) -> str:
+    """Log an experiment run for a previously created plan.
+
+    Args:
+        plan_id: Existing experiment plan ID.
+        run_name: Run identifier/name (e.g. "ablation_lr_1e-4").
+        config_json: JSON object with run configuration.
+        metrics_json: JSON object with evaluation metrics.
+        findings: Optional qualitative observations.
+        artifacts: Optional list of file paths to outputs/figures/tables.
+
+    Returns:
+        Confirmation summary including total runs for the plan.
+    """
+    try:
+        config = _parse_json_object(config_json, "config_json")
+        metrics = _parse_json_object(metrics_json, "metrics_json")
+        result = log_experiment_run_entry(
+            plan_id=plan_id,
+            run_name=run_name,
+            config=config,
+            metrics=metrics,
+            findings=findings,
+            artifacts=artifacts,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        return f"❌ {exc}"
+
+    plan = result["plan"]
+    run = result["run"]
+    numeric = result["numeric_metrics"]
+    metric_preview = ", ".join(f"{k}={v:.4g}" for k, v in list(numeric.items())[:5]) or "none"
+    total_runs = len(plan.get("runs", []))
+
+    return (
+        f"✅ **Run Logged**\n"
+        f"   • Plan ID: `{plan['plan_id']}`\n"
+        f"   • Run: `{run['run_id']}` ({run['name']})\n"
+        f"   • Total Runs: {total_runs}\n"
+        f"   • Status: {plan['status']}\n"
+        f"   • Numeric Metrics: {metric_preview}"
+    )
+
+
+@tool
+def draft_research_paper(
+    plan_id: str,
+    target_venue: str = "arXiv",
+    include_methods_detail: bool = True,
+) -> str:
+    """Generate a manuscript draft from an experiment plan and logged runs.
+
+    Args:
+        plan_id: Existing experiment plan ID.
+        target_venue: Intended venue/journal/conference.
+        include_methods_detail: Include detailed methodology paragraph.
+
+    Returns:
+        Markdown-formatted paper draft and saved draft path.
+    """
+    try:
+        result = generate_research_paper_draft(
+            plan_id=plan_id,
+            target_venue=target_venue,
+            include_methods_detail=include_methods_detail,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        return f"❌ {exc}"
+
+    return f"📝 Draft saved to: {result['path']}\n\n{result['draft']}"
 
 
 # List of all available tools

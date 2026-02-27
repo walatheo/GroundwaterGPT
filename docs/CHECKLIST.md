@@ -53,11 +53,11 @@
 - [x] Stabilize tests for local CSV snapshot artifacts
 - [x] Make KB accuracy tests robust when embedding dependency is unavailable
 - [x] Restore pre-commit compliance without bypass
-- [ ] Add KB runtime health endpoint (`/api/knowledge/status`)
-- [ ] Add graceful 503 responses for ingestion/search runtime dependency failures
+- [x] Add KB runtime health endpoint (`/api/knowledge/status`)
+- [x] Add graceful 503 responses for ingestion/search runtime dependency failures
 
 ### Priority 2: Research Workflow Productization
-- [ ] Expose experiment-plan/run/paper-draft flow as first-class API contract
+- [x] Expose experiment-plan/run/paper-draft flow as first-class API contract
 - [ ] Add frontend workflow surface for researchers (plan → run logs → manuscript draft)
 - [ ] Enforce reproducibility metadata for runs/artifacts
 

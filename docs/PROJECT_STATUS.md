@@ -185,11 +185,11 @@
 - [x] Knowledge ingestion pipeline + API endpoints added
 - [x] Research workflow tools added (plan, run logging, paper draft)
 - [x] Full test suite stabilized for local data artifacts
-- [ ] Runtime readiness endpoint for KB dependency/storage health
-- [ ] Graceful 503 handling for missing embedding runtime dependencies
+- [x] Runtime readiness endpoint for KB dependency/storage health
+- [x] Graceful 503 handling for missing embedding runtime dependencies
 
 ### Sprint 2: Research Workflow Productization
-- [ ] Expose experiment workflows to frontend/API users end-to-end
+- [x] Expose experiment workflows to frontend/API users end-to-end
 - [ ] Add reproducibility schema checks for run configs and metrics
 - [ ] Persist manuscript provenance and citations in generated drafts
 
