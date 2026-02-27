@@ -25,6 +25,7 @@ Usage:
     pytest tests/data/test_usgs_data_integrity.py -v
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -37,12 +38,18 @@ DATA_DIR = PROJECT_ROOT / "data"
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
+def _canonical_site_csv_files() -> list[Path]:
+    """Return only canonical site files named ``usgs_<15digits>.csv``."""
+    pattern = re.compile(r"^usgs_\d{15}\.csv$")
+    return [p for p in DATA_DIR.glob("usgs_*.csv") if pattern.match(p.name)]
+
+
 class TestUSGSDataAuthenticity:
     """Verify data files contain authentic USGS data."""
 
     def test_all_csv_files_have_usgs_site_ids(self):
         """All CSV files should have valid 15-digit USGS site IDs."""
-        csv_files = list(DATA_DIR.glob("usgs_*.csv"))
+        csv_files = _canonical_site_csv_files()
         assert len(csv_files) >= 36, f"Expected 36+ sites, found {len(csv_files)}"
 
         for csv_file in csv_files:
@@ -68,7 +75,7 @@ class TestUSGSDataAuthenticity:
         """CSV files should have standard USGS NWIS columns."""
         required_columns = ["site_no", "datetime", "value"]
 
-        csv_files = list(DATA_DIR.glob("usgs_*.csv"))
+        csv_files = _canonical_site_csv_files()
         for csv_file in csv_files:
             df = pd.read_csv(csv_file)
 
@@ -83,7 +90,7 @@ class TestUSGSDataAuthenticity:
         - Digits 7-9: Longitude (DDD)
         - Digits 10-15: Longitude seconds + sequential
         """
-        csv_files = list(DATA_DIR.glob("usgs_*.csv"))
+        csv_files = _canonical_site_csv_files()
 
         for csv_file in csv_files:
             site_id = csv_file.stem.replace("usgs_", "")
@@ -115,7 +122,7 @@ class TestDataIntegrity:
         - Floridan Aquifer: typically 10-100 ft below surface
         - Some artesian wells may have negative values (above surface)
         """
-        csv_files = list(DATA_DIR.glob("usgs_*.csv"))
+        csv_files = _canonical_site_csv_files()
 
         for csv_file in csv_files:
             df = pd.read_csv(csv_file)
@@ -133,7 +140,7 @@ class TestDataIntegrity:
 
     def test_datetime_values_are_valid(self):
         """All datetime values should be parseable and reasonable."""
-        csv_files = list(DATA_DIR.glob("usgs_*.csv"))
+        csv_files = _canonical_site_csv_files()
 
         for csv_file in csv_files:
             df = pd.read_csv(csv_file)
@@ -158,7 +165,7 @@ class TestDataIntegrity:
         This is AUTHENTIC USGS behavior, not a data quality issue.
         We verify the data is properly structured, not artificially unique.
         """
-        csv_files = list(DATA_DIR.glob("usgs_*.csv"))
+        csv_files = _canonical_site_csv_files()
 
         for csv_file in csv_files:
             df = pd.read_csv(csv_file)
@@ -190,7 +197,7 @@ class TestCountyDistribution:
         - Hendry: 4 sites
         - Sarasota: 4 sites
         """
-        csv_files = list(DATA_DIR.glob("usgs_*.csv"))
+        csv_files = _canonical_site_csv_files()
         assert len(csv_files) >= 36, f"Expected 36+ total sites, found {len(csv_files)}"
 
 
@@ -199,7 +206,7 @@ class TestTotalDataVolume:
 
     def test_total_records(self):
         """Total records should match expected count (106,628+)."""
-        csv_files = list(DATA_DIR.glob("usgs_*.csv"))
+        csv_files = _canonical_site_csv_files()
         total_records = sum(len(pd.read_csv(f)) for f in csv_files)
 
         # Should have at least 100,000 records across all sites
@@ -207,7 +214,7 @@ class TestTotalDataVolume:
 
     def test_all_sites_have_data(self):
         """Every CSV file should have actual data records."""
-        csv_files = list(DATA_DIR.glob("usgs_*.csv"))
+        csv_files = _canonical_site_csv_files()
 
         for csv_file in csv_files:
             df = pd.read_csv(csv_file)
@@ -244,7 +251,7 @@ class TestAPIDataIntegrity:
         resp = requests.get("http://localhost:8000/api/sites", timeout=5)
         api_sites = resp.json()["sites"]
 
-        csv_files = list(DATA_DIR.glob("usgs_*.csv"))
+        csv_files = _canonical_site_csv_files()
 
         assert len(api_sites) == len(
             csv_files
@@ -258,7 +265,7 @@ class TestAPIDataIntegrity:
         import requests
 
         # Test with first available site
-        csv_files = list(DATA_DIR.glob("usgs_*.csv"))
+        csv_files = _canonical_site_csv_files()
         site_id = csv_files[0].stem.replace("usgs_", "")
 
         # Load CSV directly

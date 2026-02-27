@@ -24,16 +24,20 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
+
+pytest.importorskip(
+    "sentence_transformers",
+    reason="sentence-transformers is required for knowledge retrieval accuracy tests",
+)
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from src.agent.knowledge import (
+from src.agent.knowledge import (  # noqa: E402
     get_knowledge_stats,
     search_knowledge,
     search_usgs_data,
