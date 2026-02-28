@@ -524,11 +524,11 @@ Development is organized into focused sessions, each delivering a working increm
 **Goal:** Establish a benchmark suite that measures agent answer quality against ground-truth questions, and ML model performance against holdout data.
 
 **Deliverables:**
-- [ ] Benchmark question set: 30+ questions across all user types
-- [ ] Automated benchmark runner that scores agent responses
+- [x] Benchmark question set: 30+ questions across all user types
+- [x] Automated benchmark runner that scores agent responses
 - [ ] Ground-truth answers for Florida aquifer questions (expand `tests/knowledge/ground_truth_florida.json`)
 - [ ] ML benchmark: backtesting on 2023–2024 holdout data
-- [ ] Benchmark report output (JSON + summary)
+- [x] Benchmark report output (JSON + summary)
 
 **Acceptance Criteria:**
 - [ ] Agent achieves ≥85% accuracy on benchmark questions

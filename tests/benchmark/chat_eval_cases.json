@@ -1,28 +1,10 @@
 [
   {
-    "id": "L1_estero_30y",
+    "id": "L1_estero_trend_01",
     "level": "L1",
     "question": "What has been the change in groundwater level in Estero over the last 30 years?",
     "max_depth": 3,
     "timeout": 90,
-    "max_seconds": 15,
-    "required_checks": [
-      "ok_status",
-      "has_report",
-      "has_sources",
-      "has_claim_citations",
-      "has_date_reference",
-      "has_well_id",
-      "has_trend_language",
-      "has_aquifer_language"
-    ]
-  },
-  {
-    "id": "L2_estero_supply_sources",
-    "level": "L2",
-    "question": "What are the groundwater sources the Village of Estero uses for water supply and what have been changes in groundwater levels there over the last 30 years?",
-    "max_depth": 3,
-    "timeout": 120,
     "max_seconds": 20,
     "required_checks": [
       "ok_status",
@@ -33,7 +15,632 @@
       "has_well_id",
       "has_trend_language",
       "has_aquifer_language",
-      "has_implications"
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_estero_trend_02",
+    "level": "L1",
+    "question": "For Estero, summarize long-term groundwater level change using monitoring wells.",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_estero_trend_03",
+    "level": "L1",
+    "question": "How have Estero groundwater levels trended from the earliest local record to present?",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_estero_trend_04",
+    "level": "L1",
+    "question": "Give a 30-year-style trend summary for Estero groundwater wells with dates and site IDs.",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_estero_trend_05",
+    "level": "L1",
+    "question": "Did groundwater in Estero rise or fall over the available historical period?",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_estero_trend_06",
+    "level": "L1",
+    "question": "Report net groundwater level change in Estero and identify representative wells.",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_estero_trend_07",
+    "level": "L1",
+    "question": "Provide Estero groundwater trend direction and annualized change from USGS well records.",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_estero_trend_08",
+    "level": "L1",
+    "question": "Which Estero wells show the strongest decline and what is the net change?",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_estero_trend_09",
+    "level": "L1",
+    "question": "Summarize Estero groundwater trend by aquifer with explicit monitoring periods.",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_estero_trend_10",
+    "level": "L1",
+    "question": "How much drawdown is visible in Estero groundwater data over the local archive?",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_estero_trend_11",
+    "level": "L1",
+    "question": "Produce an Estero groundwater change summary with dates, well IDs, and trend direction.",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_estero_trend_12",
+    "level": "L1",
+    "question": "What do Estero monitoring wells indicate about long-term groundwater behavior?",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_01",
+    "level": "L2",
+    "question": "What are the groundwater sources used in Estero and how have those groundwater levels changed?",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_02",
+    "level": "L2",
+    "question": "For the Village of Estero water supply, summarize source aquifers and groundwater trends.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_03",
+    "level": "L2",
+    "question": "Explain Estero supply aquifers and compare groundwater trend direction across those units.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_04",
+    "level": "L2",
+    "question": "Assess Estero groundwater source reliability given observed long-term level changes.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_05",
+    "level": "L2",
+    "question": "How do Lower Tamiami, Hawthorn Group, and Upper Floridan contexts relate to Estero trends?",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_06",
+    "level": "L2",
+    "question": "Which aquifer systems support Estero supply and what groundwater stress signals appear?",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_07",
+    "level": "L2",
+    "question": "Synthesize Estero water-supply source context with observed monitoring-well trend changes.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_08",
+    "level": "L2",
+    "question": "Compare shallow vs deeper aquifer-related groundwater behavior near Estero supply context.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_09",
+    "level": "L2",
+    "question": "What sustainability implications follow from Estero groundwater trend evidence?",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_10",
+    "level": "L2",
+    "question": "Evaluate potential saltwater intrusion risk in Estero using groundwater trend proxies.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_11",
+    "level": "L2",
+    "question": "Provide a management-oriented summary of Estero groundwater source trends and risks.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_estero_sources_12",
+    "level": "L2",
+    "question": "If Estero declines continue, what are likely groundwater supply implications by aquifer?",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L3_estero_research_01",
+    "level": "L3",
+    "question": "Create an evidence-backed Estero groundwater briefing with claim-level citations and source links.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_citation_summary",
+      "mentions_usgs",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L3_estero_research_02",
+    "level": "L3",
+    "question": "Generate an Estero research-style report: wells, date ranges, aquifer framing, and implications.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_citation_summary",
+      "mentions_usgs",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L3_estero_research_03",
+    "level": "L3",
+    "question": "Prepare a technical Estero groundwater memo with USGS-backed claims and reproducible references.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_citation_summary",
+      "mentions_usgs",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L3_estero_research_04",
+    "level": "L3",
+    "question": "For Estero decision-makers, provide a citation-rich groundwater trend and risk synthesis.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_citation_summary",
+      "mentions_usgs",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L3_estero_research_05",
+    "level": "L3",
+    "question": "Draft a compact Estero groundwater assessment emphasizing provenance and claim coverage.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_citation_summary",
+      "mentions_usgs",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L3_estero_research_06",
+    "level": "L3",
+    "question": "Return a structured Estero groundwater analysis with cited claims and management implications.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_citation_summary",
+      "mentions_usgs",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L3_estero_research_07",
+    "level": "L3",
+    "question": "Build a source-verified Estero groundwater narrative suitable for research benchmarking.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_citation_summary",
+      "mentions_usgs",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L3_estero_research_08",
+    "level": "L3",
+    "question": "Provide an Estero groundwater benchmark response that maximizes citation coverage and traceability.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_citation_summary",
+      "mentions_usgs",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications",
+      "within_time_budget"
     ]
   }
 ]

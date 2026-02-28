@@ -168,6 +168,10 @@ cd api && uvicorn main:app --reload # Port 8000
 These benchmark questions define the performance targets for GroundwaterGPT's AI chat.
 The system must answer these reproducibly with cited USGS wells and correct aquifer units.
 
+Current benchmark corpus status:
+- [x] 32 benchmark cases defined in `tests/benchmark/chat_eval_cases.json`
+- [x] Automated scoring + threshold report available via `scripts/run_chat_benchmark.py`
+
 ### Level 1 — Single-Task Quantitative Trend (Easy)
 
 **Benchmark Question:**

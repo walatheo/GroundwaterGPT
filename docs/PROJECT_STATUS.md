@@ -197,6 +197,7 @@
 - [x] Add evaluation harness for retrieval/report quality in CI
 - [x] Add structured claim-to-source citation output
 - [x] Set minimum quality thresholds before production rollout
+- [x] Expand benchmark question corpus to 30+ deterministic research cases
 
 ### Sprint 4: Multi-Agent Research Architecture
 - [ ] Implement orchestrator-worker model (`LeadResearcher` + `SubAgent`s)

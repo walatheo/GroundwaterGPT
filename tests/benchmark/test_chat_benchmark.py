@@ -1,6 +1,22 @@
 """Tests for the chat benchmark scoring harness."""
 
+import json
+from pathlib import Path
+
 from src.evaluation.chat_benchmark import evaluate_case_response, evaluate_thresholds
+
+
+def test_benchmark_case_set_has_30_plus_cases():
+    """Benchmark corpus should maintain at least 30 cases for evaluation breadth."""
+    path = Path("tests/benchmark/chat_eval_cases.json")
+    with open(path) as fh:
+        cases = json.load(fh)
+
+    assert isinstance(cases, list)
+    assert len(cases) >= 30
+
+    ids = [case["id"] for case in cases if isinstance(case, dict) and "id" in case]
+    assert len(ids) == len(set(ids))
 
 
 def test_case_scoring_full_pass():
