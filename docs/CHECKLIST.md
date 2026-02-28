@@ -62,9 +62,9 @@
 - [x] Enforce reproducibility metadata for runs/artifacts
 
 ### Priority 3: Evaluation & Citation Integrity
-- [ ] Add automated retrieval/report benchmark harness in CI
-- [ ] Add claim-level citation schema for deep research reports
-- [ ] Define quality thresholds for factual accuracy and citation completeness
+- [x] Add automated retrieval/report benchmark harness in CI
+- [x] Add claim-level citation schema for deep research reports
+- [x] Define quality thresholds for factual accuracy and citation completeness
 
 ---
 
@@ -144,6 +144,9 @@ Phase 7: ░░░░░░░░░░░░   0% ⏳ Production
 ```bash
 # Run all tests
 pytest tests/ -v
+
+# Run AI chat benchmark harness (report-only)
+python3 scripts/run_chat_benchmark.py --output /tmp/chat_benchmark_report.json
 
 # Check code quality
 flake8 src/ api/ tests/ --max-line-length=120

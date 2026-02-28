@@ -100,13 +100,18 @@ export default function ChatView({ selectedSite }) {
         // Remove progress indicator, add real response
         setMessages(prev => {
           const filtered = prev.filter(m => !m.isProgress)
+          const elapsedSeconds = Number.isFinite(data.elapsed_seconds)
+            ? Math.round(data.elapsed_seconds)
+            : 0
           return [...filtered, {
             role: 'assistant',
             content: reportText,
             chart,
-            context: `Depth reached: ${data.depth_reached} | Elapsed: ${Math.round(data.elapsed_seconds)}s`,
+            context: `Depth reached: ${data.depth_reached ?? 0} | Elapsed: ${elapsedSeconds}s`,
             sources: data.sources || [],
             insights: data.insights || [],
+            claimCitations: data.claim_citations || [],
+            citationSummary: data.citation_summary || null,
             mode: data.mode,
           }]
         })
@@ -249,6 +254,27 @@ export default function ChatView({ selectedSite }) {
                       <li key={i} className="text-xs text-slate-600">
                         • {ins.content?.slice(0, 200)}{ins.content?.length > 200 ? '…' : ''}
                         {ins.confidence && <span className="ml-1 text-green-600">({Math.round(ins.confidence * 100)}% conf)</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+
+              {(msg.citationSummary || (msg.claimCitations && msg.claimCitations.length > 0)) && (
+                <details className="mt-2 pt-2 border-t border-slate-200">
+                  <summary className="text-xs text-slate-500 cursor-pointer">
+                    Citation coverage: {Math.round(((msg.citationSummary?.citation_coverage || 0) * 100))}% (
+                    {msg.citationSummary?.cited_claims || 0}/{msg.citationSummary?.total_claims || msg.claimCitations?.length || 0} claims cited)
+                  </summary>
+                  <ul className="mt-1 space-y-1">
+                    {(msg.claimCitations || []).map((claim, i) => (
+                      <li key={claim.claim_id || i} className="text-xs text-slate-600">
+                        • {claim.claim || 'Claim'}
+                        {Array.isArray(claim.citations) && claim.citations.length > 0 && (
+                          <span className="ml-1 text-blue-600">
+                            [{claim.citations.map(c => c.url).filter(Boolean).slice(0, 2).join(', ')}]
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>

@@ -194,9 +194,9 @@
 - [x] Persist manuscript provenance and citations in generated drafts
 
 ### Sprint 3: Quality & Citation Integrity
-- [ ] Add evaluation harness for retrieval/report quality in CI
-- [ ] Add structured claim-to-source citation output
-- [ ] Set minimum quality thresholds before production rollout
+- [x] Add evaluation harness for retrieval/report quality in CI
+- [x] Add structured claim-to-source citation output
+- [x] Set minimum quality thresholds before production rollout
 
 ### Sprint 4: Multi-Agent Research Architecture
 - [ ] Implement orchestrator-worker model (`LeadResearcher` + `SubAgent`s)

@@ -352,6 +352,7 @@ class DeepResearchAgent:
 
             context.update_progress("Complete")
             context.status = "complete"
+            claim_citations, citation_summary = self._build_claim_citations(context.insights)
 
             return {
                 "query": query,
@@ -364,6 +365,8 @@ class DeepResearchAgent:
                 "elapsed_seconds": context.elapsed_time(),
                 "stopped": context.stop_requested,
                 "timed_out": context.is_timed_out(),
+                "claim_citations": claim_citations,
+                "citation_summary": citation_summary,
             }
         finally:
             # Clear active context
@@ -784,6 +787,50 @@ If the research seems complete, respond with: COMPLETE"""
 
         # Continue if we haven't hit max depth
         return False
+
+    def _build_claim_citations(
+        self,
+        insights: list[ResearchInsight],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Build claim-level citation records from extracted insights."""
+        claims: list[dict[str, Any]] = []
+        cited_claims = 0
+
+        for index, insight in enumerate(insights, start=1):
+            source_url = (insight.source_url or "").strip()
+            has_source = bool(source_url and source_url != "unknown")
+            if has_source:
+                cited_claims += 1
+
+            citation_entry = (
+                [
+                    {
+                        "url": source_url,
+                        "verified": bool(insight.verified),
+                        "trust_level": insight.trust_level,
+                    }
+                ]
+                if has_source
+                else []
+            )
+
+            claims.append(
+                {
+                    "claim_id": f"claim_{index:03d}",
+                    "claim": insight.content,
+                    "confidence": insight.confidence,
+                    "citations": citation_entry,
+                }
+            )
+
+        total_claims = len(claims)
+        coverage = float(cited_claims / total_claims) if total_claims else 0.0
+        summary = {
+            "total_claims": total_claims,
+            "cited_claims": cited_claims,
+            "citation_coverage": coverage,
+        }
+        return claims, summary
 
     def _synthesize_report(self, context: ResearchContext) -> str:
         """Synthesize all insights into a comprehensive research report."""

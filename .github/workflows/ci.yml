@@ -120,3 +120,37 @@ jobs:
           print(f'Model quality gate passed: R² = {best_r2:.4f}')
           "
         continue-on-error: true
+
+  chat-evaluation:
+    name: Chat Evaluation Benchmark
+    runs-on: ubuntu-latest
+    needs: [test, validate-data]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run chat benchmark (report mode by default)
+        run: |
+          mkdir -p artifacts
+          if [ "${{ vars.ENFORCE_CHAT_THRESHOLDS }}" = "true" ]; then
+            python scripts/run_chat_benchmark.py \
+              --output artifacts/chat_benchmark_report.json \
+              --enforce-thresholds
+          else
+            python scripts/run_chat_benchmark.py \
+              --output artifacts/chat_benchmark_report.json
+          fi
+
+      - name: Upload chat benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-benchmark-report
+          path: artifacts/chat_benchmark_report.json

@@ -1,0 +1,39 @@
+[
+  {
+    "id": "L1_estero_30y",
+    "level": "L1",
+    "question": "What has been the change in groundwater level in Estero over the last 30 years?",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 15,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language"
+    ]
+  },
+  {
+    "id": "L2_estero_supply_sources",
+    "level": "L2",
+    "question": "What are the groundwater sources the Village of Estero uses for water supply and what have been changes in groundwater levels there over the last 30 years?",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_date_reference",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "has_implications"
+    ]
+  }
+]

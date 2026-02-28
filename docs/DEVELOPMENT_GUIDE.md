@@ -1578,10 +1578,10 @@ invalidate downstream work in ingestion, UI integration, and multi-agent orchest
 user-facing creates direct researcher value with limited architectural risk.
 
 #### Sprint 3 — Evaluation + Citation Integrity
-- [ ] Add retrieval and report-quality benchmark harness in CI.
-- [ ] Add claim-to-source citation structure in deep research reports.
+- [x] Add retrieval and report-quality benchmark harness in CI.
+- [x] Add claim-to-source citation structure in deep research reports.
 - [ ] Track confidence/trust per section in generated research outputs.
-- [ ] Define quality thresholds for factual accuracy and citation coverage.
+- [x] Define quality thresholds for factual accuracy and citation coverage.
 
 **Why third:** Quality gates are critical before scaling to a multi-agent pipeline.
 

@@ -9,6 +9,7 @@ Validates:
  • Input validation (empty / missing fields → 400)
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -226,6 +227,52 @@ class TestResearchEndpoint:
         assert "search_history" in body
         assert "depth_reached" in body
         assert "elapsed_seconds" in body
+        assert "claim_citations" in body
+        assert "citation_summary" in body
+        assert isinstance(body["claim_citations"], list)
+        assert isinstance(body["citation_summary"], dict)
+
+    def test_research_claim_citation_shape(self):
+        """Claim-citation schema should include claim text and citations list."""
+        resp = client.post(
+            "/api/research",
+            json={"question": "Groundwater trends in Estero over 30 years"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        claims = body.get("claim_citations", [])
+        if claims:
+            first = claims[0]
+            assert "claim_id" in first
+            assert "claim" in first
+            assert "citations" in first
+            assert isinstance(first["citations"], list)
+        summary = body.get("citation_summary", {})
+        assert "total_claims" in summary
+        assert "cited_claims" in summary
+        assert "citation_coverage" in summary
+
+    def test_research_estero_benchmark_fields(self):
+        """Estero benchmark query should include reproducible IDs, dates, and citations."""
+        resp = client.post(
+            "/api/research",
+            json={
+                "question": (
+                    "What has been the change in groundwater level in Estero "
+                    "over the last 30 years?"
+                )
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        combined = f"{body.get('report', '')}\n" + "\n".join(
+            str(s) for s in body.get("sources", [])
+        )
+
+        assert re.search(r"\b\d{15}\b", combined)
+        assert re.search(r"\b\d{4}-\d{2}-\d{2}\b", combined)
+        assert "usgs" in combined.lower()
+        assert body.get("citation_summary", {}).get("citation_coverage", 0) >= 0.9
 
 
 # ===================================================================
