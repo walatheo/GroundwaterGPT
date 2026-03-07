@@ -3,7 +3,11 @@
 import json
 from pathlib import Path
 
-from src.evaluation.chat_benchmark import evaluate_case_response, evaluate_thresholds
+from src.evaluation.chat_benchmark import (
+    evaluate_case_response,
+    evaluate_thresholds,
+    run_chat_benchmark,
+)
 
 
 def test_benchmark_case_set_has_30_plus_cases():
@@ -88,3 +92,70 @@ def test_threshold_evaluation_failure_reasons():
     assert any("overall_score" in reason for reason in summary["failed_reasons"])
     assert any("average_citation_coverage" in reason for reason in summary["failed_reasons"])
     assert any("max_elapsed" in reason for reason in summary["failed_reasons"])
+
+
+def test_run_chat_benchmark_supports_both_mode(tmp_path, monkeypatch):
+    """Benchmark runner should execute fallback + live modes in one report."""
+    monkeypatch.setenv("GROUNDWATERGPT_SKIP_AGENT_INIT", "1")
+
+    cases_path = tmp_path / "cases.json"
+    thresholds_path = tmp_path / "thresholds.json"
+
+    cases_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "mini_case",
+                    "level": "L1",
+                    "question": "Estero groundwater trend summary",
+                    "required_checks": ["ok_status", "has_report"],
+                    "max_seconds": 10,
+                }
+            ]
+        )
+    )
+    thresholds_path.write_text(
+        json.dumps(
+            {
+                "min_overall_score": 0.0,
+                "min_case_score": 0.0,
+                "min_avg_citation_coverage": 0.0,
+                "max_response_seconds": 60.0,
+                "force_fallback_mode": False,
+                "enforce_in_ci": False,
+                "notes": "test thresholds",
+            }
+        )
+    )
+
+    report = run_chat_benchmark(
+        cases_path=cases_path,
+        thresholds_path=thresholds_path,
+        mode="both",
+    )
+    assert report["metadata"]["requested_mode"] == "both"
+    assert report["metadata"]["primary_mode"] == "fallback"
+    assert "fallback" in report["mode_runs"]
+    assert "live" in report["mode_runs"]
+    assert isinstance(report["results"], list)
+    assert isinstance(report["summary"], dict)
+
+
+def test_run_chat_benchmark_rejects_invalid_mode(tmp_path):
+    """Invalid benchmark mode should fail fast with a clear error."""
+    cases_path = tmp_path / "cases.json"
+    thresholds_path = tmp_path / "thresholds.json"
+
+    cases_path.write_text(json.dumps([]))
+    thresholds_path.write_text(json.dumps({}))
+
+    try:
+        run_chat_benchmark(
+            cases_path=cases_path,
+            thresholds_path=thresholds_path,
+            mode="invalid",
+        )
+    except ValueError as exc:
+        assert "mode must be one of" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for invalid mode")

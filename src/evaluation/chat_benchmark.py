@@ -167,6 +167,7 @@ def evaluate_thresholds(
 def run_chat_benchmark(
     cases_path: Path = DEFAULT_CASES_PATH,
     thresholds_path: Path = DEFAULT_THRESHOLDS_PATH,
+    mode: str | None = None,
 ) -> dict[str, Any]:
     """Execute the benchmark suite by calling the local FastAPI app."""
     cases = load_json_file(cases_path)
@@ -176,63 +177,96 @@ def run_chat_benchmark(
     if not isinstance(thresholds, dict):
         raise ValueError("Benchmark thresholds file must contain a JSON object.")
 
-    if bool(thresholds.get("force_fallback_mode", False)):
+    configured_force_fallback = bool(thresholds.get("force_fallback_mode", False))
+    requested_mode = mode or ("fallback" if configured_force_fallback else "live")
+    if requested_mode not in {"fallback", "live", "both"}:
+        raise ValueError("mode must be one of: fallback, live, both")
+
+    # Preserve existing behavior for deterministic fallback-only runs.
+    if requested_mode == "fallback" and configured_force_fallback:
         os.environ["GROUNDWATERGPT_SKIP_AGENT_INIT"] = "1"
 
     from api.main import app
+    from api.routes import chat as chat_routes
 
-    force_fallback = bool(thresholds.get("force_fallback_mode", False))
-    if force_fallback:
-        from api.routes import chat as chat_routes
-
-        chat_routes._research_agent = None
-        chat_routes._chat_agent = None
-
+    original_chat_agent = chat_routes._chat_agent
+    original_research_agent = chat_routes._research_agent
     client = TestClient(app)
-    case_results: list[dict[str, Any]] = []
+    modes_to_run = ["fallback", "live"] if requested_mode == "both" else [requested_mode]
+    mode_runs: dict[str, dict[str, Any]] = {}
 
-    for case in cases:
-        question = str(case.get("question", "")).strip()
-        if not question:
-            continue
+    try:
+        for current_mode in modes_to_run:
+            if current_mode == "fallback":
+                chat_routes._chat_agent = None
+                chat_routes._research_agent = None
+            else:
+                chat_routes._chat_agent = original_chat_agent
+                chat_routes._research_agent = original_research_agent
 
-        payload = {
-            "question": question,
-            "max_depth": int(case.get("max_depth", 3)),
-            "timeout": float(case.get("timeout", 120)),
-        }
+            case_results: list[dict[str, Any]] = []
+            for case in cases:
+                question = str(case.get("question", "")).strip()
+                if not question:
+                    continue
 
-        start = time.perf_counter()
-        resp = client.post("/api/research", json=payload)
-        elapsed = time.perf_counter() - start
+                payload = {
+                    "question": question,
+                    "max_depth": int(case.get("max_depth", 3)),
+                    "timeout": float(case.get("timeout", 120)),
+                }
 
-        body: dict[str, Any]
-        try:
-            parsed = resp.json()
-            body = parsed if isinstance(parsed, dict) else {"report": str(parsed)}
-        except Exception:
-            body = {"report": resp.text, "status": "error", "mode": "unknown"}
+                start = time.perf_counter()
+                resp = client.post("/api/research", json=payload)
+                elapsed = time.perf_counter() - start
 
-        case_results.append(
-            evaluate_case_response(
-                case=case,
-                response=body,
-                elapsed_seconds=elapsed,
-                status_code=resp.status_code,
-            )
-        )
+                body: dict[str, Any]
+                try:
+                    parsed = resp.json()
+                    body = parsed if isinstance(parsed, dict) else {"report": str(parsed)}
+                except Exception:
+                    body = {"report": resp.text, "status": "error", "mode": "unknown"}
 
-    threshold_eval = evaluate_thresholds(case_results, thresholds)
+                case_results.append(
+                    evaluate_case_response(
+                        case=case,
+                        response=body,
+                        elapsed_seconds=elapsed,
+                        status_code=resp.status_code,
+                    )
+                )
+
+            mode_runs[current_mode] = {
+                "results": case_results,
+                "summary": evaluate_thresholds(case_results, thresholds),
+            }
+    finally:
+        chat_routes._chat_agent = original_chat_agent
+        chat_routes._research_agent = original_research_agent
+
+    primary_mode = "fallback" if "fallback" in mode_runs else modes_to_run[0]
+    primary_run = mode_runs[primary_mode]
+
     return {
         "metadata": {
             "cases_path": str(cases_path),
             "thresholds_path": str(thresholds_path),
-            "case_count": len(case_results),
+            "case_count": len(primary_run["results"]),
+            "requested_mode": requested_mode,
+            "primary_mode": primary_mode,
         },
-        "results": case_results,
-        "summary": threshold_eval,
+        "results": primary_run["results"],
+        "summary": primary_run["summary"],
+        "mode_runs": {
+            name: {
+                "summary": run["summary"],
+                "case_count": len(run["results"]),
+            }
+            for name, run in mode_runs.items()
+        },
         "threshold_policy": {
             "enforce_in_ci": bool(thresholds.get("enforce_in_ci", False)),
+            "configured_force_fallback_mode": configured_force_fallback,
             "notes": thresholds.get("notes", ""),
         },
     }
