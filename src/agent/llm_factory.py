@@ -1,5 +1,4 @@
-"""
-LLM Factory - Swappable LLM Provider
+"""LLM Factory - Swappable LLM provider.
 
 Change the provider in config to switch between:
 - ollama (local, free)
@@ -25,8 +24,8 @@ class LLMProvider(Enum):
 # Default configuration - easy to change
 # Options: OLLAMA (local/free), OPENAI, ANTHROPIC, GEMINI
 LLM_CONFIG = {
-    "provider": LLMProvider.OLLAMA,  # Using Ollama while Gemini quota resets
-    "model": "llama3.2",  # Change to "gemini-2.0-flash" when ready
+    "provider": LLMProvider.OLLAMA,  # Local default for reliable dev iteration
+    "model": "qwen3:8b",  # Preferred Ollama default (current Qwen generation)
     "temperature": 0.7,
     "max_tokens": 2048,
 }
@@ -38,8 +37,7 @@ def get_llm(
     temperature: Optional[float] = None,
     **kwargs,
 ):
-    """
-    Factory function to get the appropriate LLM based on provider.
+    """Get the appropriate LLM based on provider.
 
     Args:
         provider: LLM provider (defaults to config)
@@ -51,7 +49,7 @@ def get_llm(
         LangChain chat model instance
 
     Example:
-        # Use default (Ollama/Llama)
+        # Use default (Ollama/Qwen)
         llm = get_llm()
 
         # Override provider
@@ -107,8 +105,7 @@ def get_llm(
 
 
 def get_embeddings(provider: Optional[LLMProvider] = None):
-    """
-    Get embeddings model for the specified provider.
+    """Get the embeddings model for the specified provider.
 
     For Ollama, uses nomic-embed-text.
     For others, uses their native embedding models.
@@ -146,7 +143,7 @@ def set_provider(provider: LLMProvider, model: Optional[str] = None):
 
 # Provider-specific model recommendations
 RECOMMENDED_MODELS = {
-    LLMProvider.OLLAMA: ["llama3.2", "qwen2.5:7b", "mistral", "deepseek-r1:7b"],
+    LLMProvider.OLLAMA: ["qwen3:8b", "qwen2.5:7b", "llama3.2", "mistral", "deepseek-r1:7b"],
     LLMProvider.OPENAI: ["gpt-4o", "gpt-4.1", "gpt-4o-mini"],
     LLMProvider.ANTHROPIC: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
     LLMProvider.GEMINI: ["gemini-2.0-flash", "gemini-1.5-pro"],
