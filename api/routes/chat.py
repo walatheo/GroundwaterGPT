@@ -12,7 +12,7 @@ import sys
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
@@ -25,6 +25,19 @@ router = APIRouter(prefix="/api", tags=["chat"])
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 ESTERO_REFERENCE_LAT = 26.4381
 ESTERO_REFERENCE_LNG = -81.8068
+TRUST_LEVEL_RANK = {
+    "unknown": 0,
+    "untrusted": 0,
+    "moderate": 1,
+    "trusted": 2,
+    "verified": 3,
+}
+RANK_TO_TRUST_LEVEL = {
+    0: "unknown",
+    1: "moderate",
+    2: "trusted",
+    3: "verified",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +107,30 @@ GROUNDWATER_KB = {
             "Aquifer access."
         ),
     },
+    "drought_resilience": {
+        "keywords": ["drought", "dry spell", "resilience", "water shortage"],
+        "info": (
+            "During drought periods, prioritize irrigation scheduling by crop stage "
+            "and monitor nearby USGS wells weekly. Trigger conservation actions when "
+            "water levels show sustained decline through the late dry season."
+        ),
+    },
+    "fertigation": {
+        "keywords": ["fertigation", "fertilizer", "nutrient", "leaching"],
+        "info": (
+            "For fertigation, avoid heavy nutrient dosing when the water table is "
+            "very shallow to reduce leaching risk. Split fertilizer applications "
+            "and align timing with soil-moisture and groundwater conditions."
+        ),
+    },
+    "frost_protection": {
+        "keywords": ["frost", "freeze", "cold snap", "freeze protection"],
+        "info": (
+            "Cold-event irrigation draws heavily on wells in short windows. Confirm "
+            "pump capacity and aquifer recovery before freeze nights, and track water "
+            "levels afterward to avoid cumulative seasonal drawdown."
+        ),
+    },
 }
 
 
@@ -116,6 +153,74 @@ def _get_site_context(county: Optional[str] = None) -> str:
     n_sites = len(SITE_METADATA)
     n_counties = len(sites_by_county)
     return f"Monitoring {n_sites} USGS sites across " f"{n_counties} Florida counties."
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    """Parse a boolean environment flag with a safe default."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _clamp_confidence(value: Any) -> float:
+    """Convert confidence to a bounded float in [0.0, 1.0]."""
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = 0.0
+    return round(max(0.0, min(1.0, numeric)), 3)
+
+
+def _highest_trust_level(citations: list[dict[str, Any]]) -> str:
+    """Select the highest trust level present in claim citations."""
+    best_rank = 0
+    for citation in citations:
+        trust_level = str(citation.get("trust_level", "unknown")).lower()
+        best_rank = max(best_rank, TRUST_LEVEL_RANK.get(trust_level, 0))
+    return RANK_TO_TRUST_LEVEL.get(best_rank, "unknown")
+
+
+def _build_section_confidence_from_claims(claim_citations: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build per-section confidence + trust metadata from claim citations."""
+    sections: list[dict[str, Any]] = []
+    ranks: list[int] = []
+    confidences: list[float] = []
+
+    for index, claim in enumerate(claim_citations, start=1):
+        citations_raw = claim.get("citations", [])
+        citations = citations_raw if isinstance(citations_raw, list) else []
+        trust_level = _highest_trust_level(citations)
+        trust_rank = TRUST_LEVEL_RANK.get(trust_level, 0)
+        confidence = _clamp_confidence(claim.get("confidence", 0.0))
+        title = str(claim.get("claim", "")).strip()[:120] or f"Claim section {index}"
+
+        ranks.append(trust_rank)
+        confidences.append(confidence)
+        sections.append(
+            {
+                "section_id": f"section_{index:03d}",
+                "title": title,
+                "confidence": confidence,
+                "trust_level": trust_level,
+                "citation_count": len(citations),
+            }
+        )
+
+    if not sections:
+        return {
+            "sections": [],
+            "overall_confidence": 0.0,
+            "overall_trust_level": "unknown",
+        }
+
+    avg_confidence = round(sum(confidences) / len(confidences), 3)
+    avg_rank = round(sum(ranks) / len(ranks))
+    return {
+        "sections": sections,
+        "overall_confidence": avg_confidence,
+        "overall_trust_level": RANK_TO_TRUST_LEVEL.get(avg_rank, "unknown"),
+    }
 
 
 def _fallback_response(query: str) -> dict:
@@ -146,9 +251,10 @@ def _fallback_response(query: str) -> dict:
     else:
         response_text = (
             "I can help with groundwater questions about irrigation, "
-            "crops, soil moisture, aquifers, wells, saltwater "
-            "intrusion, and seasonal patterns. Try asking about water "
-            "levels for farming or which crops suit your area."
+            "crops, soil moisture, aquifers, wells, drought planning, "
+            "fertigation, frost protection, saltwater intrusion, and "
+            "seasonal patterns. Try asking about water levels for "
+            "farming or which crops suit your area."
         )
         sources = ["GroundwaterGPT Knowledge Base"]
 
@@ -266,6 +372,7 @@ def _estero_research_fallback(question: str) -> dict:
             "sources": fallback["sources"],
             "claim_citations": claim_citations,
             "citation_summary": _build_citation_summary(claim_citations),
+            "section_confidence": _build_section_confidence_from_claims(claim_citations),
             "search_history": [question],
             "depth_reached": 1,
             "elapsed_seconds": 0.05,
@@ -383,6 +490,7 @@ def _estero_research_fallback(question: str) -> dict:
         "sources": sources,
         "claim_citations": claim_citations,
         "citation_summary": _build_citation_summary(claim_citations),
+        "section_confidence": _build_section_confidence_from_claims(claim_citations),
         "search_history": [question, "USGS Estero proxy sites trend analysis"],
         "depth_reached": 1,
         "elapsed_seconds": 0.12,
@@ -395,12 +503,47 @@ def _estero_research_fallback(question: str) -> dict:
 
 _chat_agent = None
 _research_agent = None
-
-skip_agent_init = os.getenv("GROUNDWATERGPT_SKIP_AGENT_INIT", "").strip().lower() in {
-    "1",
-    "true",
-    "yes",
+_agent_boot_errors: list[str] = []
+_runtime_error_state: dict[str, dict[str, Optional[str]]] = {
+    "chat": {"message": None, "timestamp": None},
+    "research": {"message": None, "timestamp": None},
 }
+
+skip_agent_init = _env_flag("GROUNDWATERGPT_SKIP_AGENT_INIT")
+research_web_search_enabled = _env_flag("GROUNDWATERGPT_ENABLE_WEB_SEARCH", default=False)
+
+
+def _set_runtime_error(channel: str, error: Exception) -> None:
+    """Store the most recent runtime error for status visibility."""
+    _runtime_error_state[channel] = {
+        "message": str(error),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _clear_runtime_error(channel: str) -> None:
+    """Clear runtime error state after a successful request path."""
+    _runtime_error_state[channel] = {"message": None, "timestamp": None}
+
+
+def _build_degraded_reasons() -> list[str]:
+    """Build explicit degraded reasons for chat status responses."""
+    reasons = list(_agent_boot_errors)
+    if skip_agent_init:
+        reasons.append("LLM agent initialization disabled by GROUNDWATERGPT_SKIP_AGENT_INIT.")
+    if _chat_agent is None:
+        reasons.append("Conversational chat agent is unavailable; fallback mode will be used.")
+    if _research_agent is None:
+        reasons.append("Deep research agent is unavailable; fallback mode will be used.")
+
+    chat_error = _runtime_error_state["chat"]["message"]
+    if chat_error:
+        reasons.append(f"Latest chat runtime error: {chat_error}")
+    research_error = _runtime_error_state["research"]["message"]
+    if research_error:
+        reasons.append(f"Latest research runtime error: {research_error}")
+    return reasons
+
 
 if skip_agent_init:
     logger.info("Skipping LLM-backed agent initialization (GROUNDWATERGPT_SKIP_AGENT_INIT set)")
@@ -413,13 +556,30 @@ else:
         from src.agent.groundwater_agent import create_agent as _create_chat_agent  # noqa: E402
         from src.agent.research_agent import DeepResearchAgent  # noqa: E402
 
-        _chat_agent = _create_chat_agent(verbose=False)
-        _research_agent = DeepResearchAgent(
-            max_depth=3,
-            timeout_seconds=120,
-        )
-        logger.info("LLM-backed agents initialised successfully")
+        try:
+            _chat_agent = _create_chat_agent(verbose=False)
+        except Exception as exc:
+            _agent_boot_errors.append(f"Chat agent initialization failed: {exc}")
+            logger.warning("Chat agent initialization failed: %s", exc)
+            _chat_agent = None
+
+        try:
+            _research_agent = DeepResearchAgent(
+                max_depth=3,
+                timeout_seconds=120,
+                use_web_search=research_web_search_enabled,
+            )
+        except Exception as exc:
+            _agent_boot_errors.append(f"Research agent initialization failed: {exc}")
+            logger.warning("Research agent initialization failed: %s", exc)
+            _research_agent = None
+
+        if _chat_agent or _research_agent:
+            logger.info("LLM-backed agents initialised with runtime safeguards")
+        else:
+            logger.warning("No LLM-backed agents available after initialization")
     except Exception as exc:
+        _agent_boot_errors.append(f"Agent import bootstrap failed: {exc}")
         logger.warning(
             "Could not initialise LLM agents — " "falling back to rule-based chat. Reason: %s",
             exc,
@@ -450,6 +610,7 @@ def chat_endpoint(query: dict):
     if _chat_agent is not None:
         try:
             response_text = _chat_agent.chat(user_query)
+            _clear_runtime_error("chat")
             return {
                 "response": response_text,
                 "context": _get_site_context(),
@@ -459,6 +620,7 @@ def chat_endpoint(query: dict):
             }
         except Exception as exc:
             logger.error("Agent chat error: %s", exc)
+            _set_runtime_error("chat", exc)
             # Fall through to rule-based fallback
 
     # --- Fallback ---
@@ -499,6 +661,7 @@ def research_endpoint(query: dict):
                 max_depth=max_depth,
                 timeout=timeout,
             )
+            _clear_runtime_error("research")
             return {
                 "status": "ok",
                 "mode": "deep_research",
@@ -513,6 +676,10 @@ def research_endpoint(query: dict):
                     "citation_summary",
                     {"total_claims": 0, "cited_claims": 0, "citation_coverage": 0.0},
                 ),
+                "section_confidence": result.get(
+                    "section_confidence",
+                    _build_section_confidence_from_claims(result.get("claim_citations", [])),
+                ),
             }
         except Exception as exc:
             logger.error(
@@ -520,6 +687,7 @@ def research_endpoint(query: dict):
                 exc,
                 traceback.format_exc(),
             )
+            _set_runtime_error("research", exc)
             # Fall through to fallback
 
     # --- Fallback ---
@@ -537,6 +705,7 @@ def research_endpoint(query: dict):
             "elapsed_seconds": estero["elapsed_seconds"],
             "claim_citations": estero["claim_citations"],
             "citation_summary": estero["citation_summary"],
+            "section_confidence": estero.get("section_confidence", {}),
         }
 
     fb = _fallback_response(question)
@@ -552,6 +721,7 @@ def research_endpoint(query: dict):
         }
     ]
     summary = _build_citation_summary(fallback_claims)
+    section_confidence = _build_section_confidence_from_claims(fallback_claims)
     return {
         "status": "ok",
         "mode": "fallback",
@@ -563,6 +733,7 @@ def research_endpoint(query: dict):
         "elapsed_seconds": 0,
         "claim_citations": fallback_claims,
         "citation_summary": summary,
+        "section_confidence": section_confidence,
     }
 
 
@@ -574,13 +745,23 @@ def research_endpoint(query: dict):
 @router.get("/chat/status")
 def chat_status():
     """Get AI chat and research system status."""
+    degraded_reasons = _build_degraded_reasons()
     agent_available = _chat_agent is not None
     research_available = _research_agent is not None
     return {
-        "status": "ok" if agent_available else "fallback",
+        "status": "ok" if (agent_available and not degraded_reasons) else "fallback",
         "version": "1.0.0",
         "agent_available": agent_available,
         "research_available": research_available,
+        "degraded_reasons": degraded_reasons,
+        "runtime_checks": {
+            "skip_agent_init": skip_agent_init,
+            "web_search_enabled": research_web_search_enabled,
+            "chat_agent_initialized": agent_available,
+            "research_agent_initialized": research_available,
+            "last_chat_error": _runtime_error_state["chat"],
+            "last_research_error": _runtime_error_state["research"],
+        },
         "features": (
             [
                 "Conversational groundwater Q&A",
@@ -589,6 +770,7 @@ def chat_status():
                 "Anomaly detection",
                 "Data quality reports",
                 "Deep research with iterative search",
+                "Section-level confidence/trust metadata",
             ]
             if agent_available
             else [

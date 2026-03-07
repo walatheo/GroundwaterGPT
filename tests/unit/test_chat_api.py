@@ -36,9 +36,22 @@ class TestGroundwaterKnowledgeBase:
 
     def test_kb_has_required_topics(self):
         """Verify KB contains essential groundwater topics."""
-        required_topics = ["irrigation", "crops", "aquifer", "seasonal", "well"]
+        required_topics = [
+            "irrigation",
+            "crops",
+            "aquifer",
+            "seasonal",
+            "well",
+            "drought_resilience",
+            "fertigation",
+            "frost_protection",
+        ]
         for topic in required_topics:
             assert topic in GROUNDWATER_KB, f"Missing KB topic: {topic}"
+
+    def test_kb_has_at_least_ten_topics(self):
+        """Farmer KB should maintain at least 10 topic entries."""
+        assert len(GROUNDWATER_KB) >= 10
 
     def test_kb_entries_have_keywords(self):
         """Verify each KB entry has keywords for matching."""
@@ -229,8 +242,10 @@ class TestResearchEndpoint:
         assert "elapsed_seconds" in body
         assert "claim_citations" in body
         assert "citation_summary" in body
+        assert "section_confidence" in body
         assert isinstance(body["claim_citations"], list)
         assert isinstance(body["citation_summary"], dict)
+        assert isinstance(body["section_confidence"], dict)
 
     def test_research_claim_citation_shape(self):
         """Claim-citation schema should include claim text and citations list."""
@@ -296,6 +311,8 @@ class TestChatStatus:
         assert "agent_available" in body
         assert "research_available" in body
         assert "features" in body
+        assert "degraded_reasons" in body
+        assert "runtime_checks" in body
         assert body["status"] in ("ok", "fallback")
 
     def test_status_agent_flags_are_bool(self):
@@ -310,6 +327,33 @@ class TestChatStatus:
         assert isinstance(body["features"], list)
         assert len(body["features"]) > 0
         assert all(isinstance(f, str) for f in body["features"])
+
+    def test_status_degraded_reasons_and_runtime_checks_shape(self):
+        """Degraded reasons and runtime checks should always have stable shape."""
+        body = client.get("/api/chat/status").json()
+        assert isinstance(body["degraded_reasons"], list)
+        assert isinstance(body["runtime_checks"], dict)
+        checks = body["runtime_checks"]
+        assert "skip_agent_init" in checks
+        assert "web_search_enabled" in checks
+        assert "last_chat_error" in checks
+        assert "last_research_error" in checks
+
+    def test_status_tracks_latest_chat_runtime_error(self, monkeypatch):
+        """chat/status should expose latest chat runtime error metadata."""
+        from api.routes import chat as chat_routes
+
+        class _BoomAgent:
+            def chat(self, _query):
+                raise RuntimeError("simulated chat failure")
+
+        monkeypatch.setattr(chat_routes, "_chat_agent", _BoomAgent())
+        resp = client.post("/api/chat", json={"message": "test runtime failure path"})
+        assert resp.status_code == 200
+        body = client.get("/api/chat/status").json()
+        last_error = body["runtime_checks"]["last_chat_error"]
+        assert isinstance(last_error, dict)
+        assert "simulated chat failure" in str(last_error.get("message", ""))
 
 
 # ===================================================================

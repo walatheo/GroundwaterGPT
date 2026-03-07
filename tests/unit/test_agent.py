@@ -313,6 +313,37 @@ class TestResearchAgentConstruction:
         assert agent.stop() is False
 
 
+class TestResearchSectionConfidence:
+    """Test section-level confidence/trust aggregation for research output."""
+
+    @patch("src.agent.research_agent.get_llm")
+    def test_build_section_confidence(self, mock_get_llm):
+        """Section metadata should include per-section + overall confidence/trust."""
+        mock_get_llm.return_value = _mock_llm()
+        agent = DeepResearchAgent(use_web_search=False)
+        insights = [
+            ResearchInsight(
+                content="Insight A",
+                source_url="https://example.com/a",
+                confidence=0.9,
+                verified=True,
+                trust_level="verified",
+            ),
+            ResearchInsight(
+                content="Insight B",
+                source_url="https://example.com/b",
+                confidence=0.5,
+                verified=True,
+                trust_level="moderate",
+            ),
+        ]
+        section_data = agent._build_section_confidence(insights)
+        assert "sections" in section_data
+        assert "overall_confidence" in section_data
+        assert "overall_trust_level" in section_data
+        assert len(section_data["sections"]) == 2
+
+
 # ===================================================================
 # LLM Factory
 # ===================================================================

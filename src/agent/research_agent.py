@@ -251,6 +251,9 @@ class DeepResearchAgent:
                     self._ddg = DDGS()
                 except ImportError:
                     logger.warning("ddgs not installed. " "Install with: pip install ddgs")
+            except Exception as e:
+                logger.warning("Web search disabled due to DDGS runtime error: %s", e)
+                self._ddg_available = False
 
     def stop(self) -> bool:
         """Stop the currently running research.
@@ -323,7 +326,11 @@ class DeepResearchAgent:
             context.update_progress("Starting research...")
 
             # Execute research graph
-            self._research_graph(context)
+            try:
+                self._research_graph(context)
+            except Exception as e:
+                logger.error("Research graph execution failed: %s", e)
+                context.update_progress("Research graph failed; returning partial output.")
 
             # Check if we were stopped
             if context.stop_requested:
@@ -353,6 +360,7 @@ class DeepResearchAgent:
             context.update_progress("Complete")
             context.status = "complete"
             claim_citations, citation_summary = self._build_claim_citations(context.insights)
+            section_confidence = self._build_section_confidence(context.insights)
 
             return {
                 "query": query,
@@ -367,6 +375,7 @@ class DeepResearchAgent:
                 "timed_out": context.is_timed_out(),
                 "claim_citations": claim_citations,
                 "citation_summary": citation_summary,
+                "section_confidence": section_confidence,
             }
         finally:
             # Clear active context
@@ -560,7 +569,8 @@ Return ONLY the search query, nothing else."""
         if self._ddg_available and self.use_web_search:
             try:
                 web_results = self._search_web(query, context)
-                results.extend(web_results)
+                if web_results:
+                    results.extend(web_results)
             except Exception as e:
                 logger.error(f"Web search failed: {e}")
 
@@ -577,8 +587,12 @@ Return ONLY the search query, nothing else."""
             enhanced_query = f"groundwater hydrogeology {query}"
 
             search_results = self._ddg.text(enhanced_query, max_results=self.max_results_per_search)
+            if not search_results:
+                return []
 
             for result in search_results:
+                if not isinstance(result, dict):
+                    continue
                 url = result.get("href", "")
                 if url not in context.visited_urls:
                     # Verify source before adding
@@ -603,6 +617,7 @@ Return ONLY the search query, nothing else."""
                         )
         except Exception as e:
             logger.error(f"DuckDuckGo search error: {e}")
+            return []
 
         return results
 
@@ -831,6 +846,59 @@ If the research seems complete, respond with: COMPLETE"""
             "citation_coverage": coverage,
         }
         return claims, summary
+
+    def _build_section_confidence(self, insights: list[ResearchInsight]) -> dict[str, Any]:
+        """Build section-level confidence and trust metadata from insights."""
+        trust_rank = {
+            "unknown": 0,
+            "untrusted": 0,
+            "moderate": 1,
+            "trusted": 2,
+            "verified": 3,
+        }
+        rank_to_trust = {
+            0: "unknown",
+            1: "moderate",
+            2: "trusted",
+            3: "verified",
+        }
+
+        sections: list[dict[str, Any]] = []
+        confidence_values: list[float] = []
+        trust_values: list[int] = []
+
+        for index, insight in enumerate(insights, start=1):
+            confidence = max(0.0, min(1.0, float(insight.confidence)))
+            trust_level = str(insight.trust_level or "unknown").lower()
+            trust = trust_rank.get(trust_level, 0)
+            citation_count = 1 if (insight.source_url and insight.source_url != "unknown") else 0
+
+            confidence_values.append(confidence)
+            trust_values.append(trust)
+            sections.append(
+                {
+                    "section_id": f"section_{index:03d}",
+                    "title": insight.content[:120] or f"Insight section {index}",
+                    "confidence": round(confidence, 3),
+                    "trust_level": rank_to_trust.get(trust, "unknown"),
+                    "citation_count": citation_count,
+                }
+            )
+
+        if not sections:
+            return {
+                "sections": [],
+                "overall_confidence": 0.0,
+                "overall_trust_level": "unknown",
+            }
+
+        avg_confidence = round(sum(confidence_values) / len(confidence_values), 3)
+        avg_trust_rank = round(sum(trust_values) / len(trust_values))
+        return {
+            "sections": sections,
+            "overall_confidence": avg_confidence,
+            "overall_trust_level": rank_to_trust.get(avg_trust_rank, "unknown"),
+        }
 
     def _synthesize_report(self, context: ResearchContext) -> str:
         """Synthesize all insights into a comprehensive research report."""
