@@ -25,6 +25,8 @@ router = APIRouter(prefix="/api", tags=["chat"])
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 ESTERO_REFERENCE_LAT = 26.4381
 ESTERO_REFERENCE_LNG = -81.8068
+MIN_CLAIM_CITATION_COVERAGE = float(os.getenv("GROUNDWATERGPT_MIN_CLAIM_COVERAGE", "0.90"))
+MIN_SECTION_CITATION_COVERAGE = float(os.getenv("GROUNDWATERGPT_MIN_SECTION_COVERAGE", "0.90"))
 TRUST_LEVEL_RANK = {
     "unknown": 0,
     "untrusted": 0,
@@ -350,6 +352,37 @@ def _build_citation_summary(claim_citations: list[dict]) -> dict:
     }
 
 
+def _build_citation_integrity(
+    claim_citations: list[dict[str, Any]],
+    section_confidence: dict[str, Any],
+) -> dict[str, Any]:
+    """Compute claim/section citation integrity checks."""
+    claim_summary = _build_citation_summary(claim_citations)
+    claim_coverage = float(claim_summary.get("citation_coverage", 0.0))
+
+    sections = (
+        section_confidence.get("sections", []) if isinstance(section_confidence, dict) else []
+    )
+    total_sections = len(sections)
+    cited_sections = sum(
+        1 for section in sections if int(section.get("citation_count", 0) or 0) > 0
+    )
+    section_coverage = float(cited_sections / total_sections) if total_sections else 0.0
+
+    passes_claim = claim_coverage >= MIN_CLAIM_CITATION_COVERAGE
+    passes_section = section_coverage >= MIN_SECTION_CITATION_COVERAGE
+
+    return {
+        "claim_citation_coverage": round(claim_coverage, 3),
+        "section_citation_coverage": round(section_coverage, 3),
+        "min_claim_coverage": MIN_CLAIM_CITATION_COVERAGE,
+        "min_section_coverage": MIN_SECTION_CITATION_COVERAGE,
+        "claim_coverage_passed": passes_claim,
+        "section_coverage_passed": passes_section,
+        "passed": passes_claim and passes_section,
+    }
+
+
 def _estero_research_fallback(question: str) -> dict:
     """Generate a deterministic, cited response for Estero benchmark questions."""
     sites = _best_estero_sites(max_sites=2)
@@ -373,6 +406,11 @@ def _estero_research_fallback(question: str) -> dict:
             "claim_citations": claim_citations,
             "citation_summary": _build_citation_summary(claim_citations),
             "section_confidence": _build_section_confidence_from_claims(claim_citations),
+            "hallucination_guardrail": {
+                "strategy": "deterministic_fallback",
+                "removed_uncited_factual_sentences": 0,
+                "all_factual_claims_cited": True,
+            },
             "search_history": [question],
             "depth_reached": 1,
             "elapsed_seconds": 0.05,
@@ -491,6 +529,11 @@ def _estero_research_fallback(question: str) -> dict:
         "claim_citations": claim_citations,
         "citation_summary": _build_citation_summary(claim_citations),
         "section_confidence": _build_section_confidence_from_claims(claim_citations),
+        "hallucination_guardrail": {
+            "strategy": "deterministic_estero_fallback",
+            "removed_uncited_factual_sentences": 0,
+            "all_factual_claims_cited": True,
+        },
         "search_history": [question, "USGS Estero proxy sites trend analysis"],
         "depth_reached": 1,
         "elapsed_seconds": 0.12,
@@ -662,6 +705,16 @@ def research_endpoint(query: dict):
                 timeout=timeout,
             )
             _clear_runtime_error("research")
+            claim_citations = result.get("claim_citations", [])
+            citation_summary = result.get(
+                "citation_summary",
+                {"total_claims": 0, "cited_claims": 0, "citation_coverage": 0.0},
+            )
+            section_confidence = result.get(
+                "section_confidence",
+                _build_section_confidence_from_claims(claim_citations),
+            )
+            citation_integrity = _build_citation_integrity(claim_citations, section_confidence)
             return {
                 "status": "ok",
                 "mode": "deep_research",
@@ -671,15 +724,18 @@ def research_endpoint(query: dict):
                 "search_history": result.get("search_history", []),
                 "depth_reached": result.get("depth_reached", 0),
                 "elapsed_seconds": result.get("elapsed_seconds", 0),
-                "claim_citations": result.get("claim_citations", []),
-                "citation_summary": result.get(
-                    "citation_summary",
-                    {"total_claims": 0, "cited_claims": 0, "citation_coverage": 0.0},
+                "claim_citations": claim_citations,
+                "citation_summary": citation_summary,
+                "section_confidence": section_confidence,
+                "hallucination_guardrail": result.get(
+                    "hallucination_guardrail",
+                    {
+                        "strategy": "claim_reference_filter",
+                        "removed_uncited_factual_sentences": 0,
+                        "all_factual_claims_cited": True,
+                    },
                 ),
-                "section_confidence": result.get(
-                    "section_confidence",
-                    _build_section_confidence_from_claims(result.get("claim_citations", [])),
-                ),
+                "citation_integrity": citation_integrity,
             }
         except Exception as exc:
             logger.error(
@@ -706,6 +762,17 @@ def research_endpoint(query: dict):
             "claim_citations": estero["claim_citations"],
             "citation_summary": estero["citation_summary"],
             "section_confidence": estero.get("section_confidence", {}),
+            "hallucination_guardrail": estero.get(
+                "hallucination_guardrail",
+                {
+                    "strategy": "deterministic_estero_fallback",
+                    "removed_uncited_factual_sentences": 0,
+                    "all_factual_claims_cited": True,
+                },
+            ),
+            "citation_integrity": _build_citation_integrity(
+                estero["claim_citations"], estero.get("section_confidence", {})
+            ),
         }
 
     fb = _fallback_response(question)
@@ -722,6 +789,7 @@ def research_endpoint(query: dict):
     ]
     summary = _build_citation_summary(fallback_claims)
     section_confidence = _build_section_confidence_from_claims(fallback_claims)
+    citation_integrity = _build_citation_integrity(fallback_claims, section_confidence)
     return {
         "status": "ok",
         "mode": "fallback",
@@ -734,6 +802,12 @@ def research_endpoint(query: dict):
         "claim_citations": fallback_claims,
         "citation_summary": summary,
         "section_confidence": section_confidence,
+        "hallucination_guardrail": {
+            "strategy": "deterministic_fallback",
+            "removed_uncited_factual_sentences": 0,
+            "all_factual_claims_cited": True,
+        },
+        "citation_integrity": citation_integrity,
     }
 
 

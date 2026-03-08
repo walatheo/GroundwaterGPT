@@ -243,9 +243,13 @@ class TestResearchEndpoint:
         assert "claim_citations" in body
         assert "citation_summary" in body
         assert "section_confidence" in body
+        assert "hallucination_guardrail" in body
+        assert "citation_integrity" in body
         assert isinstance(body["claim_citations"], list)
         assert isinstance(body["citation_summary"], dict)
         assert isinstance(body["section_confidence"], dict)
+        assert isinstance(body["hallucination_guardrail"], dict)
+        assert isinstance(body["citation_integrity"], dict)
 
     def test_research_claim_citation_shape(self):
         """Claim-citation schema should include claim text and citations list."""
@@ -266,6 +270,10 @@ class TestResearchEndpoint:
         assert "total_claims" in summary
         assert "cited_claims" in summary
         assert "citation_coverage" in summary
+        integrity = body.get("citation_integrity", {})
+        assert "claim_citation_coverage" in integrity
+        assert "section_citation_coverage" in integrity
+        assert "passed" in integrity
 
     def test_research_estero_benchmark_fields(self):
         """Estero benchmark query should include reproducible IDs, dates, and citations."""
@@ -288,6 +296,7 @@ class TestResearchEndpoint:
         assert re.search(r"\b\d{4}-\d{2}-\d{2}\b", combined)
         assert "usgs" in combined.lower()
         assert body.get("citation_summary", {}).get("citation_coverage", 0) >= 0.9
+        assert body.get("citation_integrity", {}).get("passed", False) is True
 
 
 # ===================================================================

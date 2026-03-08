@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -25,6 +26,12 @@ from .llm_factory import get_llm
 from .source_verification import SourceVerification, verify_source
 
 logger = logging.getLogger(__name__)
+CLAIM_REF_RE = re.compile(r"\[claim_\d{3}\]")
+FACTUAL_SIGNAL_RE = re.compile(
+    r"\b(\d{4}-\d{2}-\d{2}|\d+(\.\d+)?\s*(ft|feet|%|year|years)|\d{15}|usgs|trend|declin\w*|"
+    r"increas\w*|rising|falling|aquifer)\b",
+    re.IGNORECASE,
+)
 
 
 def _llm_invoke_with_retry(llm, prompt: str, retries: int = 2) -> str:
@@ -333,23 +340,26 @@ class DeepResearchAgent:
                 context.update_progress("Research graph failed; returning partial output.")
 
             # Check if we were stopped
+            claim_citations, citation_summary = self._build_claim_citations(context.insights)
+            section_confidence = self._build_section_confidence(context.insights)
+
             if context.stop_requested:
                 context.update_progress("Research stopped by user")
                 report = (
-                    self._synthesize_report(context)
+                    self._synthesize_report(context, claim_citations)
                     if context.insights
                     else "Research was stopped before completion."
                 )
             elif context.is_timed_out():
                 context.update_progress("Research timed out")
                 report = (
-                    self._synthesize_report(context)
+                    self._synthesize_report(context, claim_citations)
                     if context.insights
                     else "Research timed out before completion."
                 )
             else:
                 context.update_progress("Synthesizing report...")
-                report = self._synthesize_report(context)
+                report = self._synthesize_report(context, claim_citations)
 
             # Auto-learn: Add high-confidence insights to knowledge base
             learned_count = 0
@@ -357,10 +367,10 @@ class DeepResearchAgent:
                 context.update_progress("Saving learnings...")
                 learned_count = self._save_learnings(context)
 
+            report, removed_factual_sentences = self._strip_uncited_factual_sentences(report)
+
             context.update_progress("Complete")
             context.status = "complete"
-            claim_citations, citation_summary = self._build_claim_citations(context.insights)
-            section_confidence = self._build_section_confidence(context.insights)
 
             return {
                 "query": query,
@@ -376,6 +386,11 @@ class DeepResearchAgent:
                 "claim_citations": claim_citations,
                 "citation_summary": citation_summary,
                 "section_confidence": section_confidence,
+                "hallucination_guardrail": {
+                    "strategy": "claim_reference_filter",
+                    "removed_uncited_factual_sentences": removed_factual_sentences,
+                    "all_factual_claims_cited": removed_factual_sentences == 0,
+                },
             }
         finally:
             # Clear active context
@@ -900,7 +915,51 @@ If the research seems complete, respond with: COMPLETE"""
             "overall_trust_level": rank_to_trust.get(avg_trust_rank, "unknown"),
         }
 
-    def _synthesize_report(self, context: ResearchContext) -> str:
+    def _is_factual_sentence(self, sentence: str) -> bool:
+        """Return True when a sentence looks like a factual claim."""
+        return bool(FACTUAL_SIGNAL_RE.search(sentence))
+
+    def _strip_uncited_factual_sentences(self, report: str) -> tuple[str, int]:
+        """Remove factual sentences lacking claim references.
+
+        Guardrail rule:
+        - factual sentence must include `[claim_###]`
+        - non-factual narrative text is kept as-is
+        """
+        if not report.strip():
+            return report, 0
+
+        cleaned_lines: list[str] = []
+        removed = 0
+
+        for line in report.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                cleaned_lines.append(line)
+                continue
+
+            sentences = re.split(r"(?<=[.!?])\s+", stripped)
+            kept_sentences: list[str] = []
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                if self._is_factual_sentence(sentence) and not CLAIM_REF_RE.search(sentence):
+                    removed += 1
+                    continue
+                kept_sentences.append(sentence)
+
+            if kept_sentences:
+                cleaned_lines.append(" ".join(kept_sentences))
+
+        cleaned = "\n".join(cleaned_lines).strip()
+        if cleaned:
+            return cleaned, removed
+        return "No citation-safe factual claims were available in this response.", removed
+
+    def _synthesize_report(
+        self, context: ResearchContext, claim_citations: list[dict[str, Any]]
+    ) -> str:
         """Synthesize all insights into a comprehensive research report."""
         if not context.insights:
             return "No insights were gathered during research. Try a different query."
@@ -912,12 +971,22 @@ If the research seems complete, respond with: COMPLETE"""
             ]
         )
 
+        claim_lines = []
+        for claim in claim_citations:
+            claim_id = claim.get("claim_id", "claim_unknown")
+            claim_text = str(claim.get("claim", "")).strip()
+            confidence = float(claim.get("confidence", 0.0))
+            claim_lines.append(f"- [{claim_id}] {claim_text} (confidence={confidence:.2f})")
+
         prompt = f"""You are a groundwater science expert synthesizing research findings.
 
 Original Question: {context.original_query}
 
 Research Insights:
 {insights_text}
+
+Evidence-backed claims (use these claim IDs as citations):
+{chr(10).join(claim_lines)}
 
 Sources Consulted: {len(context.visited_urls)} web sources + local knowledge base
 
@@ -928,7 +997,10 @@ Structure your response with:
 3. Any caveats or limitations
 4. Suggestions for further research if applicable
 
-Be informative, accurate, and cite the level of confidence where relevant."""
+Hard constraints:
+- Every factual sentence MUST end with at least one claim reference, e.g. [claim_001].
+- Do not include factual statements that are not supported by the evidence-backed claims above.
+- If evidence is limited, explicitly state uncertainty and cite the relevant claim ID."""
 
         try:
             return _llm_invoke_with_retry(self.llm, prompt)

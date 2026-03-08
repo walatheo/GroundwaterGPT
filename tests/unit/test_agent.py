@@ -344,6 +344,23 @@ class TestResearchSectionConfidence:
         assert len(section_data["sections"]) == 2
 
 
+class TestHallucinationGuardrail:
+    """Test uncited factual claim filtering in synthesized reports."""
+
+    @patch("src.agent.research_agent.get_llm")
+    def test_strip_uncited_factual_sentences(self, mock_get_llm):
+        """Factual sentences without claim references should be removed."""
+        mock_get_llm.return_value = _mock_llm()
+        agent = DeepResearchAgent(use_web_search=False)
+        report = (
+            "Groundwater declined by 2.3 ft in 2024. "
+            "This suggests pressure on aquifer storage [claim_001]."
+        )
+        cleaned, removed = agent._strip_uncited_factual_sentences(report)
+        assert removed >= 1
+        assert "[claim_001]" in cleaned
+
+
 # ===================================================================
 # LLM Factory
 # ===================================================================
