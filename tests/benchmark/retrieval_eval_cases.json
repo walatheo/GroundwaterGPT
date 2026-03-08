@@ -1,0 +1,27 @@
+[
+  {
+    "id": "retrieval_biscayne_intrusion",
+    "query": "Biscayne aquifer saltwater intrusion risk",
+    "expected_terms": ["biscayne", "saltwater"]
+  },
+  {
+    "id": "retrieval_floridan_trend",
+    "query": "Floridan aquifer long-term groundwater trend",
+    "expected_terms": ["floridan", "groundwater"]
+  },
+  {
+    "id": "retrieval_dry_season",
+    "query": "Florida dry season groundwater level behavior",
+    "expected_terms": ["dry", "season"]
+  },
+  {
+    "id": "retrieval_estero_sources",
+    "query": "Estero groundwater source aquifers",
+    "expected_terms": ["estero", "aquifer"]
+  },
+  {
+    "id": "retrieval_usgs_monitoring",
+    "query": "USGS groundwater monitoring wells Florida",
+    "expected_terms": ["usgs", "monitoring"]
+  }
+]

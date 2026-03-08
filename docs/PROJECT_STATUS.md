@@ -1,12 +1,12 @@
 # GroundwaterGPT - Project Status & Roadmap
 
-**Last Updated:** February 27, 2026
+**Last Updated:** March 8, 2026
 **Location:** Florida (Miami-Dade, Lee, Collier, Sarasota, Hendry Counties)
 **Data Source:** USGS National Water Information System (NWIS) - Verified Authentic
 
 ---
 
-## 📍 Current Status - Phase 4 Complete ✅
+## 📍 Current Status - Phase 5 In Progress 🔄
 
 ### System Overview
 
@@ -17,6 +17,7 @@
 | **Data Source** | USGS NWIS (36 sites) | ✅ Verified |
 | **Knowledge Base** | ChromaDB (1,901 docs) | ✅ Active |
 | **ML Models** | scikit-learn (R² = 0.93) | ✅ Trained |
+| **Local LLM Runtime** | Ollama (`qwen3:8b`) | ✅ Default configured |
 
 ---
 
@@ -199,12 +200,20 @@
 - [x] Set minimum quality thresholds before production rollout
 - [x] Expand benchmark question corpus to 30+ deterministic research cases
 
-### Sprint 4: Multi-Agent Research Architecture
+### Sprint 4: Live-Agent Quality Gating
+- [x] Add `fallback/live/both` benchmark execution modes
+- [x] Add optional live-mode CI gate (`ENFORCE_LIVE_CHAT_THRESHOLDS`)
+- [x] Add section-level confidence + trust metadata in research output
+- [x] Add citation integrity checks (claim + section coverage) in API responses
+- [x] Add guardrail filtering for uncited factual sentences in synthesized reports
+- [x] Add retrieval precision benchmark + optional CI enforcement
+
+### Sprint 5: Multi-Agent Research Architecture
 - [ ] Implement orchestrator-worker model (`LeadResearcher` + `SubAgent`s)
 - [ ] Add planner/reflection/checkpoint loop for long-running research
 - [ ] Add budget-aware controls for complex multi-hop queries
 
-### Sprint 5: Production Deployment
+### Sprint 6: Production Deployment
 - [ ] Cloud deployment + observability + alerts
 - [ ] Health probes for API, KB, and model runtime
 - [ ] Public-facing reliability and onboarding polish

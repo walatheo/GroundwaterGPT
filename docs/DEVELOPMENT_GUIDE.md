@@ -1580,8 +1580,10 @@ user-facing creates direct researcher value with limited architectural risk.
 #### Sprint 3 — Evaluation + Citation Integrity
 - [x] Add retrieval and report-quality benchmark harness in CI.
 - [x] Add claim-to-source citation structure in deep research reports.
-- [ ] Track confidence/trust per section in generated research outputs.
+- [x] Track confidence/trust per section in generated research outputs.
 - [x] Define quality thresholds for factual accuracy and citation coverage.
+- [x] Add benchmark execution modes (`fallback/live/both`) with optional live enforcement.
+- [x] Add citation-integrity and hallucination-guardrail response metadata.
 
 **Why third:** Quality gates are critical before scaling to a multi-agent pipeline.
 

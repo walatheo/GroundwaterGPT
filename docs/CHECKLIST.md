@@ -1,8 +1,8 @@
 # GroundwaterGPT - Active Checklist & Goals
 
-**Last Updated:** February 27, 2026
+**Last Updated:** March 8, 2026
 **Current Phase:** Phase 5 - AI Research Integration
-**Sprint:** Feb 27 - Mar 6, 2026
+**Sprint:** Mar 8 - Mar 15, 2026
 
 ---
 
@@ -38,11 +38,11 @@
 
 | Goal | Target | Current | Status |
 |------|--------|---------|--------|
-| **G5.1** LLM Connected | Yes | No | ⏳ |
-| **G5.2** RAG Precision | ≥90% | - | ⏳ |
-| **G5.3** Source Citations | 100% | - | ⏳ |
-| **G5.4** Hallucination Rate | <5% | - | ⏳ |
-| **G5.5** Farmer KB Topics | ≥10 | 7 | 🔄 |
+| **G5.1** LLM Connected | Yes | Yes (Qwen3 local default) | 🔄 |
+| **G5.2** RAG Precision | ≥90% | Retrieval precision harness + tuning added | 🔄 |
+| **G5.3** Source Citations | 100% | Claim + section integrity checks in API | 🔄 |
+| **G5.4** Hallucination Rate | <5% | Guardrail filtering for uncited factual claims | 🔄 |
+| **G5.5** Farmer KB Topics | ≥10 | 10 | ✅ |
 | **G5.6** Response Time | <3s | <1s | ✅ |
 
 ---
@@ -65,6 +65,14 @@
 - [x] Add automated retrieval/report benchmark harness in CI
 - [x] Add claim-level citation schema for deep research reports
 - [x] Define quality thresholds for factual accuracy and citation completeness
+
+### Priority 4: Live-Agent Quality Gating (Current)
+- [x] Add `fallback/live/both` benchmark execution modes
+- [x] Add optional CI live-mode enforcement gate (`ENFORCE_LIVE_CHAT_THRESHOLDS`)
+- [x] Add section-level confidence/trust metadata in research responses
+- [x] Add API citation integrity checks (claim + section coverage)
+- [x] Add hallucination guardrail for uncited factual sentences
+- [x] Add retrieval precision benchmark tooling + optional CI gate (`ENFORCE_RETRIEVAL_PRECISION`)
 
 ---
 
@@ -147,6 +155,12 @@ pytest tests/ -v
 
 # Run AI chat benchmark harness (report-only)
 python3 scripts/run_chat_benchmark.py --output /tmp/chat_benchmark_report.json
+
+# Run dual-mode benchmark summary (fallback + live)
+python3 scripts/run_chat_benchmark.py --mode both --output /tmp/chat_benchmark_both.json
+
+# Run retrieval precision benchmark
+python3 scripts/run_retrieval_precision.py --output /tmp/retrieval_precision_report.json
 
 # Check code quality
 flake8 src/ api/ tests/ --max-line-length=120

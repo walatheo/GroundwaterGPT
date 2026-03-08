@@ -8,6 +8,7 @@ Agentic RAG system combining:
 Uses LangGraph for modern, reliable agent architecture.
 """
 
+import os
 from typing import Generator, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -68,6 +69,11 @@ requires deeper investigation.
 - Provide actionable insights
 """
 
+DOC_RETRIEVAL_K = int(os.getenv("GROUNDWATERGPT_DOC_RETRIEVAL_K", "4"))
+DOC_RETRIEVAL_SCORE_THRESHOLD = float(
+    os.getenv("GROUNDWATERGPT_DOC_RETRIEVAL_SCORE_THRESHOLD", "0.45")
+)
+
 
 @tool
 def search_hydrogeology_docs(query: str) -> str:
@@ -79,7 +85,11 @@ def search_hydrogeology_docs(query: str) -> str:
     Returns:
         Relevant excerpts from hydrogeology reference documents
     """
-    docs = search_knowledge(query, k=3, score_threshold=0.3)
+    docs = search_knowledge(
+        query,
+        k=DOC_RETRIEVAL_K,
+        score_threshold=DOC_RETRIEVAL_SCORE_THRESHOLD,
+    )
 
     if not docs:
         return "No relevant documents found in the knowledge base."
