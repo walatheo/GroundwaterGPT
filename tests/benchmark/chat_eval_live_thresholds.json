@@ -1,0 +1,11 @@
+{
+  "min_overall_score": 0.85,
+  "min_case_score": 0.80,
+  "min_avg_claim_citation_coverage": 0.90,
+  "min_avg_section_citation_coverage": 0.90,
+  "max_response_seconds": 8.00,
+  "force_fallback_mode": false,
+  "require_live_mode": true,
+  "enforce_in_ci": true,
+  "notes": "Live-agent quality gate. Fails if responses fall back or citation integrity degrades."
+}

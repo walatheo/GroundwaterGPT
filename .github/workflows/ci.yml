@@ -137,20 +137,45 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run chat benchmark (report mode by default)
+      - name: Run fallback benchmark (deterministic report)
         run: |
           mkdir -p artifacts
-          if [ "${{ vars.ENFORCE_CHAT_THRESHOLDS }}" = "true" ]; then
-            python scripts/run_chat_benchmark.py \
-              --output artifacts/chat_benchmark_report.json \
-              --enforce-thresholds
-          else
-            python scripts/run_chat_benchmark.py \
-              --output artifacts/chat_benchmark_report.json
-          fi
+          python scripts/run_chat_benchmark.py \
+            --mode fallback \
+            --output artifacts/chat_benchmark_fallback_report.json
+
+      - name: Run live-agent benchmark (diagnostic)
+        run: |
+          python scripts/run_chat_benchmark.py \
+            --mode live \
+            --output artifacts/chat_benchmark_live_report.json
+
+      - name: Enforce live-agent benchmark thresholds (quality gate)
+        if: vars.ENFORCE_LIVE_CHAT_THRESHOLDS == 'true'
+        run: |
+          python scripts/run_chat_benchmark.py \
+            --mode live \
+            --thresholds tests/benchmark/chat_eval_live_thresholds.json \
+            --output artifacts/chat_benchmark_live_gate_report.json \
+            --enforce-thresholds
+
+      - name: Run retrieval precision benchmark (diagnostic)
+        run: |
+          python scripts/run_retrieval_precision.py \
+            --output artifacts/retrieval_precision_report.json
+
+      - name: Enforce retrieval precision target (quality gate)
+        if: vars.ENFORCE_RETRIEVAL_PRECISION == 'true'
+        run: |
+          python scripts/run_retrieval_precision.py \
+            --output artifacts/retrieval_precision_gate_report.json \
+            --target-precision 0.90 \
+            --enforce-thresholds
 
       - name: Upload chat benchmark artifact
         uses: actions/upload-artifact@v4
         with:
           name: chat-benchmark-report
-          path: artifacts/chat_benchmark_report.json
+          path: |
+            artifacts/chat_benchmark*.json
+            artifacts/retrieval_precision*.json

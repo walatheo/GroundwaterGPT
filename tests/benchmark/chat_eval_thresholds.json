@@ -2,8 +2,11 @@
   "min_overall_score": 0.85,
   "min_case_score": 0.80,
   "min_avg_citation_coverage": 0.90,
+  "min_avg_claim_citation_coverage": 0.90,
+  "min_avg_section_citation_coverage": 0.90,
   "max_response_seconds": 3.00,
   "force_fallback_mode": true,
+  "require_live_mode": false,
   "enforce_in_ci": false,
-  "notes": "Targets align with Phase 5 goals; CI currently runs in report mode until LLM and retrieval stack are consistently configured."
+  "notes": "Fallback-mode benchmark thresholds for deterministic CI reporting."
 }

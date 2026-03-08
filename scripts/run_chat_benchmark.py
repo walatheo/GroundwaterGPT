@@ -79,7 +79,14 @@ def main() -> int:
     print("Chat benchmark complete")
     print(f"- Cases: {report.get('metadata', {}).get('case_count', 0)}")
     print(f"- Overall score: {summary.get('overall_score', 0.0):.3f}")
-    print("- Average citation coverage: " f"{summary.get('average_citation_coverage', 0.0):.3f}")
+    print(
+        "- Average claim citation coverage: "
+        f"{summary.get('average_claim_citation_coverage', 0.0):.3f}"
+    )
+    print(
+        "- Average section citation coverage: "
+        f"{summary.get('average_section_citation_coverage', 0.0):.3f}"
+    )
     print(f"- Threshold pass: {summary.get('passed', False)}")
     metadata = report.get("metadata", {})
     print(f"- Primary mode: {metadata.get('primary_mode', 'unknown')}")
