@@ -44,7 +44,9 @@ class TestModelPerformance:
 
             model = load(model_path)
             df = load_groundwater_data()
-            X_train, X_test, y_train, y_test, feature_cols, dates_test = prepare_data(df)
+            X_train, X_test, y_train, y_test, feature_cols, dates_test = prepare_data(
+                df
+            )
         except FileNotFoundError as e:
             pytest.skip(f"Data not available: {e}")
 
@@ -111,7 +113,9 @@ class TestModelComparison:
         expected_models = ["ridge", "random_forest", "gradient_boosting"]
 
         for model in expected_models:
-            assert model in comparison_results["model"].values, f"Missing model: {model}"
+            assert (
+                model in comparison_results["model"].values
+            ), f"Missing model: {model}"
 
     def test_best_model_selected_correctly(self, comparison_results):
         """Best model should have highest R²."""
@@ -158,7 +162,9 @@ class TestFeatureImportance:
         is_normalized = 0.99 <= total <= 1.01
         has_valid_values = total > 0 and not np.isnan(total)
 
-        assert is_normalized or has_valid_values, f"Invalid importance values: sum = {total:.4f}"
+        assert (
+            is_normalized or has_valid_values
+        ), f"Invalid importance values: sum = {total:.4f}"
 
     def test_no_negative_importance(self, feature_importance):
         """All importance values should be non-negative."""

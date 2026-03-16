@@ -37,7 +37,9 @@ class ResearchPlan:
     original_query: str
     main_question: str
     sub_questions: list[str] = field(default_factory=list)
-    research_areas: list[str] = field(default_factory=list)  # e.g., "hydrology", "climate"
+    research_areas: list[str] = field(
+        default_factory=list
+    )  # e.g., "hydrology", "climate"
     expected_sections: list[str] = field(default_factory=list)  # Report structure
     search_priority: list[str] = field(default_factory=list)  # Ordered search queries
     estimated_depth: int = 3
@@ -204,7 +206,9 @@ Be specific and concrete."""
                 search_priority=data.get("search_priority", [query]),
                 estimated_depth=data.get("estimated_depth", 3),
             )
-            logger.info(f"📋 Research plan created with {len(plan.sub_questions)} sub-questions")
+            logger.info(
+                f"📋 Research plan created with {len(plan.sub_questions)} sub-questions"
+            )
             return plan
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse plan JSON: {e}")
@@ -217,7 +221,9 @@ Be specific and concrete."""
             )
         except Exception as e:
             logger.error(f"Research planning failed: {e}")
-            return ResearchPlan(original_query=query, main_question=query, search_priority=[query])
+            return ResearchPlan(
+                original_query=query, main_question=query, search_priority=[query]
+            )
 
 
 class PriorityRanker:
@@ -250,15 +256,15 @@ class PriorityRanker:
         ranked = []
 
         for result in results:
-            ranked_result = self._calculate_scores(
-                result, query, research_context
-            )
+            ranked_result = self._calculate_scores(result, query, research_context)
             ranked.append(ranked_result)
 
         # Sort by combined score (highest first)
         ranked.sort()
 
-        logger.info(f"📊 Ranked {len(ranked)} results. Top score: {ranked[0].combined_score:.2f}")
+        logger.info(
+            f"📊 Ranked {len(ranked)} results. Top score: {ranked[0].combined_score:.2f}"
+        )
         return ranked
 
     def _calculate_scores(
@@ -280,7 +286,7 @@ class PriorityRanker:
         recency_score = self._score_recency(url, snippet)
 
         # Combined: Weighted average
-        combined_score = (relevance_score * 0.5 + trust_score * 0.3 + recency_score * 0.2)
+        combined_score = relevance_score * 0.5 + trust_score * 0.3 + recency_score * 0.2
 
         reasoning = f"Relevance: {relevance_score:.2f}, Trust: {trust_score:.2f}, Recency: {recency_score:.2f}"
 
@@ -408,7 +414,8 @@ Be critical and honest."""
             data = json.loads(response.content)
 
             result = ReflectionResult(
-                is_high_quality=data.get("overall_quality", 0.5) >= self.min_quality_threshold,
+                is_high_quality=data.get("overall_quality", 0.5)
+                >= self.min_quality_threshold,
                 confidence_score=data.get("confidence_score", 0.5),
                 coverage_score=data.get("coverage_score", 0.5),
                 missing_areas=data.get("missing_areas", []),
@@ -599,7 +606,10 @@ Be comprehensive and well-organized."""
                         "citations": list(visited_urls)[:5],
                     }
                 ],
-                "source_summary": {"total_sources": len(visited_urls), "sources": list(visited_urls)},
+                "source_summary": {
+                    "total_sources": len(visited_urls),
+                    "sources": list(visited_urls),
+                },
                 "confidence_overall": 0.3,
                 "generated_at": datetime.now().isoformat(),
             }
@@ -609,7 +619,10 @@ Be comprehensive and well-organized."""
                 "title": f"Research Report: {query}",
                 "executive_summary": f"Error: {e}",
                 "sections": [],
-                "source_summary": {"total_sources": len(visited_urls), "sources": list(visited_urls)},
+                "source_summary": {
+                    "total_sources": len(visited_urls),
+                    "sources": list(visited_urls),
+                },
                 "confidence_overall": 0.0,
                 "generated_at": datetime.now().isoformat(),
             }
@@ -708,11 +721,15 @@ class ResearchSessionPersistence:
                 serialized[key] = self._serialize_session(value)
             elif isinstance(value, list):
                 serialized[key] = [
-                    self._serialize_session({"item": item})["item"]
-                    if isinstance(item, dict)
-                    else self._serialize_session({"item": item})["item"]
-                    if isinstance(item, datetime)
-                    else item
+                    (
+                        self._serialize_session({"item": item})["item"]
+                        if isinstance(item, dict)
+                        else (
+                            self._serialize_session({"item": item})["item"]
+                            if isinstance(item, datetime)
+                            else item
+                        )
+                    )
                     for item in value
                 ]
             else:

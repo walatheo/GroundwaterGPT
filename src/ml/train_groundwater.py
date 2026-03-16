@@ -119,15 +119,15 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # === CHANGE FEATURES (Momentum) ===
     # Changes computed from data available FORECAST_HORIZON days ago
-    data["change_7d"] = data["water_level"].shift(FORECAST_HORIZON) - data["water_level"].shift(
-        FORECAST_HORIZON + 7
-    )
-    data["change_14d"] = data["water_level"].shift(FORECAST_HORIZON) - data["water_level"].shift(
-        FORECAST_HORIZON + 14
-    )
-    data["change_30d"] = data["water_level"].shift(FORECAST_HORIZON) - data["water_level"].shift(
-        FORECAST_HORIZON + 30
-    )
+    data["change_7d"] = data["water_level"].shift(FORECAST_HORIZON) - data[
+        "water_level"
+    ].shift(FORECAST_HORIZON + 7)
+    data["change_14d"] = data["water_level"].shift(FORECAST_HORIZON) - data[
+        "water_level"
+    ].shift(FORECAST_HORIZON + 14)
+    data["change_30d"] = data["water_level"].shift(FORECAST_HORIZON) - data[
+        "water_level"
+    ].shift(FORECAST_HORIZON + 30)
 
     # Drop rows with NaN (from lag/rolling operations)
     data = data.dropna()
@@ -165,7 +165,9 @@ def prepare_data(df: pd.DataFrame) -> Tuple:
     print(
         f"Train: {len(X_train)} samples ({dates_train.min().date()} to {dates_train.max().date()})"
     )
-    print(f"Test:  {len(X_test)} samples ({dates_test.min().date()} to {dates_test.max().date()})")
+    print(
+        f"Test:  {len(X_test)} samples ({dates_test.min().date()} to {dates_test.max().date()})"
+    )
     print(f"Features: {len(feature_cols)}")
 
     return X_train, X_test, y_train, y_test, feature_cols, dates_test
@@ -258,9 +260,9 @@ def get_feature_importance(model, feature_names: list) -> pd.DataFrame:
         else:
             return pd.DataFrame()
 
-        return pd.DataFrame({"feature": feature_names, "importance": importance}).sort_values(
-            "importance", ascending=False
-        )
+        return pd.DataFrame(
+            {"feature": feature_names, "importance": importance}
+        ).sort_values("importance", ascending=False)
 
     except Exception:
         return pd.DataFrame()
@@ -375,7 +377,9 @@ def plot_predictions(y_test, y_pred, dates_test, model_name: str):
     ax4.axvline(x=0, color="r", linestyle="--")
     ax4.set_xlabel("Residual (ft)")
     ax4.set_ylabel("Frequency")
-    ax4.set_title(f"Error Distribution (Mean: {residuals.mean():.3f}, Std: {residuals.std():.3f})")
+    ax4.set_title(
+        f"Error Distribution (Mean: {residuals.mean():.3f}, Std: {residuals.std():.3f})"
+    )
     ax4.grid(True, alpha=0.3)
 
     plt.tight_layout()
@@ -385,7 +389,9 @@ def plot_predictions(y_test, y_pred, dates_test, model_name: str):
     print(f"✓ Predictions plot saved: plots/model_predictions.png")
 
 
-def forecast_future(model, df: pd.DataFrame, feature_cols: list, days: int = 30) -> pd.DataFrame:
+def forecast_future(
+    model, df: pd.DataFrame, feature_cols: list, days: int = 30
+) -> pd.DataFrame:
     """
     Forecast future groundwater levels.
 
@@ -437,7 +443,9 @@ def main():
     X_train, X_test, y_train, y_test, feature_cols, dates_test = prepare_data(df)
 
     # Compare models
-    best_model, results_df = compare_models(X_train, y_train, X_test, y_test, feature_cols)
+    best_model, results_df = compare_models(
+        X_train, y_train, X_test, y_test, feature_cols
+    )
 
     # Get predictions for plotting
     metrics = evaluate_model(best_model, X_test, y_test)

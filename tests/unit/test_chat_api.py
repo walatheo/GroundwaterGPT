@@ -21,7 +21,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 # FastAPI test client — avoids starting a real server
 from fastapi.testclient import TestClient  # noqa: E402
 
-from api.main import GROUNDWATER_KB, _fallback_response, _get_site_context, app  # noqa: E402
+from api.main import (
+    GROUNDWATER_KB,
+    _fallback_response,
+    _get_site_context,
+    app,
+)  # noqa: E402
 
 client = TestClient(app)
 
@@ -66,35 +71,44 @@ class TestFallbackResponse:
         response = _fallback_response("How should I plan irrigation for my farm?")
         assert "response" in response
         assert (
-            "irrigation" in response["response"].lower() or "water" in response["response"].lower()
+            "irrigation" in response["response"].lower()
+            or "water" in response["response"].lower()
         )
 
     def test_crop_query(self):
         """Test response to crop-related question."""
         response = _fallback_response("What water depth is good for citrus trees?")
         assert "response" in response
-        assert "citrus" in response["response"].lower() or "crop" in response["response"].lower()
+        assert (
+            "citrus" in response["response"].lower()
+            or "crop" in response["response"].lower()
+        )
 
     def test_aquifer_query(self):
         """Test response to aquifer question."""
         response = _fallback_response("Tell me about the Floridan aquifer")
         assert "response" in response
         assert (
-            "floridan" in response["response"].lower() or "aquifer" in response["response"].lower()
+            "floridan" in response["response"].lower()
+            or "aquifer" in response["response"].lower()
         )
 
     def test_seasonal_query(self):
         """Test response to seasonal patterns question."""
         response = _fallback_response("How do water levels change in dry season?")
         assert "response" in response
-        assert "season" in response["response"].lower() or "wet" in response["response"].lower()
+        assert (
+            "season" in response["response"].lower()
+            or "wet" in response["response"].lower()
+        )
 
     def test_unknown_query_returns_help(self):
         """Test that unknown queries return helpful guidance."""
         response = _fallback_response("Tell me about quantum physics")
         assert "response" in response
         assert (
-            "help" in response["response"].lower() or "irrigation" in response["response"].lower()
+            "help" in response["response"].lower()
+            or "irrigation" in response["response"].lower()
         )
 
     def test_response_has_sources(self):
@@ -165,7 +179,9 @@ class TestChatEndpoint:
 
     def test_chat_irrigation_content(self):
         """Chat response to irrigation query should mention water/irrigation."""
-        resp = client.post("/api/chat", json={"message": "How should I plan irrigation?"})
+        resp = client.post(
+            "/api/chat", json={"message": "How should I plan irrigation?"}
+        )
         body = resp.json()
         text = body["response"].lower()
         assert "irrigation" in text or "water" in text

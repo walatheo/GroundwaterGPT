@@ -91,7 +91,9 @@ def search_hydrogeology_docs(query: str) -> str:
 
         # Truncate content if too long
         content = (
-            doc.page_content[:500] + "..." if len(doc.page_content) > 500 else doc.page_content
+            doc.page_content[:500] + "..."
+            if len(doc.page_content) > 500
+            else doc.page_content
         )
 
         result += f"**Source {i}:** {source} (page {page})\n"
@@ -150,13 +152,20 @@ class GroundwaterAgent:
         """Detect user intent to select appropriate tool."""
         message_lower = message.lower()
 
-        if any(word in message_lower for word in ["predict", "forecast", "future", "next"]):
+        if any(
+            word in message_lower for word in ["predict", "forecast", "future", "next"]
+        ):
             return "prediction"
         elif any(word in message_lower for word in ["season", "wet", "dry", "pattern"]):
             return "seasonal"
-        elif any(word in message_lower for word in ["anomal", "unusual", "outlier", "extreme"]):
+        elif any(
+            word in message_lower
+            for word in ["anomal", "unusual", "outlier", "extreme"]
+        ):
             return "anomaly"
-        elif any(word in message_lower for word in ["quality", "coverage", "missing", "gap"]):
+        elif any(
+            word in message_lower for word in ["quality", "coverage", "missing", "gap"]
+        ):
             return "quality"
         elif any(
             word in message_lower

@@ -96,7 +96,9 @@ with st.sidebar:
         }
         env_var = api_key_names[provider]
         api_key = st.text_input(
-            f"{env_var}", type="password", help=f"Enter your API key for {selected_provider}"
+            f"{env_var}",
+            type="password",
+            help=f"Enter your API key for {selected_provider}",
         )
         if api_key:
             import os
@@ -202,7 +204,9 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # Chat input
-if prompt := st.chat_input("Ask about groundwater data, predictions, or hydrogeology..."):
+if prompt := st.chat_input(
+    "Ask about groundwater data, predictions, or hydrogeology..."
+):
     # Add user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -214,18 +218,20 @@ if prompt := st.chat_input("Ask about groundwater data, predictions, or hydrogeo
             try:
                 response = st.session_state.agent.chat(prompt)
                 st.markdown(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": response}
+                )
             except Exception as e:
                 error_msg = f"❌ Error: {str(e)}"
                 st.error(error_msg)
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": error_msg}
+                )
 
 # Footer
 st.divider()
-st.caption(
-    """
+st.caption("""
 💧 **GroundwaterGPT** | USGS Site 262724081260701 (Lee County, FL)
 📊 Data: 2014-2023 | 🤖 Model: Ridge Regression (R² ≈ 0.86)
 📚 Knowledge: Hydrogeology reference documents
-"""
-)
+""")

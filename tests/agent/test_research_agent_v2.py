@@ -38,7 +38,10 @@ class TestResearchPlan:
             original_query="What is saltwater intrusion?",
             main_question="What causes saltwater intrusion in coastal aquifers?",
             sub_questions=["What is saltwater intrusion?", "How does it affect wells?"],
-            search_priority=["saltwater intrusion mechanism", "Florida aquifer saltwater"],
+            search_priority=[
+                "saltwater intrusion mechanism",
+                "Florida aquifer saltwater",
+            ],
         )
 
         assert plan.original_query == "What is saltwater intrusion?"
@@ -278,7 +281,9 @@ class TestAcceptanceCriteria:
 
     def test_complex_query_handling(self) -> None:
         """Test handling complex questions (acceptance criterion 1)."""
-        query = "What are the long-term impacts of sea level rise on the Biscayne Aquifer?"
+        query = (
+            "What are the long-term impacts of sea level rise on the Biscayne Aquifer?"
+        )
 
         planner = ResearchPlanner()
         plan = planner.plan_research(query, domain="groundwater")
@@ -366,7 +371,9 @@ class TestAwesomeDeepResearchPatterns:
         Key findings supported by multiple sources.
         """
 
-        result = reflector.evaluate_synthesis(comprehensive_answer, plan, [{"confidence": 0.8}] * 3)
+        result = reflector.evaluate_synthesis(
+            comprehensive_answer, plan, [{"confidence": 0.8}] * 3
+        )
 
         # Comprehensive answer should score higher
         assert result.confidence_score > 0.5
@@ -392,7 +399,9 @@ class TestAwesomeDeepResearchPatterns:
         # The planner acts as decomposition agent
         planner = ResearchPlanner()
 
-        complex_query = "Compare water availability trends across different Florida aquifer systems"
+        complex_query = (
+            "Compare water availability trends across different Florida aquifer systems"
+        )
 
         plan = planner.plan_research(complex_query)
 

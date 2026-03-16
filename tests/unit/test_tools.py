@@ -183,7 +183,9 @@ class TestQuerySiteData:
 
     def test_unknown_site(self):
         """Unknown site returns error message (not exception)."""
-        result = query_site_data.invoke({"site_id": "000000000000000", "stat_type": "summary"})
+        result = query_site_data.invoke(
+            {"site_id": "000000000000000", "stat_type": "summary"}
+        )
         assert "No data" in result or "not found" in result.lower()
 
 
@@ -302,7 +304,9 @@ class TestResearchWorkflowTools:
 
     def _redirect_research_dirs(self, tmp_path, monkeypatch):
         monkeypatch.setattr(tools_module, "OUTPUTS_DIR", tmp_path / "outputs")
-        monkeypatch.setattr(tools_module, "RESEARCH_DIR", tmp_path / "outputs" / "research")
+        monkeypatch.setattr(
+            tools_module, "RESEARCH_DIR", tmp_path / "outputs" / "research"
+        )
         monkeypatch.setattr(
             tools_module,
             "EXPERIMENTS_DIR",
@@ -345,6 +349,8 @@ class TestResearchWorkflowTools:
         )
         assert "Run Logged" in logged
 
-        drafted = draft_research_paper.invoke({"plan_id": plan_id, "target_venue": "NeurIPS"})
+        drafted = draft_research_paper.invoke(
+            {"plan_id": plan_id, "target_venue": "NeurIPS"}
+        )
         assert "Draft saved to" in drafted
         assert "## Abstract (Draft)" in drafted

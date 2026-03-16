@@ -14,7 +14,11 @@ import pytest
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.agent.groundwater_agent import SYSTEM_PROMPT, GroundwaterAgent, create_agent  # noqa: E402
+from src.agent.groundwater_agent import (
+    SYSTEM_PROMPT,
+    GroundwaterAgent,
+    create_agent,
+)  # noqa: E402
 from src.agent.llm_factory import LLMProvider  # noqa: E402
 from src.agent.research_agent import (  # noqa: E402
     DeepResearchAgent,

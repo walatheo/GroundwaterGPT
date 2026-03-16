@@ -109,7 +109,9 @@ class TestUSGSDataAuthenticity:
             lon_deg = int(site_id[6:9])
 
             # Florida longitude should be 79-88 degrees W
-            assert 79 <= lon_deg <= 88, f"Longitude {lon_deg}° not in Florida: {site_id}"
+            assert (
+                79 <= lon_deg <= 88
+            ), f"Longitude {lon_deg}° not in Florida: {site_id}"
 
 
 class TestDataIntegrity:
@@ -135,8 +137,12 @@ class TestDataIntegrity:
             max_val = values.max()
 
             # Allow negative for artesian wells, but cap at reasonable ranges
-            assert min_val >= -50, f"Suspiciously low value {min_val} in {csv_file.name}"
-            assert max_val <= 200, f"Suspiciously high value {max_val} in {csv_file.name}"
+            assert (
+                min_val >= -50
+            ), f"Suspiciously low value {min_val} in {csv_file.name}"
+            assert (
+                max_val <= 200
+            ), f"Suspiciously high value {max_val} in {csv_file.name}"
 
     def test_datetime_values_are_valid(self):
         """All datetime values should be parseable and reasonable."""
@@ -210,7 +216,9 @@ class TestTotalDataVolume:
         total_records = sum(len(pd.read_csv(f)) for f in csv_files)
 
         # Should have at least 100,000 records across all sites
-        assert total_records >= 100_000, f"Expected 100K+ records, found {total_records:,}"
+        assert (
+            total_records >= 100_000
+        ), f"Expected 100K+ records, found {total_records:,}"
 
     def test_all_sites_have_data(self):
         """Every CSV file should have actual data records."""

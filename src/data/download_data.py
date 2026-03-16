@@ -21,7 +21,14 @@ import requests
 # Add parent to path for config
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from config.config import ACTIVE_REGION, CDS_API_KEY, CDS_URL, DATA_DIR, REGIONS, TIME_CONFIG  # noqa: E402
+from config.config import (
+    ACTIVE_REGION,
+    CDS_API_KEY,
+    CDS_URL,
+    DATA_DIR,
+    REGIONS,
+    TIME_CONFIG,
+)  # noqa: E402
 
 # =============================================================================
 # USGS CONFIGURATION
@@ -119,7 +126,9 @@ def fetch_usgs_groundwater(
                     date = pd.to_datetime(v["dateTime"]).date()
                     value = float(v["value"])
                     if value > -999:  # USGS uses -999999 for missing
-                        records.append({"date": date, "site_id": site_id, "water_level_ft": value})
+                        records.append(
+                            {"date": date, "site_id": site_id, "water_level_ft": value}
+                        )
                 except (ValueError, KeyError):
                     continue
 
@@ -135,7 +144,9 @@ def fetch_usgs_groundwater(
                 df.attrs["api_url"] = f"{USGS_NWIS_URL}?sites={site_id}"
 
                 print(f"\n✓ Downloaded {len(df)} days of VERIFIED USGS measurements")
-                print(f"  Period: {df['date'].min().date()} to {df['date'].max().date()}")
+                print(
+                    f"  Period: {df['date'].min().date()} to {df['date'].max().date()}"
+                )
                 print(
                     f"  Water level range: {df['water_level_ft'].min():.2f} "
                     f"to {df['water_level_ft'].max():.2f} ft"
@@ -190,7 +201,11 @@ def search_usgs_sites(
         response.raise_for_status()
 
         # Parse RDB format (tab-separated with comment lines)
-        lines = [line for line in response.text.split("\n") if line and not line.startswith("#")]
+        lines = [
+            line
+            for line in response.text.split("\n")
+            if line and not line.startswith("#")
+        ]
 
         if len(lines) < 2:
             print("  No sites found")
@@ -292,8 +307,14 @@ def download_era5_climate(years: list, region: dict) -> pd.DataFrame:
             df_year = pd.DataFrame(
                 {
                     "date": pd.to_datetime(ds.time.values),
-                    "temperature_c": ds["t2m"].mean(dim=["latitude", "longitude"]).values - 273.15,
-                    "precipitation_mm": ds["tp"].mean(dim=["latitude", "longitude"]).values * 1000,
+                    "temperature_c": ds["t2m"]
+                    .mean(dim=["latitude", "longitude"])
+                    .values
+                    - 273.15,
+                    "precipitation_mm": ds["tp"]
+                    .mean(dim=["latitude", "longitude"])
+                    .values
+                    * 1000,
                 }
             )
 
@@ -317,7 +338,9 @@ def download_era5_climate(years: list, region: dict) -> pd.DataFrame:
     climate_df = climate_df.drop_duplicates(subset=["date"])
 
     print(f"\n✓ Downloaded {len(climate_df)} days of climate data")
-    print(f"  Period: {climate_df['date'].min().date()} to {climate_df['date'].max().date()}")
+    print(
+        f"  Period: {climate_df['date'].min().date()} to {climate_df['date'].max().date()}"
+    )
 
     return climate_df
 

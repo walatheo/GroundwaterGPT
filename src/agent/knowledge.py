@@ -98,7 +98,9 @@ def _build_text_splitter() -> RecursiveCharacterTextSplitter:
     )
 
 
-def _discover_pdf_files(path: Optional[Path] = None, recursive: bool = True) -> list[Path]:
+def _discover_pdf_files(
+    path: Optional[Path] = None, recursive: bool = True
+) -> list[Path]:
     """Discover PDF files from a file or directory path."""
     target = (path or PDF_DIR).expanduser()
     if not target.exists():
@@ -157,7 +159,9 @@ def _extract_pdf_metadata(file_path: Path) -> dict[str, str]:
             page_text = page.extract_text() or ""
             sample_text += "\n" + page_text
 
-        doi_match = re.search(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\b", sample_text, re.IGNORECASE)
+        doi_match = re.search(
+            r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\b", sample_text, re.IGNORECASE
+        )
         if doi_match:
             metadata["doi"] = doi_match.group(0).strip()
     except Exception:
@@ -328,7 +332,9 @@ def initialize_knowledge_base(
             if not verification.is_approved:
                 print(f"   ⚠️ Skipping unverified PDF: {pdf_path.name}")
                 continue
-            if not _is_trust_eligible(verification.trust_level, min_trust=min_trust, force=False):
+            if not _is_trust_eligible(
+                verification.trust_level, min_trust=min_trust, force=False
+            ):
                 print(f"   ⚠️ Skipping low-trust PDF: {pdf_path.name}")
                 continue
 
@@ -416,7 +422,9 @@ def ingest_pdfs(
                 summary["skipped_unverified"] += 1
                 continue
 
-            if not _is_trust_eligible(verification.trust_level, min_trust=min_trust, force=force):
+            if not _is_trust_eligible(
+                verification.trust_level, min_trust=min_trust, force=force
+            ):
                 summary["skipped_low_trust"] += 1
                 continue
 
@@ -448,7 +456,9 @@ def ingest_pdfs(
     return summary
 
 
-def search_knowledge(query: str, k: int = 5, score_threshold: float = 0.5) -> List[Document]:
+def search_knowledge(
+    query: str, k: int = 5, score_threshold: float = 0.5
+) -> List[Document]:
     """Search the knowledge base for relevant documents.
 
     Args:
@@ -560,7 +570,8 @@ def get_knowledge_stats() -> dict:
             {
                 str(meta.get("source_path") or meta.get("source_file"))
                 for meta in metadatas
-                if isinstance(meta, dict) and (meta.get("source_path") or meta.get("source_file"))
+                if isinstance(meta, dict)
+                and (meta.get("source_path") or meta.get("source_file"))
             }
         )
         indexed_names = [Path(p).name for p in indexed_paths]
@@ -568,7 +579,9 @@ def get_knowledge_stats() -> dict:
         return {
             "total_chunks": count,
             "pdf_files": len(indexed_paths) if indexed_paths else len(discovered_pdfs),
-            "pdf_names": indexed_names if indexed_names else [p.name for p in discovered_pdfs],
+            "pdf_names": (
+                indexed_names if indexed_names else [p.name for p in discovered_pdfs]
+            ),
             "pdf_files_on_disk": len(discovered_pdfs),
             "indexed_pdf_files": len(indexed_paths),
             "status": "loaded",
@@ -676,7 +689,9 @@ def search_usgs_data(
                     seen_content.add(content_hash)
 
     # Sort by similarity score (documents from metadata search won't have scores)
-    all_results.sort(key=lambda x: x.metadata.get("similarity_score", 0.5), reverse=True)
+    all_results.sort(
+        key=lambda x: x.metadata.get("similarity_score", 0.5), reverse=True
+    )
 
     return all_results[: k * 2]
 

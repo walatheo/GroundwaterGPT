@@ -19,7 +19,9 @@ import streamlit as st
 from agent.knowledge import get_knowledge_stats
 
 # Page configuration
-st.set_page_config(page_title="GroundwaterGPT Data Explorer", page_icon="📊", layout="wide")
+st.set_page_config(
+    page_title="GroundwaterGPT Data Explorer", page_icon="📊", layout="wide"
+)
 
 # Data paths
 DATA_DIR = Path(__file__).parent / "data"
@@ -66,12 +68,10 @@ def calculate_statistics(df: pd.DataFrame, value_col: str) -> dict:
 
 def main():
     st.title("📊 GroundwaterGPT Data Explorer")
-    st.markdown(
-        """
+    st.markdown("""
     Explore and analyze groundwater data from USGS and other verified sources.
     Use this tool to understand trends, patterns, and data quality.
-    """
-    )
+    """)
 
     # Sidebar
     st.sidebar.title("🔧 Options")
@@ -97,7 +97,9 @@ def show_groundwater_explorer():
     df = load_groundwater_data()
 
     if df is None:
-        st.warning("No groundwater data found. Run `download_data.py` to fetch USGS data.")
+        st.warning(
+            "No groundwater data found. Run `download_data.py` to fetch USGS data."
+        )
         return
 
     # Data overview
@@ -127,7 +129,9 @@ def show_groundwater_explorer():
             end_date = st.date_input("End Date", value=df["datetime"].max().date())
 
         # Filter data
-        mask = (df["datetime"].dt.date >= start_date) & (df["datetime"].dt.date <= end_date)
+        mask = (df["datetime"].dt.date >= start_date) & (
+            df["datetime"].dt.date <= end_date
+        )
         filtered_df = df[mask]
 
         # Plot
@@ -198,7 +202,10 @@ def show_groundwater_explorer():
     with col1:
         csv = df.to_csv(index=False)
         st.download_button(
-            label="Download CSV", data=csv, file_name="groundwater_data.csv", mime="text/csv"
+            label="Download CSV",
+            data=csv,
+            file_name="groundwater_data.csv",
+            mime="text/csv",
         )
 
 
@@ -245,7 +252,9 @@ def show_knowledge_explorer():
             if results:
                 st.success(f"Found {len(results)} results")
                 for i, doc in enumerate(results, 1):
-                    with st.expander(f"Result {i}: {doc.metadata.get('source_file', 'Unknown')}"):
+                    with st.expander(
+                        f"Result {i}: {doc.metadata.get('source_file', 'Unknown')}"
+                    ):
                         st.markdown(doc.page_content)
                         st.json(doc.metadata)
             else:

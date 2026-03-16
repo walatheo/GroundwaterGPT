@@ -124,9 +124,13 @@ class TestKnowledgeBaseHealth:
 
     def test_kb_has_usgs_data(self):
         """Verify USGS groundwater data exists in KB."""
-        results = search_knowledge("USGS groundwater monitoring Florida", k=10, score_threshold=0.2)
+        results = search_knowledge(
+            "USGS groundwater monitoring Florida", k=10, score_threshold=0.2
+        )
 
-        usgs_results = [r for r in results if r.metadata.get("doc_type") == "usgs_groundwater_data"]
+        usgs_results = [
+            r for r in results if r.metadata.get("doc_type") == "usgs_groundwater_data"
+        ]
 
         assert len(usgs_results) > 0, "No USGS groundwater data found in KB"
         print(f"\n✅ Found {len(usgs_results)} USGS groundwater documents")
@@ -194,9 +198,13 @@ class TestAquiferTypes:
     def test_aquifer_type_identification(self, site, expected_aquifer):
         """Test that aquifer types are correctly identified."""
         query = f"What aquifer is {site} monitoring?"
-        passed, missing, content = search_and_check_keywords(query, [expected_aquifer, "aquifer"])
+        passed, missing, content = search_and_check_keywords(
+            query, [expected_aquifer, "aquifer"]
+        )
 
-        assert passed, f"Expected {expected_aquifer} aquifer for {site}, missing: {missing}"
+        assert (
+            passed
+        ), f"Expected {expected_aquifer} aquifer for {site}, missing: {missing}"
         print(f"\n✅ {site} → {expected_aquifer.title()} Aquifer")
 
 
@@ -240,7 +248,9 @@ class TestWaterLevelStats:
             print(f"\n✅ {site}: Mean = {found_mean} ft (expected ~{expected_mean})")
         else:
             # Fallback: check if expected value appears in content
-            assert str(expected_mean)[:3] in combined, f"Expected mean ~{expected_mean} not found"
+            assert (
+                str(expected_mean)[:3] in combined
+            ), f"Expected mean ~{expected_mean} not found"
             print(f"\n✅ {site}: Mean value ~{expected_mean} found in content")
 
 
@@ -344,7 +354,9 @@ class TestGroundTruthFlorida:
                 results_summary.append(f"✅ {tc['id']}: {category}")
             else:
                 failed += 1
-                results_summary.append(f"❌ {tc['id']}: {category} - Missing: {missing}")
+                results_summary.append(
+                    f"❌ {tc['id']}: {category} - Missing: {missing}"
+                )
 
         # Print summary
         print("\n" + "=" * 60)
@@ -353,7 +365,9 @@ class TestGroundTruthFlorida:
         for r in results_summary:
             print(r)
         print("=" * 60)
-        print(f"PASSED: {passed}/{len(ground_truth)} ({100*passed/len(ground_truth):.1f}%)")
+        print(
+            f"PASSED: {passed}/{len(ground_truth)} ({100*passed/len(ground_truth):.1f}%)"
+        )
         print(f"FAILED: {failed}/{len(ground_truth)}")
         print("=" * 60)
 
@@ -403,7 +417,9 @@ class TestAccuracyMetrics:
         print(f"\n📊 Average Precision@{k}: {avg_precision:.2%}")
 
         # We want at least 60% precision
-        assert avg_precision >= 0.6, f"Precision {avg_precision:.2%} below 60% threshold"
+        assert (
+            avg_precision >= 0.6
+        ), f"Precision {avg_precision:.2%} below 60% threshold"
 
     def test_recall_for_sites(self):
         """

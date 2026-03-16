@@ -41,7 +41,9 @@ class TestCreatePlanEndpoint:
                 "path": "outputs/research/experiments/exp_123.json",
             }
 
-        monkeypatch.setattr(research_routes, "create_experiment_plan", fake_create_experiment_plan)
+        monkeypatch.setattr(
+            research_routes, "create_experiment_plan", fake_create_experiment_plan
+        )
 
         resp = client.post(
             "/api/research/plans",
@@ -65,7 +67,9 @@ class TestCreatePlanEndpoint:
         def fake_create_experiment_plan(**kwargs):
             raise ValueError("title is required.")
 
-        monkeypatch.setattr(research_routes, "create_experiment_plan", fake_create_experiment_plan)
+        monkeypatch.setattr(
+            research_routes, "create_experiment_plan", fake_create_experiment_plan
+        )
 
         resp = client.post(
             "/api/research/plans",
@@ -102,9 +106,13 @@ class TestListPlansEndpoint:
                 }
             ]
 
-        monkeypatch.setattr(research_routes, "list_experiment_plans", fake_list_experiment_plans)
+        monkeypatch.setattr(
+            research_routes, "list_experiment_plans", fake_list_experiment_plans
+        )
 
-        resp = client.get("/api/research/plans", params={"status": "planned", "limit": 5})
+        resp = client.get(
+            "/api/research/plans", params={"status": "planned", "limit": 5}
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "ok"
@@ -117,7 +125,9 @@ class TestListPlansEndpoint:
         def fake_list_experiment_plans(status=None, limit=10):
             raise ValueError("Invalid status")
 
-        monkeypatch.setattr(research_routes, "list_experiment_plans", fake_list_experiment_plans)
+        monkeypatch.setattr(
+            research_routes, "list_experiment_plans", fake_list_experiment_plans
+        )
 
         resp = client.get("/api/research/plans", params={"status": "bad"})
         assert resp.status_code == 400
@@ -140,7 +150,9 @@ class TestGetPlanEndpoint:
                 "baselines": [],
             }
 
-        monkeypatch.setattr(research_routes, "get_experiment_plan", fake_get_experiment_plan)
+        monkeypatch.setattr(
+            research_routes, "get_experiment_plan", fake_get_experiment_plan
+        )
 
         resp = client.get("/api/research/plans/exp_abc")
         assert resp.status_code == 200
@@ -153,7 +165,9 @@ class TestGetPlanEndpoint:
         def fake_get_experiment_plan(plan_id):
             raise FileNotFoundError("Experiment plan not found")
 
-        monkeypatch.setattr(research_routes, "get_experiment_plan", fake_get_experiment_plan)
+        monkeypatch.setattr(
+            research_routes, "get_experiment_plan", fake_get_experiment_plan
+        )
 
         resp = client.get("/api/research/plans/missing")
         assert resp.status_code == 404
@@ -244,7 +258,8 @@ class TestDraftEndpoint:
                 },
                 "path": "outputs/research/manuscripts/exp_abc_20260227_180000.md",
                 "provenance_path": (
-                    "outputs/research/manuscripts/" "exp_abc_20260227_180000.provenance.json"
+                    "outputs/research/manuscripts/"
+                    "exp_abc_20260227_180000.provenance.json"
                 ),
                 "draft": "# Draft\n\n## Abstract",
                 "provenance": {"run_count": 3},

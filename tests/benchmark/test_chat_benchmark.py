@@ -63,7 +63,9 @@ def test_case_scoring_full_pass():
         },
     }
 
-    result = evaluate_case_response(case, response, elapsed_seconds=1.2, status_code=200)
+    result = evaluate_case_response(
+        case, response, elapsed_seconds=1.2, status_code=200
+    )
     assert result["score"] == 1.0
     assert result["failed_checks"] == []
     assert result["citation_coverage"] == 1.0
@@ -72,8 +74,18 @@ def test_case_scoring_full_pass():
 def test_threshold_evaluation_failure_reasons():
     """Threshold evaluation should provide explicit failure reasons."""
     case_results = [
-        {"case_id": "l1", "score": 0.4, "citation_coverage": 0.5, "elapsed_seconds": 4.1},
-        {"case_id": "l2", "score": 0.6, "citation_coverage": 0.4, "elapsed_seconds": 5.2},
+        {
+            "case_id": "l1",
+            "score": 0.4,
+            "citation_coverage": 0.5,
+            "elapsed_seconds": 4.1,
+        },
+        {
+            "case_id": "l2",
+            "score": 0.6,
+            "citation_coverage": 0.4,
+            "elapsed_seconds": 5.2,
+        },
     ]
     thresholds = {
         "min_overall_score": 0.85,
@@ -86,5 +98,7 @@ def test_threshold_evaluation_failure_reasons():
     assert summary["passed"] is False
     assert len(summary["failed_reasons"]) >= 3
     assert any("overall_score" in reason for reason in summary["failed_reasons"])
-    assert any("average_citation_coverage" in reason for reason in summary["failed_reasons"])
+    assert any(
+        "average_citation_coverage" in reason for reason in summary["failed_reasons"]
+    )
     assert any("max_elapsed" in reason for reason in summary["failed_reasons"])

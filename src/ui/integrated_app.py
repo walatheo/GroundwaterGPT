@@ -304,7 +304,9 @@ def query_knowledge_base(query: str, num_results: int = 10) -> dict:
         result_item = {
             "content": doc.page_content,
             "doc_type": doc_type,
-            "source": doc.metadata.get("source_file", doc.metadata.get("site_name", "Unknown")),
+            "source": doc.metadata.get(
+                "source_file", doc.metadata.get("site_name", "Unknown")
+            ),
             "metadata": doc.metadata,
             "similarity": doc.metadata.get("similarity_score", 0),
         }
@@ -332,7 +334,10 @@ def query_knowledge_base(query: str, num_results: int = 10) -> dict:
 
 
 def create_time_series_plot(
-    df: pd.DataFrame, site_info: dict, show_trend: bool = True, show_rolling_avg: bool = True
+    df: pd.DataFrame,
+    site_info: dict,
+    show_trend: bool = True,
+    show_rolling_avg: bool = True,
 ) -> go.Figure:
     """Create interactive time series plot."""
     fig = go.Figure()
@@ -352,7 +357,9 @@ def create_time_series_plot(
     # Rolling average (30-day)
     if show_rolling_avg and len(df) > 30:
         df = df.copy()
-        df["roll_30"] = df["water_level_ft"].rolling(30, min_periods=1, center=True).mean()
+        df["roll_30"] = (
+            df["water_level_ft"].rolling(30, min_periods=1, center=True).mean()
+        )
         fig.add_trace(
             go.Scatter(
                 x=df.index,
@@ -402,7 +409,11 @@ def create_seasonal_plot(df: pd.DataFrame, site_info: dict) -> go.Figure:
     df = df.copy()
     df["month"] = df.index.month
 
-    monthly = df.groupby("month")["water_level_ft"].agg(["mean", "std", "min", "max"]).reset_index()
+    monthly = (
+        df.groupby("month")["water_level_ft"]
+        .agg(["mean", "std", "min", "max"])
+        .reset_index()
+    )
 
     month_names = [
         "Jan",
@@ -419,7 +430,10 @@ def create_seasonal_plot(df: pd.DataFrame, site_info: dict) -> go.Figure:
         "Dec",
     ]
 
-    colors = ["#ff7f0e" if m in [11, 12, 1, 2, 3, 4, 5] else "#1f77b4" for m in monthly["month"]]
+    colors = [
+        "#ff7f0e" if m in [11, 12, 1, 2, 3, 4, 5] else "#1f77b4"
+        for m in monthly["month"]
+    ]
 
     fig = go.Figure()
 
@@ -566,7 +580,9 @@ def create_geographic_map(all_data: dict) -> go.Figure:
                 hoverinfo="text",
                 name=aquifer,
                 marker=dict(
-                    size=df_aq["record_count"].apply(lambda x: max(15, min(30, x / 10))),
+                    size=df_aq["record_count"].apply(
+                        lambda x: max(15, min(30, x / 10))
+                    ),
                     color=color_map.get(aquifer, "#999999"),
                     line=dict(width=2, color="white"),
                     opacity=0.8,
@@ -592,7 +608,13 @@ def create_geographic_map(all_data: dict) -> go.Figure:
             lataxis=dict(range=[24.5, 27.5]),
         ),
         height=600,
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255,255,255,0.8)"),
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01,
+            bgcolor="rgba(255,255,255,0.8)",
+        ),
     )
 
     return fig
@@ -611,7 +633,9 @@ def create_heatmap(df: pd.DataFrame, site_info: dict) -> go.Figure:
     df["year"] = df.index.year
 
     # Create pivot table (mean water level by month/year)
-    pivot = df.pivot_table(values="water_level_ft", index="year", columns="month", aggfunc="mean")
+    pivot = df.pivot_table(
+        values="water_level_ft", index="year", columns="month", aggfunc="mean"
+    )
 
     # Month names for x-axis
     month_names = [
@@ -849,7 +873,9 @@ def display_research_result(result: dict):
 
     insights = result.get("insights", [])
     if insights:
-        with st.expander(f"🔍 Research Insights ({len(insights)} found)", expanded=True):
+        with st.expander(
+            f"🔍 Research Insights ({len(insights)} found)", expanded=True
+        ):
             for i, insight in enumerate(insights, 1):
                 confidence = insight.get("confidence", 0)
                 verified = insight.get("verified", False)
@@ -902,7 +928,9 @@ def render_research_tab():
     is_query_mode = "Query" in mode
 
     if is_query_mode:
-        st.info("**Query Mode**: Instantly search USGS data and hydrogeology references")
+        st.info(
+            "**Query Mode**: Instantly search USGS data and hydrogeology references"
+        )
     else:
         st.info("**Research Mode**: Deep research with web search (takes longer)")
 
@@ -916,7 +944,9 @@ def render_research_tab():
     if is_query_mode:
         col1, col2 = st.columns([2, 1])
         with col1:
-            search_btn = st.button("🔍 Search", type="primary", use_container_width=True)
+            search_btn = st.button(
+                "🔍 Search", type="primary", use_container_width=True
+            )
         with col2:
             num_results = st.selectbox("Results:", [5, 10, 20], index=1)
 
@@ -936,7 +966,9 @@ def render_research_tab():
         if st.button("🚀 Start Research", type="primary") and query:
             with st.spinner("Researching (up to 3 minutes)..."):
                 try:
-                    result = st.session_state.agent.research(query, max_depth=3, timeout=180)
+                    result = st.session_state.agent.research(
+                        query, max_depth=3, timeout=180
+                    )
                     st.session_state.current_research = result
                     st.success("✅ Research complete!")
                 except Exception as e:
@@ -964,7 +996,9 @@ def render_visualization_tab():
     all_data = load_all_sites()
 
     # Main visualization tabs
-    viz_main_tabs = st.tabs(["🗺️ Geographic Map", "📈 Time Series", "🌡️ Heatmap", "📊 Analysis"])
+    viz_main_tabs = st.tabs(
+        ["🗺️ Geographic Map", "📈 Time Series", "🌡️ Heatmap", "📊 Analysis"]
+    )
 
     # ============================================================
     # TAB 1: GEOGRAPHIC MAP
@@ -995,17 +1029,17 @@ def render_visualization_tab():
                     }
                 )
 
-        st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
+        st.dataframe(
+            pd.DataFrame(summary_data), use_container_width=True, hide_index=True
+        )
 
-        st.info(
-            """
+        st.info("""
         **About the Map:**
         - 🔵 **Blue markers**: Biscayne Aquifer (shallow, Miami-Dade County)
         - 🟠 **Orange markers**: Floridan Aquifer (deep, Lee County)
         - Marker size indicates amount of data available
         - Hover over markers for details
-        """
-        )
+        """)
 
     # ============================================================
     # TAB 2: INTERACTIVE TIME SERIES
@@ -1023,7 +1057,9 @@ def render_visualization_tab():
             }
 
             selected_display = st.selectbox(
-                "📍 Select Monitoring Site", options=list(site_options.keys()), key="ts_site_select"
+                "📍 Select Monitoring Site",
+                options=list(site_options.keys()),
+                key="ts_site_select",
             )
 
             selected_site = site_options[selected_display]
@@ -1063,15 +1099,13 @@ def render_visualization_tab():
             fig = create_interactive_time_series(df, site_info)
             st.plotly_chart(fig, use_container_width=True)
 
-            st.info(
-                """
+            st.info("""
             **Controls:**
             - Use the **range slider** at the bottom to zoom
             - Click **1M, 6M, 1Y, 2Y, ALL** buttons to quick-select time ranges
             - Toggle traces in the legend (click to show/hide)
             - Hover for detailed values
-            """
-            )
+            """)
 
     # ============================================================
     # TAB 3: HEATMAP
@@ -1081,10 +1115,14 @@ def render_visualization_tab():
         st.markdown("Visualize temporal patterns in water levels by month and year")
 
         # Site selector for heatmap
-        site_options_hm = {f"{FLORIDA_SITES[sid]['name']}": sid for sid in available_sites}
+        site_options_hm = {
+            f"{FLORIDA_SITES[sid]['name']}": sid for sid in available_sites
+        }
 
         selected_hm = st.selectbox(
-            "📍 Select Site for Heatmap", options=list(site_options_hm.keys()), key="hm_site_select"
+            "📍 Select Site for Heatmap",
+            options=list(site_options_hm.keys()),
+            key="hm_site_select",
         )
 
         selected_site_hm = site_options_hm[selected_hm]
@@ -1095,15 +1133,13 @@ def render_visualization_tab():
         fig_hm = create_heatmap(df_hm, site_info_hm)
         st.plotly_chart(fig_hm, use_container_width=True)
 
-        st.info(
-            """
+        st.info("""
         **Reading the Heatmap:**
         - **Red/Orange**: Deeper water levels (further from surface)
         - **Blue/Cyan**: Shallower water levels (closer to surface)
         - Look for seasonal patterns (horizontal bands)
         - Look for long-term trends (vertical gradients)
-        """
-        )
+        """)
 
         # Add seasonal pattern below
         st.markdown("### 🌊 Seasonal Pattern")
@@ -1117,7 +1153,9 @@ def render_visualization_tab():
         st.markdown("### � Statistical Analysis")
 
         # Site selector for analysis
-        site_options_an = {f"{FLORIDA_SITES[sid]['name']}": sid for sid in available_sites}
+        site_options_an = {
+            f"{FLORIDA_SITES[sid]['name']}": sid for sid in available_sites
+        }
 
         selected_an = st.selectbox(
             "📍 Select Site for Analysis",
@@ -1145,7 +1183,11 @@ def render_visualization_tab():
                         f"{stats_an['max_level']:.2f}",
                         f"{stats_an['mean_level']:.2f}",
                         f"{stats_an['std_level']:.2f}",
-                        f"{stats_an['latest_level']:.2f}" if stats_an["latest_level"] else "N/A",
+                        (
+                            f"{stats_an['latest_level']:.2f}"
+                            if stats_an["latest_level"]
+                            else "N/A"
+                        ),
                     ],
                 }
             )
@@ -1171,16 +1213,14 @@ def render_visualization_tab():
         fig_box = create_box_plot_by_year(df_an, site_info_an)
         st.plotly_chart(fig_box, use_container_width=True)
 
-        st.info(
-            """
+        st.info("""
         **Reading Box Plots:**
         - **Box**: Shows the interquartile range (IQR, 25th-75th percentile)
         - **Line inside box**: Median value
         - **Diamond**: Mean value
         - **Whiskers**: Extend to 1.5x IQR
         - **Points beyond whiskers**: Outliers
-        """
-        )
+        """)
 
 
 def render_sidebar():
@@ -1202,12 +1242,10 @@ def render_sidebar():
 
     # Quick links
     st.sidebar.markdown("### 🔗 Quick Links")
-    st.sidebar.markdown(
-        """
+    st.sidebar.markdown("""
     - [USGS NWIS](https://waterdata.usgs.gov/nwis)
     - [Florida Aquifers](https://floridadep.gov/fgs/aquifer)
-    """
-    )
+    """)
 
     st.sidebar.markdown("---")
     st.sidebar.caption("Phase 3: Visualization Integration")

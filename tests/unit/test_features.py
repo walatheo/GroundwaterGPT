@@ -85,10 +85,14 @@ class TestFeatureCreation:
 
         # Should have expected number of features (24 in current implementation)
         feature_cols = [
-            c for c in result.columns if c not in ["date", "water_level", "month", "day_of_year"]
+            c
+            for c in result.columns
+            if c not in ["date", "water_level", "month", "day_of_year"]
         ]
 
-        assert len(feature_cols) >= 20, f"Expected 20+ features, got {len(feature_cols)}"
+        assert (
+            len(feature_cols) >= 20
+        ), f"Expected 20+ features, got {len(feature_cols)}"
 
 
 class TestDataLeakage:
