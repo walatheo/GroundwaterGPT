@@ -416,9 +416,8 @@ else:
         if _src_dir not in sys.path:
             sys.path.insert(0, _src_dir)
 
-        from src.agent.groundwater_agent import (
-            create_agent as _create_chat_agent,
-        )  # noqa: E402
+        from src.agent.groundwater_agent import \
+            create_agent as _create_chat_agent  # noqa: E402
         from src.agent.research_agent import DeepResearchAgent  # noqa: E402
 
         _chat_agent = _create_chat_agent(verbose=False)

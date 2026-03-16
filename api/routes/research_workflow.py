@@ -5,13 +5,10 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from src.agent.tools import (
-    create_experiment_plan,
-    generate_research_paper_draft,
-    get_experiment_plan,
-    list_experiment_plans,
-    log_experiment_run_entry,
-)
+from src.agent.tools import (create_experiment_plan,
+                             generate_research_paper_draft,
+                             get_experiment_plan, list_experiment_plans,
+                             log_experiment_run_entry)
 
 router = APIRouter(prefix="/api/research", tags=["research-workflow"])
 

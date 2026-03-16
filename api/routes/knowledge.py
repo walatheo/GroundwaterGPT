@@ -4,11 +4,8 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
-from src.agent.knowledge import (
-    get_knowledge_runtime_status,
-    get_knowledge_stats,
-    ingest_pdfs,
-)
+from src.agent.knowledge import (get_knowledge_runtime_status,
+                                 get_knowledge_stats, ingest_pdfs)
 from src.agent.source_verification import TrustLevel
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])

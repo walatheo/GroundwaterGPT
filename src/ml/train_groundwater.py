@@ -175,7 +175,8 @@ def prepare_data(df: pd.DataFrame) -> Tuple:
 
 def train_model(X_train, y_train, model_type: str = "ridge") -> Any:
     """Train a model with tuned hyperparameters."""
-    from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+    from sklearn.ensemble import (GradientBoostingRegressor,
+                                  RandomForestRegressor)
     from sklearn.linear_model import Ridge
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
@@ -233,7 +234,8 @@ def train_model(X_train, y_train, model_type: str = "ridge") -> Any:
 
 def evaluate_model(model, X_test, y_test) -> dict:
     """Evaluate model performance."""
-    from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+    from sklearn.metrics import (mean_absolute_error, mean_squared_error,
+                                 r2_score)
 
     y_pred = model.predict(X_test)
 

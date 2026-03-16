@@ -15,18 +15,14 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.research_optimizer import (
-    ResearchPlanner,
-    PriorityRanker,
-    SelfReflectionEvaluator,
-    StructuredReportBuilder,
-    ResearchSessionPersistence,
-    SearchBudget,
-    ResearchPlan,
-    RankedSearchResult,
-    ReflectionResult,
-)
 from src.agent.research_agent import DeepResearchAgent
+from src.agent.research_optimizer import (PriorityRanker, RankedSearchResult,
+                                          ReflectionResult, ResearchPlan,
+                                          ResearchPlanner,
+                                          ResearchSessionPersistence,
+                                          SearchBudget,
+                                          SelfReflectionEvaluator,
+                                          StructuredReportBuilder)
 
 
 class TestResearchPlan:

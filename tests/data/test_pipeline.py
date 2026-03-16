@@ -32,16 +32,10 @@ import requests
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data.pipeline import (
-    ValidationResult,
-    PipelineStats,
-    engineer_features,
-    fetch_single_site,
-    get_all_site_ids,
-    run_pipeline,
-    save_site_data,
-    validate_schema,
-)
+from src.data.pipeline import (PipelineStats, ValidationResult,
+                               engineer_features, fetch_single_site,
+                               get_all_site_ids, run_pipeline, save_site_data,
+                               validate_schema)
 
 # ============================================================================
 # FIXTURES
