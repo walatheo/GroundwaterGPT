@@ -168,7 +168,9 @@ def _usgs_site_url(site_id: str) -> str:
 
 def _distance_to_estero(lat: float, lng: float) -> float:
     """Approximate distance from Estero reference point using lat/lng deltas."""
-    return ((lat - ESTERO_REFERENCE_LAT) ** 2 + (lng - ESTERO_REFERENCE_LNG) ** 2) ** 0.5
+    return (
+        (lat - ESTERO_REFERENCE_LAT) ** 2 + (lng - ESTERO_REFERENCE_LNG) ** 2
+    ) ** 0.5
 
 
 def _load_site_timeseries(site_id: str) -> Optional[pd.DataFrame]:
@@ -317,7 +319,9 @@ def _estero_research_fallback(question: str) -> dict:
                 "claim_id": f"claim_{idx:03d}",
                 "claim": insight_text,
                 "confidence": 0.85,
-                "citations": [{"url": site_url, "verified": True, "trust_level": "verified"}],
+                "citations": [
+                    {"url": site_url, "verified": True, "trust_level": "verified"}
+                ],
             }
         )
 
@@ -403,14 +407,18 @@ skip_agent_init = os.getenv("GROUNDWATERGPT_SKIP_AGENT_INIT", "").strip().lower(
 }
 
 if skip_agent_init:
-    logger.info("Skipping LLM-backed agent initialization (GROUNDWATERGPT_SKIP_AGENT_INIT set)")
+    logger.info(
+        "Skipping LLM-backed agent initialization (GROUNDWATERGPT_SKIP_AGENT_INIT set)"
+    )
 else:
     try:
         _src_dir = str(Path(__file__).parent.parent.parent / "src")
         if _src_dir not in sys.path:
             sys.path.insert(0, _src_dir)
 
-        from src.agent.groundwater_agent import create_agent as _create_chat_agent  # noqa: E402
+        from src.agent.groundwater_agent import (
+            create_agent as _create_chat_agent,
+        )  # noqa: E402
         from src.agent.research_agent import DeepResearchAgent  # noqa: E402
 
         _chat_agent = _create_chat_agent(verbose=False)
@@ -421,7 +429,8 @@ else:
         logger.info("LLM-backed agents initialised successfully")
     except Exception as exc:
         logger.warning(
-            "Could not initialise LLM agents — " "falling back to rule-based chat. Reason: %s",
+            "Could not initialise LLM agents — "
+            "falling back to rule-based chat. Reason: %s",
             exc,
         )
         _chat_agent = None

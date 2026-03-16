@@ -15,7 +15,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 def _load_benchmark_defaults() -> tuple[Path, Path]:
     """Load default benchmark config paths lazily after path bootstrapping."""
-    from src.evaluation.chat_benchmark import DEFAULT_CASES_PATH, DEFAULT_THRESHOLDS_PATH
+    from src.evaluation.chat_benchmark import (
+        DEFAULT_CASES_PATH,
+        DEFAULT_THRESHOLDS_PATH,
+    )
 
     return DEFAULT_CASES_PATH, DEFAULT_THRESHOLDS_PATH
 
@@ -66,7 +69,10 @@ def main() -> int:
     print("Chat benchmark complete")
     print(f"- Cases: {report.get('metadata', {}).get('case_count', 0)}")
     print(f"- Overall score: {summary.get('overall_score', 0.0):.3f}")
-    print("- Average citation coverage: " f"{summary.get('average_citation_coverage', 0.0):.3f}")
+    print(
+        "- Average citation coverage: "
+        f"{summary.get('average_citation_coverage', 0.0):.3f}"
+    )
     print(f"- Threshold pass: {summary.get('passed', False)}")
     print(f"- Report: {args.output}")
 
