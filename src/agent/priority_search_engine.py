@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 class SearchSourceType(Enum):
     """Types of search sources."""
+
     KNOWLEDGE_BASE = "knowledge_base"
     WEB = "web"
     DATA = "data"  # USGS pipeline data
@@ -37,17 +38,17 @@ class SearchSourceType(Enum):
 @dataclass
 class SearchQuery:
     """A prioritized search query."""
-    
+
     query_text: str
     priority: float = 0.5  # 0.0-1.0
     source_type: SearchSourceType = SearchSourceType.WEB
     importance: str = "medium"  # low, medium, high
     context: str = ""  # Additional context for the search
-    
+
     def __lt__(self, other: SearchQuery) -> bool:
         """Higher priority first."""
         return self.priority > other.priority
-    
+
     def __repr__(self) -> str:
         return f"Q({self.priority:.2f}): {self.query_text[:50]}"
 
@@ -55,7 +56,7 @@ class SearchQuery:
 @dataclass
 class SearchResult:
     """A search result from any source."""
-    
+
     title: str
     content: str
     url: str
@@ -64,13 +65,13 @@ class SearchResult:
     trust_score: float = 0.5
     retrieved_at: datetime = None
     metadata: Dict = None
-    
+
     def __post_init__(self):
         if self.retrieved_at is None:
             self.retrieved_at = datetime.now()
         if self.metadata is None:
             self.metadata = {}
-    
+
     def combined_score(self) -> float:
         """Compute combined relevance score."""
         return 0.6 * self.relevance_score + 0.4 * self.trust_score
@@ -79,14 +80,14 @@ class SearchResult:
 class QueryPrioritizer:
     """
     Prioritizes search queries based on research importance.
-    
+
     Implements intelligent query ordering to maximize research value
     within budget constraints.
     """
-    
+
     def __init__(self, llm_provider: str | None = None, llm_model: str | None = None):
         self.llm = get_llm(provider=llm_provider, model=llm_model)
-    
+
     def prioritize_queries(
         self,
         queries: List[str],
@@ -95,24 +96,24 @@ class QueryPrioritizer:
     ) -> List[SearchQuery]:
         """
         Prioritize a list of search queries.
-        
+
         Args:
             queries: List of search query strings
             research_context: Context about the research
             budget: Optional budget constraints
-        
+
         Returns:
             List of SearchQuery objects, sorted by priority (highest first)
         """
         if not queries:
             return []
-        
+
         if not budget:
             budget = SearchBudget()
-        
+
         # User structured prompting to prioritize
         queries_str = "\n".join(f"{i+1}. {q}" for i, q in enumerate(queries))
-        
+
         prompt = f"""You are a research prioritization expert.
 
 RESEARCH CONTEXT: {research_context}
@@ -137,11 +138,12 @@ Be strategic - limited budget means we need the most impactful queries first."""
 
         try:
             response = self.llm.invoke(prompt)
-            
+
             # Parse JSON response
             import json
+
             data = json.loads(response.content)
-            
+
             search_queries = []
             for item in data:
                 source_map = {
@@ -149,7 +151,7 @@ Be strategic - limited budget means we need the most impactful queries first."""
                     "web": SearchSourceType.WEB,
                     "data": SearchSourceType.DATA,
                 }
-                
+
                 sq = SearchQuery(
                     query_text=item.get("query", ""),
                     priority=float(item.get("priority", 0.5)),
@@ -157,16 +159,16 @@ Be strategic - limited budget means we need the most impactful queries first."""
                     importance=item.get("importance", "medium"),
                 )
                 search_queries.append(sq)
-            
+
             # Sort by priority
             search_queries.sort()
-            
+
             logger.info(f"📊 Prioritized {len(search_queries)} queries")
             for sq in search_queries[:5]:
                 logger.info(f"  {sq}")
-            
+
             return search_queries
-            
+
         except Exception as e:
             logger.warning(f"Failed to prioritize queries with LLM: {e}")
             # Fallback: return queries in original order with equal priority
@@ -183,10 +185,10 @@ Be strategic - limited budget means we need the most impactful queries first."""
 class MultiSourceSearchEngine:
     """
     Executes searches across multiple sources with budget management.
-    
+
     Implements ReSeek pattern for budget-aware knowledge seeking.
     """
-    
+
     def __init__(
         self,
         kb_searcher: Callable[[str], List[Dict]] | None = None,
@@ -197,7 +199,7 @@ class MultiSourceSearchEngine:
     ):
         """
         Initialize multi-source search engine.
-        
+
         Args:
             kb_searcher: Function to search knowledge base
             web_searcher: Function to search web
@@ -208,11 +210,11 @@ class MultiSourceSearchEngine:
         self.kb_searcher = kb_searcher
         self.web_searcher = web_searcher
         self.data_searcher = data_searcher
-        
+
         self.ranker = PriorityRanker(llm_provider=llm_provider, llm_model=llm_model)
         self.budget = SearchBudget()
         self.search_history: List[Tuple[SearchQuery, List[SearchResult]]] = []
-    
+
     def search(
         self,
         query: SearchQuery,
@@ -221,23 +223,23 @@ class MultiSourceSearchEngine:
     ) -> List[SearchResult]:
         """
         Execute search for a single prioritized query.
-        
+
         Args:
             query: SearchQuery with priority and source info
             num_results: Number of results to return
             enforce_budget: Whether to enforce budget constraints
-        
+
         Returns:
             List of SearchResult objects, ranked by relevance
         """
         if enforce_budget and not self._can_search(query):
             logger.warning(f"❌ Search budget exhausted for {query.source_type.value}")
             return []
-        
+
         logger.info(f"🔍 Searching [{query.source_type.value}]: {query.query_text}")
-        
+
         results = []
-        
+
         # Execute search based on source type
         if query.source_type == SearchSourceType.KNOWLEDGE_BASE:
             results = self._search_kb(query.query_text, num_results)
@@ -248,16 +250,18 @@ class MultiSourceSearchEngine:
         elif query.source_type == SearchSourceType.DATA:
             results = self._search_data(query.query_text, num_results)
             self.budget.record_api_call()
-        
+
         # Rank results
         if results:
             ranked = self._rank_results(results, query.query_text)
             self.search_history.append((query, ranked))
-            logger.info(f"📊 Got {len(ranked)} results (top score: {ranked[0].combined_score():.2f})")
+            logger.info(
+                f"📊 Got {len(ranked)} results (top score: {ranked[0].combined_score():.2f})"
+            )
             return ranked[:num_results]
-        
+
         return []
-    
+
     def batch_search(
         self,
         queries: List[SearchQuery],
@@ -266,33 +270,33 @@ class MultiSourceSearchEngine:
     ) -> Dict[str, List[SearchResult]]:
         """
         Execute multiple searches with budget management.
-        
+
         Args:
             queries: List of SearchQuery objects
             num_results: Results per query
             enforce_budget: Whether to enforce budget constraints
-        
+
         Returns:
             Dict mapping query text -> search results
         """
         results = {}
-        
+
         # Sort by priority
         sorted_queries = sorted(queries)
-        
+
         for query in sorted_queries:
             if enforce_budget and not self._can_search(query):
                 logger.warning(f"⚠️  Budget exhausted. Stopping search.")
                 break
-            
+
             search_results = self.search(query, num_results, enforce_budget)
             results[query.query_text] = search_results
-        
+
         logger.info(f"📊 Batch search complete: {len(results)} queries executed")
         logger.info(f"💰 Budget used: ${self.budget.total_cost:.2f}")
-        
+
         return results
-    
+
     def _can_search(self, query: SearchQuery) -> bool:
         """Check if we can perform this search given budget."""
         if query.source_type == SearchSourceType.KNOWLEDGE_BASE:
@@ -308,15 +312,15 @@ class MultiSourceSearchEngine:
                 and self.budget.remaining_budget() > self.budget.cost_per_api_call
             )
         return False
-    
+
     def _search_kb(self, query_text: str, limit: int) -> List[SearchResult]:
         """Search knowledge base."""
         if not self.kb_searcher:
             return []
-        
+
         try:
             kb_results = self.kb_searcher(query_text)
-            
+
             results = []
             for item in kb_results[:limit]:
                 result = SearchResult(
@@ -328,20 +332,20 @@ class MultiSourceSearchEngine:
                     trust_score=0.95,  # KB is highly trusted
                 )
                 results.append(result)
-            
+
             return results
         except Exception as e:
             logger.error(f"KB search failed: {e}")
             return []
-    
+
     def _search_web(self, query_text: str, limit: int) -> List[SearchResult]:
         """Search web."""
         if not self.web_searcher:
             return []
-        
+
         try:
             web_results = self.web_searcher(query_text)
-            
+
             results = []
             for item in web_results[:limit]:
                 result = SearchResult(
@@ -353,20 +357,20 @@ class MultiSourceSearchEngine:
                     trust_score=item.get("trust_score", 0.5),
                 )
                 results.append(result)
-            
+
             return results
         except Exception as e:
             logger.error(f"Web search failed: {e}")
             return []
-    
+
     def _search_data(self, query_text: str, limit: int) -> List[SearchResult]:
         """Search USGS data."""
         if not self.data_searcher:
             return []
-        
+
         try:
             data_results = self.data_searcher(query_text)
-            
+
             results = []
             for item in data_results[:limit]:
                 result = SearchResult(
@@ -378,12 +382,12 @@ class MultiSourceSearchEngine:
                     trust_score=0.9,  # USGS is highly trusted
                 )
                 results.append(result)
-            
+
             return results
         except Exception as e:
             logger.error(f"Data search failed: {e}")
             return []
-    
+
     def _rank_results(
         self,
         results: List[SearchResult],
@@ -400,25 +404,25 @@ class MultiSourceSearchEngine:
             }
             for r in results
         ]
-        
+
         try:
             ranked = self.ranker.rank_results(result_dicts, query)
-            
+
             # Convert back to SearchResult with scores
             for r in results:
                 for ranked_r in ranked:
                     if r.url == ranked_r.url:
                         r.relevance_score = ranked_r.relevance_score
                         r.trust_score = ranked_r.trust_score
-            
+
             # Sort by combined score
             results.sort(key=lambda r: r.combined_score(), reverse=True)
-            
+
         except Exception as e:
             logger.warning(f"Ranking failed: {e}")
-        
+
         return results
-    
+
     def get_budget_status(self) -> Dict[str, any]:
         """Get current budget status."""
         return {
@@ -431,7 +435,7 @@ class MultiSourceSearchEngine:
             "total_cost": self.budget.total_cost,
             "remaining_budget": self.budget.remaining_budget(),
         }
-    
+
     def reset_budget(self) -> None:
         """Reset budget for new research session."""
         self.budget = SearchBudget()
@@ -441,10 +445,10 @@ class MultiSourceSearchEngine:
 class SearchPipeline:
     """
     Complete search pipeline combining prioritization and multi-source searching.
-    
+
     Orchestrates the full SmartSearch + ReSeek workflow.
     """
-    
+
     def __init__(
         self,
         kb_searcher: Callable[[str], List[Dict]] | None = None,
@@ -454,7 +458,9 @@ class SearchPipeline:
         llm_model: str | None = None,
     ):
         """Initialize search pipeline."""
-        self.prioritizer = QueryPrioritizer(llm_provider=llm_provider, llm_model=llm_model)
+        self.prioritizer = QueryPrioritizer(
+            llm_provider=llm_provider, llm_model=llm_model
+        )
         self.search_engine = MultiSourceSearchEngine(
             kb_searcher=kb_searcher,
             web_searcher=web_searcher,
@@ -462,7 +468,7 @@ class SearchPipeline:
             llm_provider=llm_provider,
             llm_model=llm_model,
         )
-    
+
     def execute(
         self,
         research_queries: List[str],
@@ -471,32 +477,32 @@ class SearchPipeline:
     ) -> Dict[str, List[SearchResult]]:
         """
         Execute complete search pipeline.
-        
+
         Args:
             research_queries: List of search queries
             research_context: Research context
             num_results_per_query: Number of results per query
-        
+
         Returns:
             Dict mapping query -> results
         """
         logger.info(f"🔍 Starting search pipeline for {len(research_queries)} queries")
-        
+
         # Prioritize queries
         prioritized = self.prioritizer.prioritize_queries(
             research_queries,
             research_context=research_context,
             budget=self.search_engine.budget,
         )
-        
+
         # Execute batch search
         results = self.search_engine.batch_search(
             prioritized,
             num_results=num_results_per_query,
         )
-        
+
         return results
-    
+
     def get_statistics(self) -> Dict[str, any]:
         """Get search pipeline statistics."""
         return {
@@ -510,7 +516,7 @@ class SearchPipeline:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    
+
     # Example usage
     prioritizer = QueryPrioritizer()
     queries = [
@@ -519,12 +525,12 @@ if __name__ == "__main__":
         "seasonal groundwater patterns",
         "sea level rise aquifer",
     ]
-    
+
     prioritized = prioritizer.prioritize_queries(
         queries,
         research_context="Studying water level changes in Florida aquifers",
     )
-    
+
     print("\nPrioritized Queries:")
     for pq in prioritized:
         print(f"  {pq.priority:.2f} [{pq.importance}] {pq.query_text}")
