@@ -15,6 +15,31 @@ Source Priority:
 from .groundwater_agent import GroundwaterAgent
 from .llm_factory import LLMProvider, get_llm
 from .research_agent import DeepResearchAgent, deep_research
+from .research_workflow import (
+    GroundwaterResearchWorkflow,
+    GroundwaterResearchContext,
+    conduct_groundwater_research,
+    research_async,
+)
+from .groundwater_research_model import (
+    GroundwaterResearchModel,
+    DomainQueryExpander,
+    AquiferType,
+    AquiferProperties,
+    SeasonalPattern,
+    AnomalyDetection,
+    get_groundwater_model,
+    expand_groundwater_query,
+    validate_groundwater_data,
+)
+from .priority_search_engine import (
+    SearchPipeline,
+    MultiSourceSearchEngine,
+    QueryPrioritizer,
+    SearchQuery,
+    SearchResult,
+    SearchSourceType,
+)
 from .source_verification import (
     SourceCategory,
     TrustLevel,
@@ -28,9 +53,32 @@ from .source_verification import (
 )
 
 __all__ = [
+    # Agent systems
     "GroundwaterAgent",
     "DeepResearchAgent",
     "deep_research",
+    "GroundwaterResearchWorkflow",
+    "GroundwaterResearchContext",
+    "conduct_groundwater_research",
+    "research_async",
+    # Domain model
+    "GroundwaterResearchModel",
+    "DomainQueryExpander",
+    "AquiferType",
+    "AquiferProperties",
+    "SeasonalPattern",
+    "AnomalyDetection",
+    "get_groundwater_model",
+    "expand_groundwater_query",
+    "validate_groundwater_data",
+    # Search engine
+    "SearchPipeline",
+    "MultiSourceSearchEngine",
+    "QueryPrioritizer",
+    "SearchQuery",
+    "SearchResult",
+    "SearchSourceType",
+    # LLM factory
     "get_llm",
     "LLMProvider",
     # Source verification
@@ -44,3 +92,4 @@ __all__ = [
     "filter_by_category",
     "get_high_value_sources",
 ]
+
