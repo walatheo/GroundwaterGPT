@@ -81,7 +81,7 @@ def get_llm(
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
         return ChatAnthropic(
-            model=model or "claude-3-sonnet-20240229",
+            model=model or "claude-sonnet-4-6",
             temperature=temperature,
             api_key=api_key,
             **kwargs,
@@ -145,6 +145,6 @@ def set_provider(provider: LLMProvider, model: Optional[str] = None):
 RECOMMENDED_MODELS = {
     LLMProvider.OLLAMA: ["qwen3:8b", "qwen2.5:7b", "llama3.2", "mistral", "deepseek-r1:7b"],
     LLMProvider.OPENAI: ["gpt-4o", "gpt-4.1", "gpt-4o-mini"],
-    LLMProvider.ANTHROPIC: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
+    LLMProvider.ANTHROPIC: ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5-20251001"],
     LLMProvider.GEMINI: ["gemini-2.0-flash", "gemini-1.5-pro"],
 }

@@ -12,6 +12,7 @@
 | Chat QA | Groundwater Q&A with fallback behavior | FastAPI (`POST /api/chat`) + React `AI Assistant` | Beta | Yes |
 | Deep Research | Structured research report generation | FastAPI (`POST /api/research`) | In Progress | Yes |
 | Claim Citations | Claim-level citation objects + coverage summary | `POST /api/research` response fields | Implemented | Yes |
+| Claim Disagreement Engine | Adversarial claim verification (`supported/contradicted/insufficient_evidence`) with risk scoring | `POST /api/research` (`claim_verdicts`, `claim_verdict_summary`) | Implemented | Yes |
 | Citation Integrity | Claim + section coverage checks with pass/fail flags | `POST /api/research` (`citation_integrity`) | Implemented | Yes |
 | Hallucination Guardrail | Removes uncited factual sentences from synthesized reports | Research agent synthesis output | Implemented | Yes |
 | Section Confidence | Section-level confidence/trust metadata | `POST /api/research` (`section_confidence`) | Implemented | Yes |
@@ -29,7 +30,7 @@
 | Endpoint | Purpose | Key Outputs | Notes |
 |---|---|---|---|
 | `POST /api/chat` | Conversational groundwater Q&A | `response`, `sources`, `mode` | Fallback mode available when LLM unavailable |
-| `POST /api/research` | Multi-step research response | `report`, `insights`, `sources`, `claim_citations`, `citation_summary`, `section_confidence`, `citation_integrity`, `hallucination_guardrail` | Includes deterministic Estero fallback + citation integrity checks |
+| `POST /api/research` | Multi-step research response | `report`, `insights`, `sources`, `claim_citations`, `claim_verdicts`, `claim_verdict_summary`, `citation_summary`, `section_confidence`, `citation_integrity`, `hallucination_guardrail` | Includes deterministic Estero fallback + citation integrity checks |
 | `GET /api/chat/status` | Runtime and feature status | `agent_available`, `research_available`, `degraded_reasons`, `runtime_checks` | Useful for readiness + error diagnostics |
 | `GET /api/knowledge/status` | KB runtime readiness | dependency/storage readiness | Returns degraded states explicitly |
 | `POST /api/research/plans` | Create experiment plan | `plan`, `summary`, storage path | Start of research workflow |
@@ -46,6 +47,7 @@
 | CI integration | `.github/workflows/ci.yml` (`chat-evaluation`) | Active with optional live/retrieval enforcement flags |
 | Claim citation coverage | `citation_summary.citation_coverage` | Computed per response |
 | Section citation coverage | `citation_integrity.section_citation_coverage` | Computed per response |
+| Claim verdict coverage | Benchmark summary (`average_claim_verdict_coverage`) | Machine-checked via benchmark thresholds |
 
 ## Known Constraints
 

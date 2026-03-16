@@ -344,6 +344,50 @@ class TestResearchSectionConfidence:
         assert len(section_data["sections"]) == 2
 
 
+class TestClaimVerdicts:
+    """Test claim-level disagreement verdict generation in research outputs."""
+
+    @patch("src.agent.research_agent.get_llm")
+    def test_research_returns_claim_verdicts(self, mock_get_llm, monkeypatch):
+        """Research result should include claim_verdicts aligned with claim_citations."""
+        mock_get_llm.return_value = _mock_llm()
+        agent = DeepResearchAgent(use_web_search=False, auto_learn=False)
+
+        def _fake_graph(context):
+            context.insights.append(
+                ResearchInsight(
+                    content="USGS site 262724081260701 shows a declining groundwater trend.",
+                    source_url="https://waterdata.usgs.gov/monitoring-location/262724081260701",
+                    confidence=0.85,
+                    verified=True,
+                    trust_level="verified",
+                )
+            )
+            context.current_depth = 1
+
+        monkeypatch.setattr(agent, "_research_graph", _fake_graph)
+        monkeypatch.setattr(
+            agent,
+            "_synthesize_report",
+            lambda _context, _claims: (
+                "USGS site 262724081260701 shows a declining groundwater trend [claim_001]."
+            ),
+        )
+
+        result = agent.research("Test research question", max_depth=1, timeout=30)
+        assert "claim_citations" in result
+        assert "claim_verdicts" in result
+        assert "claim_verdict_summary" in result
+        assert len(result["claim_verdicts"]) == len(result["claim_citations"])
+        assert result["claim_verdicts"][0]["verdict"] in (
+            "supported",
+            "contradicted",
+            "insufficient_evidence",
+        )
+        summary = result["claim_verdict_summary"]
+        assert summary["total_claims"] == len(result["claim_verdicts"])
+
+
 class TestHallucinationGuardrail:
     """Test uncited factual claim filtering in synthesized reports."""
 

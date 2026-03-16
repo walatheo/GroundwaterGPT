@@ -34,6 +34,9 @@ def test_case_scoring_full_pass():
             "has_report",
             "has_sources",
             "has_claim_citations",
+            "has_claim_verdicts",
+            "has_claim_verdict_summary",
+            "claim_verdict_coverage_ok",
             "has_date_reference",
             "has_trend_language",
             "has_aquifer_language",
@@ -60,6 +63,35 @@ def test_case_scoring_full_pass():
                 ],
             }
         ],
+        "claim_verdicts": [
+            {
+                "claim_id": "claim_001",
+                "claim": "Long-term decline observed",
+                "verdict": "supported",
+                "risk_score": 0.21,
+                "confidence": 0.9,
+                "evidence_for": [
+                    {
+                        "url": "https://waterdata.usgs.gov/monitoring-location/262724081260701",
+                        "verified": True,
+                        "trust_level": "verified",
+                    }
+                ],
+                "counter_evidence": [],
+                "rationale": (
+                    "Cited evidence is present and no internal counter-claim was detected."
+                ),
+            }
+        ],
+        "claim_verdict_summary": {
+            "total_claims": 1,
+            "supported_claims": 1,
+            "contradicted_claims": 0,
+            "insufficient_evidence_claims": 0,
+            "contradicted_claim_rate": 0.0,
+            "high_risk_claim_ids": [],
+            "high_risk_claim_rate": 0.0,
+        },
         "citation_summary": {
             "total_claims": 1,
             "cited_claims": 1,
@@ -71,6 +103,9 @@ def test_case_scoring_full_pass():
     assert result["score"] == 1.0
     assert result["failed_checks"] == []
     assert result["citation_coverage"] == 1.0
+    assert result["checks"]["has_claim_verdicts"] is True
+    assert result["checks"]["has_claim_verdict_summary"] is True
+    assert result["claim_verdict_coverage"] == 1.0
 
 
 def test_threshold_evaluation_failure_reasons():
@@ -82,6 +117,9 @@ def test_threshold_evaluation_failure_reasons():
             "citation_coverage": 0.5,
             "claim_citation_coverage": 0.5,
             "section_citation_coverage": 0.5,
+            "claim_verdict_coverage": 0.4,
+            "contradicted_claim_rate": 0.7,
+            "high_risk_claim_rate": 0.8,
             "elapsed_seconds": 4.1,
             "mode": "fallback",
         },
@@ -91,6 +129,9 @@ def test_threshold_evaluation_failure_reasons():
             "citation_coverage": 0.4,
             "claim_citation_coverage": 0.4,
             "section_citation_coverage": 0.4,
+            "claim_verdict_coverage": 0.3,
+            "contradicted_claim_rate": 0.6,
+            "high_risk_claim_rate": 0.75,
             "elapsed_seconds": 5.2,
             "mode": "fallback",
         },
@@ -100,6 +141,9 @@ def test_threshold_evaluation_failure_reasons():
         "min_case_score": 0.80,
         "min_avg_claim_citation_coverage": 0.90,
         "min_avg_section_citation_coverage": 0.90,
+        "min_avg_claim_verdict_coverage": 0.90,
+        "max_avg_contradicted_claim_rate": 0.50,
+        "max_avg_high_risk_claim_rate": 0.60,
         "require_live_mode": True,
         "max_response_seconds": 3.0,
     }
@@ -112,6 +156,9 @@ def test_threshold_evaluation_failure_reasons():
     assert any(
         "average_section_citation_coverage" in reason for reason in summary["failed_reasons"]
     )
+    assert any("average_claim_verdict_coverage" in reason for reason in summary["failed_reasons"])
+    assert any("average_contradicted_claim_rate" in reason for reason in summary["failed_reasons"])
+    assert any("average_high_risk_claim_rate" in reason for reason in summary["failed_reasons"])
     assert any("live_mode_required" in reason for reason in summary["failed_reasons"])
     assert any("max_elapsed" in reason for reason in summary["failed_reasons"])
 

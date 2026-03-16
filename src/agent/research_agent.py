@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable
 
+from ..claim_disagreement import ClaimDisagreementEngine, summarize_claim_verdicts
 from .knowledge import add_document, search_knowledge
 from .llm_factory import get_llm
 from .source_verification import SourceVerification, verify_source
@@ -233,6 +234,7 @@ class DeepResearchAgent:
         self.auto_learn = auto_learn
         self.min_confidence_for_learning = min_confidence_for_learning
         self.timeout_seconds = timeout_seconds
+        self.claim_disagreement_engine = ClaimDisagreementEngine()
 
         # Active research context (for stop control)
         self._active_context: ResearchContext | None = None
@@ -342,6 +344,8 @@ class DeepResearchAgent:
             # Check if we were stopped
             claim_citations, citation_summary = self._build_claim_citations(context.insights)
             section_confidence = self._build_section_confidence(context.insights)
+            claim_verdicts = self.claim_disagreement_engine.evaluate_claims(claim_citations)
+            claim_verdict_summary = summarize_claim_verdicts(claim_verdicts)
 
             if context.stop_requested:
                 context.update_progress("Research stopped by user")
@@ -384,6 +388,8 @@ class DeepResearchAgent:
                 "stopped": context.stop_requested,
                 "timed_out": context.is_timed_out(),
                 "claim_citations": claim_citations,
+                "claim_verdicts": claim_verdicts,
+                "claim_verdict_summary": claim_verdict_summary,
                 "citation_summary": citation_summary,
                 "section_confidence": section_confidence,
                 "hallucination_guardrail": {

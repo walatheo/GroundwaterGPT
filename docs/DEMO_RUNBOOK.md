@@ -49,6 +49,8 @@ curl -s http://127.0.0.1:8000/api/research \
 Expected highlights:
 - `report`
 - `claim_citations[]`
+- `claim_verdicts[]` (`supported|contradicted|insufficient_evidence`)
+- `claim_verdict_summary` (counts + contradiction/high-risk rates)
 - `citation_summary.citation_coverage`
 - `sources` includes USGS monitoring-location URLs
 

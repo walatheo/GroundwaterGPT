@@ -1,8 +1,8 @@
 # GroundwaterGPT - Active Checklist & Goals
 
-**Last Updated:** March 8, 2026
+**Last Updated:** March 16, 2026
 **Current Phase:** Phase 5 - AI Research Integration
-**Sprint:** Mar 8 - Mar 15, 2026
+**Sprint:** Mar 16 - Mar 23, 2026 (Sprint 5 — Multi-Agent Research Architecture)
 
 ---
 
@@ -66,13 +66,27 @@
 - [x] Add claim-level citation schema for deep research reports
 - [x] Define quality thresholds for factual accuracy and citation completeness
 
-### Priority 4: Live-Agent Quality Gating (Current)
+### Priority 4: Live-Agent Quality Gating (COMPLETE ✅)
 - [x] Add `fallback/live/both` benchmark execution modes
 - [x] Add optional CI live-mode enforcement gate (`ENFORCE_LIVE_CHAT_THRESHOLDS`)
 - [x] Add section-level confidence/trust metadata in research responses
 - [x] Add API citation integrity checks (claim + section coverage)
 - [x] Add hallucination guardrail for uncited factual sentences
 - [x] Add retrieval precision benchmark tooling + optional CI gate (`ENFORCE_RETRIEVAL_PRECISION`)
+- [x] Add claim disagreement verdicts (`claim_verdicts`) with contradiction/risk metadata
+- [x] Add claim-verdict quality gates (`min_avg_claim_verdict_coverage`, risk-rate thresholds)
+- [x] Wire `ClaimDisagreementEngine` into `DeepResearchAgent` and fallback API route
+- [x] Fix sys.path import hacks in `api/routes/chat.py` (canonical `src.*` imports)
+- [x] Update `llm_factory.py` Anthropic model IDs to current Claude 4.x generation
+
+### Priority 5: Multi-Agent Research Architecture (Sprint 5 — CURRENT)
+- [ ] Design orchestrator-worker protocol (`LeadResearcher` dispatches to `SubAgent`s)
+- [ ] Implement `SubAgent` worker with typed task interface (search / summarize / verify)
+- [ ] Add planner/reflection/checkpoint loop for long-running research sessions
+- [ ] Add budget-aware controls (max_depth, max_tokens, timeout) per research plan
+- [ ] Add contradiction-aware synthesis: surface disagreements explicitly in final reports
+- [ ] Expose `claim_verdict_summary` in frontend research results view
+- [ ] Validate multi-agent output with extended benchmark suite (L2 questions)
 
 ---
 
@@ -140,7 +154,7 @@ Phase 1: ████████████ 100% ✅ Foundation
 Phase 2: ████████████ 100% ✅ Quality
 Phase 3: ████████████ 100% ✅ Data Expansion
 Phase 4: ████████████ 100% ✅ Dashboard
-Phase 5: ██░░░░░░░░░░  15% 🔄 AI Research
+Phase 5: ████████░░░░  65% 🔄 AI Research (Sprint 5 active)
 Phase 6: ░░░░░░░░░░░░   0% ⏳ Multi-Horizon ML
 Phase 7: ░░░░░░░░░░░░   0% ⏳ Production
 ```

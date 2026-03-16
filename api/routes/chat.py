@@ -8,7 +8,6 @@ Endpoints:
 
 import logging
 import os
-import sys
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +17,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 
 from api.site_metadata import SITE_METADATA
+from src.claim_disagreement import clamp_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,18 @@ RANK_TO_TRUST_LEVEL = {
     2: "trusted",
     3: "verified",
 }
+
+_claim_disagreement_engine = None
+_summarize_claim_verdicts_fn = None
+try:
+    from src.claim_disagreement import ClaimDisagreementEngine, summarize_claim_verdicts
+
+    _claim_disagreement_engine = ClaimDisagreementEngine()
+    _summarize_claim_verdicts_fn = summarize_claim_verdicts
+except Exception as exc:
+    logger.warning("Claim disagreement engine unavailable, using conservative fallback: %s", exc)
+    _claim_disagreement_engine = None
+    _summarize_claim_verdicts_fn = None
 
 
 # ---------------------------------------------------------------------------
@@ -165,15 +177,6 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _clamp_confidence(value: Any) -> float:
-    """Convert confidence to a bounded float in [0.0, 1.0]."""
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
-        numeric = 0.0
-    return round(max(0.0, min(1.0, numeric)), 3)
-
-
 def _highest_trust_level(citations: list[dict[str, Any]]) -> str:
     """Select the highest trust level present in claim citations."""
     best_rank = 0
@@ -194,7 +197,7 @@ def _build_section_confidence_from_claims(claim_citations: list[dict[str, Any]])
         citations = citations_raw if isinstance(citations_raw, list) else []
         trust_level = _highest_trust_level(citations)
         trust_rank = TRUST_LEVEL_RANK.get(trust_level, 0)
-        confidence = _clamp_confidence(claim.get("confidence", 0.0))
+        confidence = clamp_confidence(claim.get("confidence", 0.0))
         title = str(claim.get("claim", "")).strip()[:120] or f"Claim section {index}"
 
         ranks.append(trust_rank)
@@ -383,6 +386,65 @@ def _build_citation_integrity(
     }
 
 
+def _build_claim_verdicts(claim_citations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return claim verdicts from disagreement engine or conservative fallback."""
+    if _claim_disagreement_engine is not None:
+        return _claim_disagreement_engine.evaluate_claims(claim_citations)
+
+    verdicts: list[dict[str, Any]] = []
+    for claim in claim_citations:
+        claim_id = str(claim.get("claim_id", "claim_unknown"))
+        claim_text = str(claim.get("claim", "")).strip()
+        citations_raw = claim.get("citations", [])
+        citations = citations_raw if isinstance(citations_raw, list) else []
+        confidence = clamp_confidence(claim.get("confidence", 0.0))
+        has_citations = bool(citations)
+        verdicts.append(
+            {
+                "claim_id": claim_id,
+                "claim": claim_text,
+                "verdict": "supported" if has_citations else "insufficient_evidence",
+                "risk_score": 0.3 if has_citations else 0.85,
+                "confidence": confidence,
+                "evidence_for": citations[:3],
+                "counter_evidence": [],
+                "rationale": (
+                    "Fallback verdict: citations present."
+                    if has_citations
+                    else "Fallback verdict: claim lacks citations."
+                ),
+            }
+        )
+    return verdicts
+
+
+def _build_claim_verdict_summary(claim_verdicts: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate claim verdict counts/rates for response-level quality signals."""
+    if _summarize_claim_verdicts_fn is not None:
+        return _summarize_claim_verdicts_fn(claim_verdicts)
+
+    total = len(claim_verdicts)
+    supported = sum(1 for item in claim_verdicts if item.get("verdict") == "supported")
+    contradicted = sum(1 for item in claim_verdicts if item.get("verdict") == "contradicted")
+    insufficient = sum(
+        1 for item in claim_verdicts if item.get("verdict") == "insufficient_evidence"
+    )
+    high_risk_claim_ids = [
+        str(item.get("claim_id", ""))
+        for item in claim_verdicts
+        if float(item.get("risk_score", 0.0) or 0.0) >= 0.75 and item.get("claim_id")
+    ]
+    return {
+        "total_claims": total,
+        "supported_claims": supported,
+        "contradicted_claims": contradicted,
+        "insufficient_evidence_claims": insufficient,
+        "contradicted_claim_rate": round(float(contradicted / total), 3) if total else 0.0,
+        "high_risk_claim_ids": high_risk_claim_ids,
+        "high_risk_claim_rate": round(float(len(high_risk_claim_ids) / total), 3) if total else 0.0,
+    }
+
+
 def _estero_research_fallback(question: str) -> dict:
     """Generate a deterministic, cited response for Estero benchmark questions."""
     sites = _best_estero_sites(max_sites=2)
@@ -399,11 +461,14 @@ def _estero_research_fallback(question: str) -> dict:
                 ],
             }
         ]
+        claim_verdicts = _build_claim_verdicts(claim_citations)
         return {
             "report": fallback["response"],
             "insights": [],
             "sources": fallback["sources"],
             "claim_citations": claim_citations,
+            "claim_verdicts": claim_verdicts,
+            "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),
             "citation_summary": _build_citation_summary(claim_citations),
             "section_confidence": _build_section_confidence_from_claims(claim_citations),
             "hallucination_guardrail": {
@@ -522,11 +587,14 @@ def _estero_research_fallback(question: str) -> dict:
     )
 
     sources = source_urls + ["GroundwaterGPT KB: estero_supply_context"]
+    claim_verdicts = _build_claim_verdicts(claim_citations)
     return {
         "report": report,
         "insights": insights,
         "sources": sources,
         "claim_citations": claim_citations,
+        "claim_verdicts": claim_verdicts,
+        "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),
         "citation_summary": _build_citation_summary(claim_citations),
         "section_confidence": _build_section_confidence_from_claims(claim_citations),
         "hallucination_guardrail": {
@@ -592,12 +660,8 @@ if skip_agent_init:
     logger.info("Skipping LLM-backed agent initialization (GROUNDWATERGPT_SKIP_AGENT_INIT set)")
 else:
     try:
-        _src_dir = str(Path(__file__).parent.parent.parent / "src")
-        if _src_dir not in sys.path:
-            sys.path.insert(0, _src_dir)
-
-        from src.agent.groundwater_agent import create_agent as _create_chat_agent  # noqa: E402
-        from src.agent.research_agent import DeepResearchAgent  # noqa: E402
+        from src.agent.groundwater_agent import create_agent as _create_chat_agent
+        from src.agent.research_agent import DeepResearchAgent
 
         try:
             _chat_agent = _create_chat_agent(verbose=False)
@@ -705,7 +769,18 @@ def research_endpoint(query: dict):
                 timeout=timeout,
             )
             _clear_runtime_error("research")
+            report = result.get("report", "")
+            # If the agent produced no meaningful output, fall through to the
+            # deterministic fallback so keyword-routed queries (e.g. Estero)
+            # still return reproducible, citation-complete responses.
+            if not report or "No insights were gathered" in report:
+                raise ValueError("Research agent returned no meaningful insights")
             claim_citations = result.get("claim_citations", [])
+            claim_verdicts = result.get("claim_verdicts", _build_claim_verdicts(claim_citations))
+            claim_verdict_summary = result.get(
+                "claim_verdict_summary",
+                _build_claim_verdict_summary(claim_verdicts),
+            )
             citation_summary = result.get(
                 "citation_summary",
                 {"total_claims": 0, "cited_claims": 0, "citation_coverage": 0.0},
@@ -718,13 +793,15 @@ def research_endpoint(query: dict):
             return {
                 "status": "ok",
                 "mode": "deep_research",
-                "report": result.get("report", ""),
+                "report": report,
                 "insights": result.get("insights", []),
                 "sources": result.get("sources", []),
                 "search_history": result.get("search_history", []),
                 "depth_reached": result.get("depth_reached", 0),
                 "elapsed_seconds": result.get("elapsed_seconds", 0),
                 "claim_citations": claim_citations,
+                "claim_verdicts": claim_verdicts,
+                "claim_verdict_summary": claim_verdict_summary,
                 "citation_summary": citation_summary,
                 "section_confidence": section_confidence,
                 "hallucination_guardrail": result.get(
@@ -750,6 +827,10 @@ def research_endpoint(query: dict):
     question_lower = question.lower()
     if "estero" in question_lower:
         estero = _estero_research_fallback(question)
+        estero_claim_verdicts = estero.get(
+            "claim_verdicts",
+            _build_claim_verdicts(estero["claim_citations"]),
+        )
         return {
             "status": "ok",
             "mode": "fallback",
@@ -760,6 +841,11 @@ def research_endpoint(query: dict):
             "depth_reached": estero["depth_reached"],
             "elapsed_seconds": estero["elapsed_seconds"],
             "claim_citations": estero["claim_citations"],
+            "claim_verdicts": estero_claim_verdicts,
+            "claim_verdict_summary": estero.get(
+                "claim_verdict_summary",
+                _build_claim_verdict_summary(estero_claim_verdicts),
+            ),
             "citation_summary": estero["citation_summary"],
             "section_confidence": estero.get("section_confidence", {}),
             "hallucination_guardrail": estero.get(
@@ -788,6 +874,8 @@ def research_endpoint(query: dict):
         }
     ]
     summary = _build_citation_summary(fallback_claims)
+    claim_verdicts = _build_claim_verdicts(fallback_claims)
+    claim_verdict_summary = _build_claim_verdict_summary(claim_verdicts)
     section_confidence = _build_section_confidence_from_claims(fallback_claims)
     citation_integrity = _build_citation_integrity(fallback_claims, section_confidence)
     return {
@@ -800,6 +888,8 @@ def research_endpoint(query: dict):
         "depth_reached": 0,
         "elapsed_seconds": 0,
         "claim_citations": fallback_claims,
+        "claim_verdicts": claim_verdicts,
+        "claim_verdict_summary": claim_verdict_summary,
         "citation_summary": summary,
         "section_confidence": section_confidence,
         "hallucination_guardrail": {

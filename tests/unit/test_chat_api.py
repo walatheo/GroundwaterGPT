@@ -241,11 +241,15 @@ class TestResearchEndpoint:
         assert "depth_reached" in body
         assert "elapsed_seconds" in body
         assert "claim_citations" in body
+        assert "claim_verdicts" in body
+        assert "claim_verdict_summary" in body
         assert "citation_summary" in body
         assert "section_confidence" in body
         assert "hallucination_guardrail" in body
         assert "citation_integrity" in body
         assert isinstance(body["claim_citations"], list)
+        assert isinstance(body["claim_verdicts"], list)
+        assert isinstance(body["claim_verdict_summary"], dict)
         assert isinstance(body["citation_summary"], dict)
         assert isinstance(body["section_confidence"], dict)
         assert isinstance(body["hallucination_guardrail"], dict)
@@ -270,6 +274,22 @@ class TestResearchEndpoint:
         assert "total_claims" in summary
         assert "cited_claims" in summary
         assert "citation_coverage" in summary
+        verdicts = body.get("claim_verdicts", [])
+        if verdicts:
+            first_verdict = verdicts[0]
+            assert "claim_id" in first_verdict
+            assert "verdict" in first_verdict
+            assert "risk_score" in first_verdict
+            assert first_verdict["verdict"] in (
+                "supported",
+                "contradicted",
+                "insufficient_evidence",
+            )
+        verdict_summary = body.get("claim_verdict_summary", {})
+        assert "total_claims" in verdict_summary
+        assert "supported_claims" in verdict_summary
+        assert "contradicted_claims" in verdict_summary
+        assert "high_risk_claim_rate" in verdict_summary
         integrity = body.get("citation_integrity", {})
         assert "claim_citation_coverage" in integrity
         assert "section_citation_coverage" in integrity

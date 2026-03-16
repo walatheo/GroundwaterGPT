@@ -1,6 +1,6 @@
 # GroundwaterGPT - Project Status & Roadmap
 
-**Last Updated:** March 8, 2026
+**Last Updated:** March 16, 2026
 **Location:** Florida (Miami-Dade, Lee, Collier, Sarasota, Hendry Counties)
 **Data Source:** USGS National Water Information System (NWIS) - Verified Authentic
 
@@ -200,18 +200,28 @@
 - [x] Set minimum quality thresholds before production rollout
 - [x] Expand benchmark question corpus to 30+ deterministic research cases
 
-### Sprint 4: Live-Agent Quality Gating
+### Sprint 4: Live-Agent Quality Gating ✅ COMPLETE
 - [x] Add `fallback/live/both` benchmark execution modes
 - [x] Add optional live-mode CI gate (`ENFORCE_LIVE_CHAT_THRESHOLDS`)
 - [x] Add section-level confidence + trust metadata in research output
 - [x] Add citation integrity checks (claim + section coverage) in API responses
 - [x] Add guardrail filtering for uncited factual sentences in synthesized reports
 - [x] Add retrieval precision benchmark + optional CI enforcement
+- [x] Add claim disagreement engine (`claim_verdicts`) with adversarial contradiction checks
+- [x] Add claim-verdict summary metadata and benchmark coverage/risk thresholds
+- [x] Wire `ClaimDisagreementEngine` into `DeepResearchAgent` output
+- [x] Wire claim verdicts + summary into fallback API route
+- [x] Fix sys.path import hacks → canonical `src.*` imports in API layer
+- [x] Update Anthropic model IDs to Claude 4.x generation in `llm_factory.py`
 
-### Sprint 5: Multi-Agent Research Architecture
-- [ ] Implement orchestrator-worker model (`LeadResearcher` + `SubAgent`s)
+### Sprint 5: Multi-Agent Research Architecture (CURRENT — Mar 16–23, 2026)
+- [ ] Design orchestrator-worker protocol: `LeadResearcher` dispatches typed tasks to `SubAgent`s
+- [ ] Implement `SubAgent` with task types: search / summarize / verify
 - [ ] Add planner/reflection/checkpoint loop for long-running research
-- [ ] Add budget-aware controls for complex multi-hop queries
+- [ ] Add budget-aware controls (max_depth, max_tokens, timeout) per research plan
+- [ ] Add contradiction-aware synthesis — surface disagreements explicitly in final reports
+- [ ] Expose `claim_verdict_summary` in frontend research view
+- [ ] Validate multi-agent output using L2 benchmark questions
 
 ### Sprint 6: Production Deployment
 - [ ] Cloud deployment + observability + alerts
@@ -236,6 +246,7 @@
 ## 📚 Documentation
 
 - [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) - Coding standards, architecture
+- [DELIVERABLE_PLAN.md](DELIVERABLE_PLAN.md) - Depth-first deliverable scope + acceptance criteria
 - [PROJECT_PLAN.md](PROJECT_PLAN.md) - Timeline & milestones
 - [ROLES.md](ROLES.md) - Team responsibilities
 - [CHECKLIST.md](CHECKLIST.md) - Review checklist

@@ -20,6 +20,9 @@ ENV/
 *.swp
 *.swo
 
+# Vite build cache
+.vite/
+
 # Data files (too large for git, regenerate with download_data.py)
 data/*.csv
 
