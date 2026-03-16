@@ -56,7 +56,8 @@ class TestFeatureCreation:
 
     def test_lag_features_shifted_correctly(self, sample_groundwater_data):
         """Lag features should be properly shifted."""
-        from train_groundwater import FORECAST_HORIZON, LAG_DAYS, create_features
+        from train_groundwater import (FORECAST_HORIZON, LAG_DAYS,
+                                       create_features)
 
         result = create_features(sample_groundwater_data)
         original = sample_groundwater_data.copy()

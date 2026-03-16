@@ -13,16 +13,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum
-from typing import List, Dict, Optional, Tuple, Callable
 from datetime import datetime
+from enum import Enum
+from typing import Callable, Dict, List, Optional, Tuple
 
-from .research_optimizer import (
-    RankedSearchResult,
-    SearchBudget,
-    PriorityRanker,
-)
 from .llm_factory import get_llm
+from .research_optimizer import (PriorityRanker, RankedSearchResult,
+                                 SearchBudget)
 
 logger = logging.getLogger(__name__)
 

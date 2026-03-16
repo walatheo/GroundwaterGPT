@@ -3,17 +3,14 @@
 Tests search prioritization, multi-source searching, and budget management.
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
-from src.agent.priority_search_engine import (
-    QueryPrioritizer,
-    MultiSourceSearchEngine,
-    SearchPipeline,
-    SearchQuery,
-    SearchResult,
-    SearchSourceType,
-)
+import pytest
+
+from src.agent.priority_search_engine import (MultiSourceSearchEngine,
+                                              QueryPrioritizer, SearchPipeline,
+                                              SearchQuery, SearchResult,
+                                              SearchSourceType)
 from src.agent.research_optimizer import SearchBudget
 
 

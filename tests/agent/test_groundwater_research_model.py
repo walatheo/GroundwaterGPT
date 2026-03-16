@@ -3,19 +3,18 @@
 Tests domain-specific groundwater knowledge and validation.
 """
 
-import pytest
 from datetime import datetime, timedelta
-import pandas as pd
-import numpy as np
 
-from src.agent.groundwater_research_model import (
-    GroundwaterResearchModel,
-    DomainQueryExpander,
-    AquiferType,
-    AquiferProperties,
-    get_groundwater_model,
-    expand_groundwater_query,
-)
+import numpy as np
+import pandas as pd
+import pytest
+
+from src.agent.groundwater_research_model import (AquiferProperties,
+                                                  AquiferType,
+                                                  DomainQueryExpander,
+                                                  GroundwaterResearchModel,
+                                                  expand_groundwater_query,
+                                                  get_groundwater_model)
 
 
 class TestAquiferProperties:

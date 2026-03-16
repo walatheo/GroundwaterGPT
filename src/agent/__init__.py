@@ -15,17 +15,11 @@ Source Priority:
 from .groundwater_agent import GroundwaterAgent
 from .llm_factory import LLMProvider, get_llm
 from .research_agent import DeepResearchAgent, deep_research
-from .source_verification import (
-    SourceCategory,
-    TrustLevel,
-    filter_by_category,
-    get_high_value_sources,
-    is_source_approved,
-    prioritize_sources,
-    verify_document,
-    verify_source,
-    verify_usgs_data,
-)
+from .source_verification import (SourceCategory, TrustLevel,
+                                  filter_by_category, get_high_value_sources,
+                                  is_source_approved, prioritize_sources,
+                                  verify_document, verify_source,
+                                  verify_usgs_data)
 
 __all__ = [
     "GroundwaterAgent",

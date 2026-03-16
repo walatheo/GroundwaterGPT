@@ -16,22 +16,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .llm_factory import get_llm
 from .research_agent import DeepResearchAgent
-from .research_optimizer import (
-    ResearchPlanner,
-    PriorityRanker,
-    SelfReflectionEvaluator,
-    StructuredReportBuilder,
-    ResearchSessionPersistence,
-    SearchBudget,
-    ResearchPlan,
-)
+from .research_optimizer import (PriorityRanker, ResearchPlan, ResearchPlanner,
+                                 ResearchSessionPersistence, SearchBudget,
+                                 SelfReflectionEvaluator,
+                                 StructuredReportBuilder)
 from .source_verification import verify_source
 
 logger = logging.getLogger(__name__)

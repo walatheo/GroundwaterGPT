@@ -15,7 +15,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 def _load_benchmark_defaults() -> tuple[Path, Path]:
     """Load default benchmark config paths lazily after path bootstrapping."""
-    from src.evaluation.chat_benchmark import DEFAULT_CASES_PATH, DEFAULT_THRESHOLDS_PATH
+    from src.evaluation.chat_benchmark import (DEFAULT_CASES_PATH,
+                                               DEFAULT_THRESHOLDS_PATH)
 
     return DEFAULT_CASES_PATH, DEFAULT_THRESHOLDS_PATH
 

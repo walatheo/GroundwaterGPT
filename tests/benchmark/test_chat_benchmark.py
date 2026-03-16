@@ -3,7 +3,8 @@
 import json
 from pathlib import Path
 
-from src.evaluation.chat_benchmark import evaluate_case_response, evaluate_thresholds
+from src.evaluation.chat_benchmark import (evaluate_case_response,
+                                           evaluate_thresholds)
 
 
 def test_benchmark_case_set_has_30_plus_cases():

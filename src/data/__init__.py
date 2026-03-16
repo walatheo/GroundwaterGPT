@@ -8,6 +8,7 @@ Canonical entry points:
 
 from .pipeline import run_pipeline
 
+
 # Lazy imports for heavy dependencies
 def __getattr__(name):
     if name == "fetch_usgs_groundwater":
