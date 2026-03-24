@@ -250,7 +250,9 @@ class DeepResearchAgent:
                     self._ddg_available = True
                     self._ddg = DDGS()
                 except ImportError:
-                    logger.warning("ddgs not installed. " "Install with: pip install ddgs")
+                    logger.warning(
+                        "ddgs not installed. " "Install with: pip install ddgs"
+                    )
 
     def stop(self) -> bool:
         """Stop the currently running research.
@@ -268,7 +270,10 @@ class DeepResearchAgent:
     def is_running(self) -> bool:
         """Check if research is currently running."""
         with self._research_lock:
-            return self._active_context is not None and not self._active_context.is_stopped()
+            return (
+                self._active_context is not None
+                and not self._active_context.is_stopped()
+            )
 
     def get_status(self) -> dict[str, Any]:
         """Get current research status."""
@@ -352,7 +357,9 @@ class DeepResearchAgent:
 
             context.update_progress("Complete")
             context.status = "complete"
-            claim_citations, citation_summary = self._build_claim_citations(context.insights)
+            claim_citations, citation_summary = self._build_claim_citations(
+                context.insights
+            )
 
             return {
                 "query": query,
@@ -388,7 +395,10 @@ class DeepResearchAgent:
 
         for insight in context.insights:
             # Only save high-confidence verified insights
-            if insight.verified and insight.confidence >= self.min_confidence_for_learning:
+            if (
+                insight.verified
+                and insight.confidence >= self.min_confidence_for_learning
+            ):
 
                 # Format content for knowledge base
                 content = f"""Research Insight: {insight.content}
@@ -424,11 +434,15 @@ Date: {insight.timestamp.isoformat()}
                     logger.error(f"Failed to save learning: {e}")
 
         if learned > 0:
-            logger.info(f"✅ Added {learned} insights to knowledge base (auto-learning)")
+            logger.info(
+                f"✅ Added {learned} insights to knowledge base (auto-learning)"
+            )
 
         return learned
 
-    async def research_async(self, query: str, max_depth: int | None = None) -> dict[str, Any]:
+    async def research_async(
+        self, query: str, max_depth: int | None = None
+    ) -> dict[str, Any]:
         """Async version of research."""
         return await asyncio.to_thread(self.research, query, max_depth)
 
@@ -467,7 +481,9 @@ Date: {insight.timestamp.isoformat()}
 
             # Step 1: Optimize query based on current context
             if context.current_depth > 1:
-                context.update_progress(f"Optimizing query (depth {context.current_depth})...")
+                context.update_progress(
+                    f"Optimizing query (depth {context.current_depth})..."
+                )
                 context.current_query = self._generate_optimized_query(context)
                 if context.is_stopped():
                     break
@@ -485,7 +501,9 @@ Date: {insight.timestamp.isoformat()}
                 break
 
             # Step 3: Extract insights from results
-            context.update_progress(f"Extracting insights from {len(results)} results...")
+            context.update_progress(
+                f"Extracting insights from {len(results)} results..."
+            )
             new_insights = self._extract_insights(results, context)
             if context.is_stopped():
                 break
@@ -576,7 +594,9 @@ Return ONLY the search query, nothing else."""
             # Add groundwater context to query
             enhanced_query = f"groundwater hydrogeology {query}"
 
-            search_results = self._ddg.text(enhanced_query, max_results=self.max_results_per_search)
+            search_results = self._ddg.text(
+                enhanced_query, max_results=self.max_results_per_search
+            )
 
             for result in search_results:
                 url = result.get("href", "")
@@ -595,7 +615,9 @@ Return ONLY the search query, nothing else."""
                                 verification=verification,
                             )
                         )
-                        logger.info(f"✓ Verified source: {url} ({verification.trust_level.value})")
+                        logger.info(
+                            f"✓ Verified source: {url} ({verification.trust_level.value})"
+                        )
                     else:
                         context.rejected_urls.add(url)
                         logger.warning(
@@ -614,7 +636,9 @@ Return ONLY the search query, nothing else."""
         Only processes results that passed source verification.
         """
         # Filter to only verified results
-        verified_results = [r for r in results if r.is_verified or r.source == "knowledge_base"]
+        verified_results = [
+            r for r in results if r.is_verified or r.source == "knowledge_base"
+        ]
 
         if not verified_results:
             logger.warning("No verified sources to extract insights from")
@@ -689,7 +713,9 @@ Extract up to 3 insights. Only include genuinely useful information."""
 
         return insights
 
-    def _create_insight(self, data: dict, results: list[SearchResult]) -> ResearchInsight:
+    def _create_insight(
+        self, data: dict, results: list[SearchResult]
+    ) -> ResearchInsight:
         """Create a ResearchInsight from parsed data with verification status."""
         source_url = data.get("source", "")
         verification = None
@@ -840,7 +866,9 @@ If the research seems complete, respond with: COMPLETE"""
         insights_text = "\n".join(
             [
                 f"- {i.content} (confidence: {i.confidence:.1f})"
-                for i in sorted(context.insights, key=lambda x: x.confidence, reverse=True)
+                for i in sorted(
+                    context.insights, key=lambda x: x.confidence, reverse=True
+                )
             ]
         )
 

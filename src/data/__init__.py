@@ -8,15 +8,19 @@ Canonical entry points:
 
 from .pipeline import run_pipeline
 
+
 # Lazy imports for heavy dependencies
 def __getattr__(name):
     if name == "fetch_usgs_groundwater":
         from .download_data import fetch_usgs_groundwater
+
         return fetch_usgs_groundwater
     elif name == "ContinuousLearner":
         from .continuous_learning import ContinuousLearner
+
         return ContinuousLearner
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "run_pipeline",

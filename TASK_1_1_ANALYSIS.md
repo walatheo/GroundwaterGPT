@@ -210,7 +210,6 @@ Extend existing tests to verify pipeline output:
 - `api/main.py`: Serves pipeline outputs
 - `src/data/continuous_learning.py`: Adds to KB
 - `src/ml/train_groundwater.py`: Trains models
-- `tests/data/test_usgs_data_integrity.py`: Validates outputs
 
 ### Breaking Changes
 None. Pipeline is additive. Existing code continues working.

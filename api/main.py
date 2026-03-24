@@ -3,10 +3,16 @@
 Thin application factory — all endpoint logic lives in ``api.routes.*``.
 """
 
+# Load .env before any other project imports so API keys are available when
+# the route modules initialise their LLM agents at import time.
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes.chat import GROUNDWATER_KB, _fallback_response, _get_site_context  # noqa: F401
+from api.routes.chat import _fallback_response  # noqa: F401
+from api.routes.chat import GROUNDWATER_KB, _get_site_context
 from api.routes.chat import router as chat_router
 from api.routes.data import router as data_router
 from api.routes.knowledge import router as knowledge_router

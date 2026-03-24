@@ -63,7 +63,11 @@ FLORIDA_AQUIFER_SITES = {
     "floridan_aquifer": {
         "description": "Floridan Aquifer System - Primary drinking water source for most of Florida",
         "sites": [
-            {"site_no": "262724081260701", "name": "Lee County - Fort Myers", "county": "Lee"},
+            {
+                "site_no": "262724081260701",
+                "name": "Lee County - Fort Myers",
+                "county": "Lee",
+            },
             {
                 "site_no": "284110082240001",
                 "name": "Citrus County - Crystal River",
@@ -75,7 +79,11 @@ FLORIDA_AQUIFER_SITES = {
                 "name": "Duval County - Jacksonville",
                 "county": "Duval",
             },
-            {"site_no": "283127082165301", "name": "Hernando County", "county": "Hernando"},
+            {
+                "site_no": "283127082165301",
+                "name": "Hernando County",
+                "county": "Hernando",
+            },
             {
                 "site_no": "294523082353301",
                 "name": "Alachua County - Gainesville",
@@ -87,13 +95,41 @@ FLORIDA_AQUIFER_SITES = {
     "biscayne_aquifer": {
         "description": "Biscayne Aquifer - Supplies water to Miami-Dade and Broward counties",
         "sites": [
-            {"site_no": "251241080385301", "name": "Miami-Dade G-3764", "county": "Miami-Dade"},
-            {"site_no": "251457080395802", "name": "Miami-Dade G-3777", "county": "Miami-Dade"},
-            {"site_no": "251922080340701", "name": "Miami-Dade G-1251", "county": "Miami-Dade"},
-            {"site_no": "252007080335701", "name": "Miami-Dade G-3336", "county": "Miami-Dade"},
-            {"site_no": "252036080293501", "name": "Miami-Dade G-5004", "county": "Miami-Dade"},
-            {"site_no": "260947080102301", "name": "Broward County G-2033", "county": "Broward"},
-            {"site_no": "261029080070901", "name": "Broward County G-2031", "county": "Broward"},
+            {
+                "site_no": "251241080385301",
+                "name": "Miami-Dade G-3764",
+                "county": "Miami-Dade",
+            },
+            {
+                "site_no": "251457080395802",
+                "name": "Miami-Dade G-3777",
+                "county": "Miami-Dade",
+            },
+            {
+                "site_no": "251922080340701",
+                "name": "Miami-Dade G-1251",
+                "county": "Miami-Dade",
+            },
+            {
+                "site_no": "252007080335701",
+                "name": "Miami-Dade G-3336",
+                "county": "Miami-Dade",
+            },
+            {
+                "site_no": "252036080293501",
+                "name": "Miami-Dade G-5004",
+                "county": "Miami-Dade",
+            },
+            {
+                "site_no": "260947080102301",
+                "name": "Broward County G-2033",
+                "county": "Broward",
+            },
+            {
+                "site_no": "261029080070901",
+                "name": "Broward County G-2031",
+                "county": "Broward",
+            },
         ],
     },
     # Surficial Aquifer System
@@ -101,16 +137,32 @@ FLORIDA_AQUIFER_SITES = {
         "description": "Surficial Aquifer System - Shallow aquifer across Florida",
         "sites": [
             {"site_no": "270915080161501", "name": "Martin County", "county": "Martin"},
-            {"site_no": "265532080091401", "name": "Palm Beach County", "county": "Palm Beach"},
+            {
+                "site_no": "265532080091401",
+                "name": "Palm Beach County",
+                "county": "Palm Beach",
+            },
         ],
     },
     # Southwest Florida sites
     "southwest_florida": {
         "description": "Southwest Florida - Coastal aquifer monitoring",
         "sites": [
-            {"site_no": "263156082022801", "name": "Charlotte County", "county": "Charlotte"},
-            {"site_no": "271453082165901", "name": "Sarasota County", "county": "Sarasota"},
-            {"site_no": "273612082240601", "name": "Manatee County", "county": "Manatee"},
+            {
+                "site_no": "263156082022801",
+                "name": "Charlotte County",
+                "county": "Charlotte",
+            },
+            {
+                "site_no": "271453082165901",
+                "name": "Sarasota County",
+                "county": "Sarasota",
+            },
+            {
+                "site_no": "273612082240601",
+                "name": "Manatee County",
+                "county": "Manatee",
+            },
         ],
     },
 }
@@ -316,7 +368,9 @@ Annual Averages:
             logger.info(f"\n📍 {aquifer_info['description']}")
 
             for site in aquifer_info["sites"]:
-                df = self.fetch_usgs_site_data(site["site_no"], site["name"], aquifer_name)
+                df = self.fetch_usgs_site_data(
+                    site["site_no"], site["name"], aquifer_name
+                )
 
                 if df is not None and len(df) > 0:
                     # Save to CSV
@@ -324,7 +378,9 @@ Annual Averages:
                     df.to_csv(csv_path, index=False)
 
                     # Add to knowledge base
-                    docs_added = self.add_usgs_data_to_knowledge_base(df, site, aquifer_name)
+                    docs_added = self.add_usgs_data_to_knowledge_base(
+                        df, site, aquifer_name
+                    )
 
                     self.stats.documents_added += docs_added
                     self.stats.usgs_records_added += len(df)
@@ -405,8 +461,12 @@ Keywords: {', '.join(paper.get('keywords', []))}
         return {
             "knowledge_base": kb_stats,
             "configured_aquifers": len(FLORIDA_AQUIFER_SITES),
-            "configured_sites": sum(len(a["sites"]) for a in FLORIDA_AQUIFER_SITES.values()),
-            "last_update": self.stats.end_time.isoformat() if self.stats.end_time else None,
+            "configured_sites": sum(
+                len(a["sites"]) for a in FLORIDA_AQUIFER_SITES.values()
+            ),
+            "last_update": (
+                self.stats.end_time.isoformat() if self.stats.end_time else None
+            ),
         }
 
 
@@ -447,10 +507,18 @@ def run_continuous_learning(
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Continuous Learning for GroundwaterGPT")
-    parser.add_argument("--usgs", action="store_true", default=True, help="Fetch USGS data")
-    parser.add_argument("--days", type=int, default=3650, help="Days of history to fetch")
-    parser.add_argument("--status", action="store_true", help="Show current learning status")
+    parser = argparse.ArgumentParser(
+        description="Continuous Learning for GroundwaterGPT"
+    )
+    parser.add_argument(
+        "--usgs", action="store_true", default=True, help="Fetch USGS data"
+    )
+    parser.add_argument(
+        "--days", type=int, default=3650, help="Days of history to fetch"
+    )
+    parser.add_argument(
+        "--status", action="store_true", help="Show current learning status"
+    )
 
     args = parser.parse_args()
 

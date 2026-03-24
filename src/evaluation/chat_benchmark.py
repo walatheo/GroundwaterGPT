@@ -14,11 +14,15 @@ from fastapi.testclient import TestClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CASES_PATH = PROJECT_ROOT / "tests" / "benchmark" / "chat_eval_cases.json"
-DEFAULT_THRESHOLDS_PATH = PROJECT_ROOT / "tests" / "benchmark" / "chat_eval_thresholds.json"
+DEFAULT_THRESHOLDS_PATH = (
+    PROJECT_ROOT / "tests" / "benchmark" / "chat_eval_thresholds.json"
+)
 
 SITE_ID_RE = re.compile(r"\b\d{15}\b")
 DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
-TREND_RE = re.compile(r"\b(rising|falling|declin\w*|increas\w*|stable|trend\w*)\b", re.I)
+TREND_RE = re.compile(
+    r"\b(rising|falling|declin\w*|increas\w*|stable|trend\w*)\b", re.I
+)
 AQUIFER_RE = re.compile(
     r"\b(aquifer|biscayne|floridan|lower tamiami|hawthorn|upper floridan|surficial)\b",
     re.I,
@@ -64,8 +68,12 @@ def evaluate_case_response(
     for claim in claim_citations:
         if isinstance(claim, dict) and claim.get("citations"):
             cited_claims += 1
-    inferred_coverage = float(cited_claims / len(claim_citations)) if claim_citations else 0.0
-    citation_coverage = float(citation_summary.get("citation_coverage", inferred_coverage))
+    inferred_coverage = (
+        float(cited_claims / len(claim_citations)) if claim_citations else 0.0
+    )
+    citation_coverage = float(
+        citation_summary.get("citation_coverage", inferred_coverage)
+    )
 
     check_catalog = {
         "ok_status": status_code == 200 and response.get("status") == "ok",
@@ -115,9 +123,13 @@ def evaluate_thresholds(
     thresholds: dict[str, Any],
 ) -> dict[str, Any]:
     """Evaluate aggregate benchmark results against configured thresholds."""
-    overall_score = statistics.mean(r["score"] for r in case_results) if case_results else 0.0
+    overall_score = (
+        statistics.mean(r["score"] for r in case_results) if case_results else 0.0
+    )
     avg_citation_coverage = (
-        statistics.mean(r["citation_coverage"] for r in case_results) if case_results else 0.0
+        statistics.mean(r["citation_coverage"] for r in case_results)
+        if case_results
+        else 0.0
     )
     max_elapsed = max((r["elapsed_seconds"] for r in case_results), default=0.0)
 

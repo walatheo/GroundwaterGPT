@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Send, Bot, User, AlertCircle, Sparkles, Search, MessageCircle } from 'lucide-react'
-import { sendChatMessage, sendResearchQuery, fetchChatStatus } from '../api/client'
+import { sendChatMessage, sendResearchQueryStreaming, fetchChatStatus } from '../api/client'
 import AgentChart from './AgentChart'
 
 /**
@@ -85,21 +85,38 @@ export default function ChatView({ selectedSite }) {
 
     try {
       if (mode === 'research') {
-        // Deep Research mode
+        // Deep Research mode — stream progress events so the user can see
+        // the LLM working in real time instead of waiting in silence.
+
+        // Insert the initial progress bubble.  We'll update its content in
+        // place as each progress event arrives from the backend.
+        const PROGRESS_ID = Date.now() // stable key to find the bubble later
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: '🔍 Starting deep research — this may take a moment…',
+          content: '🔍 Starting deep research…',
           isProgress: true,
+          progressId: PROGRESS_ID,
+          progressValue: 0,
         }])
 
-        const data = await sendResearchQuery(text)
+        // onProgress updates the existing progress bubble in-place rather
+        // than appending new messages, keeping the thread tidy.
+        const handleProgress = (message, progress) => {
+          setMessages(prev => prev.map(m =>
+            m.progressId === PROGRESS_ID
+              ? { ...m, content: `🔍 ${message}`, progressValue: progress }
+              : m
+          ))
+        }
+
+        const data = await sendResearchQueryStreaming(text, { onProgress: handleProgress })
         const { text: reportText, chart } = extractChart(
           data.report || data.response || 'Research complete — no report generated.'
         )
 
-        // Remove progress indicator, add real response
+        // Swap out the progress bubble for the finished report.
         setMessages(prev => {
-          const filtered = prev.filter(m => !m.isProgress)
+          const filtered = prev.filter(m => m.progressId !== PROGRESS_ID)
           const elapsedSeconds = Number.isFinite(data.elapsed_seconds)
             ? Math.round(data.elapsed_seconds)
             : 0
@@ -133,6 +150,7 @@ export default function ChatView({ selectedSite }) {
     } catch (error) {
       console.error('Chat error:', error)
       setMessages(prev => {
+        // Remove any in-flight progress bubble (chat or research mode)
         const filtered = prev.filter(m => !m.isProgress)
         return [...filtered, {
           role: 'assistant',
@@ -221,6 +239,16 @@ export default function ChatView({ selectedSite }) {
               }`}
             >
               <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+
+              {/* Progress bar — only shown on the live research status bubble */}
+              {msg.isProgress && msg.progressValue > 0 && (
+                <div className="mt-2 h-1.5 bg-amber-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.round(msg.progressValue * 100)}%` }}
+                  />
+                </div>
+              )}
 
               {/* Inline chart from agent visualization tools */}
               {msg.chart && (

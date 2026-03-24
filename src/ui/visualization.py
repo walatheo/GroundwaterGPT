@@ -168,7 +168,10 @@ def calculate_statistics(df: pd.DataFrame) -> dict:
 
 
 def create_time_series_plot(
-    df: pd.DataFrame, site_info: dict, show_trend: bool = True, show_rolling_avg: bool = True
+    df: pd.DataFrame,
+    site_info: dict,
+    show_trend: bool = True,
+    show_rolling_avg: bool = True,
 ) -> go.Figure:
     """Create interactive time series plot.
 
@@ -197,7 +200,9 @@ def create_time_series_plot(
 
     # Rolling average (30-day)
     if show_rolling_avg and len(df) > 30:
-        df["roll_30"] = df["water_level_ft"].rolling(30, min_periods=1, center=True).mean()
+        df["roll_30"] = (
+            df["water_level_ft"].rolling(30, min_periods=1, center=True).mean()
+        )
         fig.add_trace(
             go.Scatter(
                 x=df.index,
@@ -255,7 +260,11 @@ def create_seasonal_plot(df: pd.DataFrame, site_info: dict) -> go.Figure:
     df = df.copy()
     df["month"] = df.index.month
 
-    monthly = df.groupby("month")["water_level_ft"].agg(["mean", "std", "min", "max"]).reset_index()
+    monthly = (
+        df.groupby("month")["water_level_ft"]
+        .agg(["mean", "std", "min", "max"])
+        .reset_index()
+    )
 
     month_names = [
         "Jan",
@@ -274,7 +283,10 @@ def create_seasonal_plot(df: pd.DataFrame, site_info: dict) -> go.Figure:
 
     # Color by season (dry vs wet in Florida)
     # Dry: Nov-May (orange), Wet: Jun-Oct (blue)
-    colors = ["#ff7f0e" if m in [11, 12, 1, 2, 3, 4, 5] else "#1f77b4" for m in monthly["month"]]
+    colors = [
+        "#ff7f0e" if m in [11, 12, 1, 2, 3, 4, 5] else "#1f77b4"
+        for m in monthly["month"]
+    ]
 
     fig = go.Figure()
 
@@ -337,7 +349,9 @@ def create_annual_comparison_plot(df: pd.DataFrame, site_info: dict) -> go.Figur
 
     # Color scale from oldest (light) to newest (dark)
     n_years = len(years)
-    colors = px.colors.sequential.Blues[3:] if n_years <= 6 else px.colors.sequential.Blues
+    colors = (
+        px.colors.sequential.Blues[3:] if n_years <= 6 else px.colors.sequential.Blues
+    )
 
     for i, year in enumerate(years):
         year_data = df[df["year"] == year]
@@ -361,7 +375,9 @@ def create_annual_comparison_plot(df: pd.DataFrame, site_info: dict) -> go.Figur
         template="plotly_white",
         legend=dict(title="Year"),
         xaxis=dict(
-            tickmode="array", tickvals=[1, 91, 182, 274], ticktext=["Jan", "Apr", "Jul", "Oct"]
+            tickmode="array",
+            tickvals=[1, 91, 182, 274],
+            ticktext=["Jan", "Apr", "Jul", "Oct"],
         ),
     )
 
@@ -418,10 +434,14 @@ def create_multi_site_comparison(all_data: dict) -> go.Figure:
 def create_dashboard_page():
     """Create the main Streamlit visualization dashboard."""
     if not PLOTLY_AVAILABLE:
-        st.error("Plotly is required for visualizations. Install with: pip install plotly")
+        st.error(
+            "Plotly is required for visualizations. Install with: pip install plotly"
+        )
         return
 
-    st.set_page_config(page_title="GroundwaterGPT Visualization", page_icon="📊", layout="wide")
+    st.set_page_config(
+        page_title="GroundwaterGPT Visualization", page_icon="📊", layout="wide"
+    )
 
     st.title("📊 Florida Groundwater Visualization")
     st.markdown("Interactive visualization of USGS groundwater monitoring data")
@@ -463,7 +483,10 @@ def create_dashboard_page():
     max_date = df.index.max().date()
 
     date_range = st.sidebar.date_input(
-        "Select Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date
+        "Select Date Range",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date,
     )
 
     # Handle single date selection
@@ -507,7 +530,9 @@ def create_dashboard_page():
     with col4:
         stats = calculate_statistics(df_filtered)
         trend_emoji = (
-            "📈" if stats["trend"] == "rising" else "📉" if stats["trend"] == "falling" else "➡️"
+            "📈"
+            if stats["trend"] == "rising"
+            else "📉" if stats["trend"] == "falling" else "➡️"
         )
         st.metric("Trend", f"{trend_emoji} {stats['trend'].title()}")
 
@@ -538,40 +563,34 @@ def create_dashboard_page():
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        st.info(
-            """
+        st.info("""
         **Reading the chart:**
         - Lower values = higher water table (closer to surface)
         - Higher values = deeper water table (further from surface)
         - Orange line: 30-day rolling average smooths daily variations
         - Red dashed line: Linear trend over selected period
-        """
-        )
+        """)
 
     with tab2:
         fig = create_seasonal_plot(df_filtered, site_info)
         st.plotly_chart(fig, use_container_width=True)
 
-        st.info(
-            """
+        st.info("""
         **Florida Seasons:**
         - 🌵 **Dry Season** (Nov-May): Lower rainfall, typically deeper water levels
         - 🌧️ **Wet Season** (Jun-Oct): Hurricane season, higher rainfall, shallower water levels
-        """
-        )
+        """)
 
     with tab3:
         fig = create_annual_comparison_plot(df_filtered, site_info)
         st.plotly_chart(fig, use_container_width=True)
 
-        st.info(
-            """
+        st.info("""
         **Year-over-Year Analysis:**
         - Compare seasonal patterns across different years
         - Newer years shown with bolder lines
         - Helps identify long-term changes in aquifer behavior
-        """
-        )
+        """)
 
     with tab4:
         st.markdown("### Compare All Florida Monitoring Sites")
@@ -583,14 +602,12 @@ def create_dashboard_page():
             fig = create_multi_site_comparison(all_data)
             st.plotly_chart(fig, use_container_width=True)
 
-            st.info(
-                """
+            st.info("""
             **Multi-Site Comparison:**
             - Compare water levels across different aquifers
             - Biscayne Aquifer (Miami-Dade): Shallow, quick response to rainfall
             - Floridan Aquifer (Lee County): Deep, slower changes
-            """
-            )
+            """)
 
             # Site summary table
             st.markdown("### 📋 Site Summary")

@@ -70,7 +70,9 @@ class TestGroundwaterSchema:
 
         # At least one level column should exist
         has_level = any(col in groundwater_df.columns for col in level_cols)
-        assert has_level, f"Missing water level column. Have: {groundwater_df.columns.tolist()}"
+        assert (
+            has_level
+        ), f"Missing water level column. Have: {groundwater_df.columns.tolist()}"
 
     def test_date_column_type(self, groundwater_df):
         """Date column should be datetime."""

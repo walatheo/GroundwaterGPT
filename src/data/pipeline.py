@@ -67,7 +67,7 @@ import logging
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -87,7 +87,9 @@ sys.path.insert(0, str(ROOT_DIR))
 logger = logging.getLogger(__name__)
 
 # Load USGS sites configuration
-USGS_SITES_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "usgs_sites.json"
+USGS_SITES_CONFIG_PATH = (
+    Path(__file__).parent.parent.parent / "config" / "usgs_sites.json"
+)
 
 if USGS_SITES_CONFIG_PATH.exists():
     with open(USGS_SITES_CONFIG_PATH, "r") as f:
@@ -343,7 +345,7 @@ def fetch_single_site(
                 continue
 
             except requests.RequestException as e:
-                wait_time = USGS_API_BACKOFF_FACTOR ** attempt
+                wait_time = USGS_API_BACKOFF_FACTOR**attempt
                 logger.debug(
                     f"  Attempt {attempt + 1}/{USGS_API_RETRY_MAX} failed: {e}. "
                     f"Retrying in {wait_time}s..."
@@ -438,7 +440,9 @@ def validate_schema(df: pd.DataFrame, site_id: str) -> ValidationResult:
 # ============================================================================
 
 
-def engineer_features(df: pd.DataFrame, site_id: str, lag_days: List[int] = None) -> pd.DataFrame:
+def engineer_features(
+    df: pd.DataFrame, site_id: str, lag_days: List[int] = None
+) -> pd.DataFrame:
     """Engineer lag and rolling window features for ML training.
 
     This function creates:
@@ -474,8 +478,12 @@ def engineer_features(df: pd.DataFrame, site_id: str, lag_days: List[int] = None
 
     # Rolling statistics (7, 14, 30 days)
     for window in [7, 14, 30]:
-        df[f"rolling_mean_{window}d"] = df["value"].rolling(window=window, min_periods=1).mean()
-        df[f"rolling_std_{window}d"] = df["value"].rolling(window=window, min_periods=1).std()
+        df[f"rolling_mean_{window}d"] = (
+            df["value"].rolling(window=window, min_periods=1).mean()
+        )
+        df[f"rolling_std_{window}d"] = (
+            df["value"].rolling(window=window, min_periods=1).std()
+        )
         logger.debug(f"  Created rolling_{window}d features for {site_id}")
 
     logger.info(f"  ✓ Engineered {len(df.columns) - 3} features for {site_id}")
@@ -605,9 +613,13 @@ def run_pipeline(
     # Process sites (parallel or sequential)
     results = {}
     if parallel:
-        results = _process_sites_parallel(sites, start_date, end_date, engineer_features_enabled)
+        results = _process_sites_parallel(
+            sites, start_date, end_date, engineer_features_enabled
+        )
     else:
-        results = _process_sites_sequential(sites, start_date, end_date, engineer_features_enabled)
+        results = _process_sites_sequential(
+            sites, start_date, end_date, engineer_features_enabled
+        )
 
     # Update stats
     stats.sites_successful = len(results)
@@ -727,7 +739,9 @@ def _process_sites_parallel(
             return site_id, None
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(process_one_site, site_id): site_id for site_id in sites}
+        futures = {
+            executor.submit(process_one_site, site_id): site_id for site_id in sites
+        }
 
         completed = 0
         for future in as_completed(futures):
