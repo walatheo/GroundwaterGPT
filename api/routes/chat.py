@@ -311,11 +311,14 @@ _LOCATION_REFERENCE_POINTS: dict[str, tuple[float, float, str, Optional[str]]] =
     "cape coral": (26.5629, -81.9495, "Cape Coral", "lee"),
     "bonita springs": (26.3398, -81.7787, "Bonita Springs", "lee"),
     "lee county": (26.5, -81.8, "Lee County", "lee"),
+    "lee": (26.5, -81.7, "Lee County", "lee"),
+    "charlotte harbor": (26.58, -82.04, "Charlotte Harbor Area", "lee"),
     # Collier County
     "naples": (26.1420, -81.7948, "Naples", "collier"),
     "marco island": (25.9406, -81.7223, "Marco Island", "collier"),
     "collier county": (26.0, -81.5, "Collier County", "collier"),
     "collier": (26.0, -81.5, "Collier County", "collier"),
+    "immokalee": (26.4194, -81.4160, "Immokalee", "collier"),
     # Miami-Dade County
     "miami": (25.7617, -80.1918, "Miami", "miami-dade"),
     "miami-dade": (25.7617, -80.1918, "Miami-Dade", "miami-dade"),
@@ -326,11 +329,19 @@ _LOCATION_REFERENCE_POINTS: dict[str, tuple[float, float, str, Optional[str]]] =
     "kendall": (25.6751, -80.4201, "Kendall", "miami-dade"),
     # Sarasota County
     "sarasota": (27.3364, -82.5307, "Sarasota", "sarasota"),
-    "verna": (27.3622, -82.2584, "Verna", "sarasota"),
+    "verna": (27.3390, -82.3301, "Verna", "sarasota"),
     # Hendry County
     "hendry": (26.5, -81.1, "Hendry County", "hendry"),
+    "hendry county": (26.5, -81.1, "Hendry County", "hendry"),
     "labelle": (26.7637, -81.4395, "LaBelle", "hendry"),
     "clewiston": (26.7534, -80.9351, "Clewiston", "hendry"),
+    # Aquifer-system reference points (centroid of monitored wells per aquifer)
+    "tamiami": (26.30, -81.50, "Tamiami Aquifer Area", "collier"),
+    "tamiami aquifer": (26.30, -81.50, "Tamiami Aquifer Area", "collier"),
+    "hawthorn": (26.50, -81.88, "Hawthorn Formation Area", "lee"),
+    "hawthorn group": (26.50, -81.88, "Hawthorn Formation Area", "lee"),
+    "floridan": (27.33, -82.45, "Floridan Aquifer Area", "sarasota"),
+    "floridan aquifer": (27.33, -82.45, "Floridan Aquifer Area", "sarasota"),
     # General / aquifer
     "everglades": (25.9, -80.7, "Everglades Area", None),
     "florida": (26.5, -81.0, "Florida", None),

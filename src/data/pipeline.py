@@ -783,26 +783,50 @@ def _save_manifest(stats: PipelineStats, output_dir: Path = DATA_DIR) -> Path:
 
 USGS_SITE_SERVICE_URL = "https://waterservices.usgs.gov/nwis/site/"
 
-# USGS National Aquifer Codes → zone names used in usgs_sites.json
+# USGS local aquifer codes (aqfr_cd from NWIS site service) → zone names.
+# Codes verified against actual Florida monitoring sites via NWIS siteOutput=expanded.
 _USGS_AQ_CODE_TO_ZONE: Dict[str, str] = {
-    "112BNQR": "Biscayne",  # Biscayne aquifer
-    "112FLRD": "Upper Floridan",  # Floridan aquifer system (upper)
-    "112FLRL": "Lower Floridan",  # Floridan aquifer system (lower)
-    "112SRFL": "Surficial Sand",  # Surficial aquifer
+    # --- Biscayne Aquifer (SE Florida, Miami-Dade) ---
+    "112BSCNN": "Biscayne",  # primary local code returned by NWIS
+    "112BNQR": "Biscayne",  # alternate national-level code (kept for safety)
+    # --- Surficial / Near-Surface (SW Florida, shallow water-table) ---
+    "112NRSD": "Surficial Sand",  # non-rock surficial, SW Florida
+    "112SRFL": "Surficial Sand",  # alternate surficial code
+    # --- Tamiami Aquifer System (SW Florida intermediate) ---
+    "121TMIM": "Lower Tamiami",
+    "121TMIU": "Upper Tamiami",
+    # --- Sand and Shell (Lee/Collier, intermediate) ---
+    "122SNDS": "Sand and Shell",
+    # --- Hawthorn Group (SW Florida, semi-confining / intermediate) ---
+    "122HTRN": "Hawthorn",  # unconfined / open-hole variant
+    "122HTRNN": "Hawthorn",  # confined variant
+    "112HWTH": "Hawthorn",  # alternate code
+    # --- Floridan Aquifer System (Sarasota and north) ---
+    "120FLRD": "Floridan",  # undivided Floridan
+    "112FLRD": "Upper Floridan",  # upper Floridan
+    "112FLRL": "Lower Floridan",  # lower Floridan
+    "123SWNN": "Upper Floridan",  # Suwannee-Tampa zone (upper Floridan)
+    # --- Tampa Limestone (upper Floridan equivalent, Sarasota) ---
+    "122TAMP": "Tampa Limestone",
+    # --- Sand-and-Gravel (Panhandle / NW Florida — not in current dataset) ---
+    "112SNDG": "Sand and Gravel",
 }
 
 
 def fetch_site_well_metadata(site_id: str) -> Dict[str, Optional[float]]:
-    """Fetch well depth and aquifer code from USGS NWIS Site Service.
+    """Fetch well depth, aquifer code, and location from USGS NWIS Site Service.
 
     Calls the NWIS site service with ``siteOutput=expanded`` to retrieve:
         - ``well_depth_va``  — depth of well casing (ft)
         - ``hole_depth_va``  — total drilled depth (ft)
-        - ``aq_cd``          — USGS aquifer code (e.g. ``112FLRD`` = Upper Floridan)
+        - ``aqfr_cd``        — USGS local aquifer code (e.g. ``121TMIM`` = Tamiami)
+        - ``nat_aqfr_cd``    — USGS national aquifer code
+        - ``aqfr_type_cd``   — C = confined, U = unconfined
+        - ``dec_lat_va``     — decimal latitude (NAD83)
+        - ``dec_long_va``    — decimal longitude (NAD83)
+        - ``station_nm``     — USGS station name
 
-    Returns a dict with keys ``well_depth_ft``, ``hole_depth_ft``,
-    ``usgs_aquifer_code``, and ``aquifer_zone``.  Returns an empty dict on
-    any failure so callers can safely fall back to static defaults.
+    Returns a dict with all usable fields; empty dict on any failure.
     """
     params = {
         "sites": site_id,
@@ -838,12 +862,20 @@ def fetch_site_well_metadata(site_id: str) -> Dict[str, Optional[float]]:
             except ValueError:
                 return None
 
-        aq_code = row.get("aq_cd", "").strip()
+        # NWIS uses 'aqfr_cd' (not 'aq_cd') for local aquifer code
+        aq_code = row.get("aqfr_cd", "").strip()
+        nat_aq_code = row.get("nat_aqfr_cd", "").strip()
+        aqfr_type = row.get("aqfr_type_cd", "").strip()  # C=confined, U=unconfined
         return {
             "well_depth_ft": _safe_float(row.get("well_depth_va", "")),
             "hole_depth_ft": _safe_float(row.get("hole_depth_va", "")),
             "usgs_aquifer_code": aq_code,
+            "nat_aquifer_code": nat_aq_code,
             "aquifer_zone": _USGS_AQ_CODE_TO_ZONE.get(aq_code, ""),
+            "confined": aqfr_type == "C",
+            "lat": _safe_float(row.get("dec_lat_va", "")),
+            "lng": _safe_float(row.get("dec_long_va", "")),
+            "station_nm": row.get("station_nm", "").strip(),
         }
     except Exception as exc:
         logger.warning("NWIS site service failed for %s: %s", site_id, exc)

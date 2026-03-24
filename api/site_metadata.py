@@ -16,31 +16,95 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 
 # Map raw CSV aquifer strings (snake_case from USGS) to proper display names
 # and their confinement/zone metadata so CSV-only fallback sites get correct info.
+# All six aquifer systems present in the actual Florida dataset are covered.
 _CSV_AQUIFER_NORMALISATION: Dict[str, dict] = {
+    # Biscayne — Miami-Dade, unconfined, USGS aqfr_cd 112BSCNN
     "biscayne_aquifer": {
         "aquifer": "Biscayne Aquifer",
         "aquifer_type": "unconfined",
         "confined": False,
         "aquifer_zone": "Biscayne",
-        "aquifer_zone_depth_range_ft": [0, 100],
-        "well_depth_ft": 50,
+        "aquifer_zone_depth_range_ft": [9, 95],
+        "well_depth_ft": 30,
     },
-    "floridan_aquifer": {
-        "aquifer": "Floridan Aquifer System",
-        "aquifer_type": "confined",
-        "confined": True,
-        "aquifer_zone": "Upper Floridan",
-        "aquifer_zone_depth_range_ft": [200, 700],
-        "well_depth_ft": 400,
+    "biscayne": {
+        "aquifer": "Biscayne Aquifer",
+        "aquifer_type": "unconfined",
+        "confined": False,
+        "aquifer_zone": "Biscayne",
+        "aquifer_zone_depth_range_ft": [9, 95],
+        "well_depth_ft": 30,
     },
+    # Surficial — SW Florida, near-surface unconfined, USGS aqfr_cd 112NRSD
     "surficial_aquifer": {
         "aquifer": "Surficial Aquifer",
         "aquifer_type": "unconfined",
         "confined": False,
         "aquifer_zone": "Surficial Sand",
-        "aquifer_zone_depth_range_ft": [10, 50],
-        "well_depth_ft": 25,
+        "aquifer_zone_depth_range_ft": [15, 80],
+        "well_depth_ft": 35,
     },
+    "surficial": {
+        "aquifer": "Surficial Aquifer",
+        "aquifer_type": "unconfined",
+        "confined": False,
+        "aquifer_zone": "Surficial Sand",
+        "aquifer_zone_depth_range_ft": [15, 80],
+        "well_depth_ft": 35,
+    },
+    # Tamiami — Collier/Hendry, intermediate, USGS aqfr_cd 121TMIM
+    "tamiami_aquifer": {
+        "aquifer": "Tamiami Aquifer System",
+        "aquifer_type": "confined",
+        "confined": True,
+        "aquifer_zone": "Lower Tamiami",
+        "aquifer_zone_depth_range_ft": [59, 176],
+        "well_depth_ft": 110,
+    },
+    "tamiami": {
+        "aquifer": "Tamiami Aquifer System",
+        "aquifer_type": "confined",
+        "confined": True,
+        "aquifer_zone": "Lower Tamiami",
+        "aquifer_zone_depth_range_ft": [59, 176],
+        "well_depth_ft": 110,
+    },
+    # Intermediate / Sand and Shell — Lee County, USGS aqfr_cd 122SNDS
+    "intermediate_aquifer": {
+        "aquifer": "Intermediate Aquifer System",
+        "aquifer_type": "confined",
+        "confined": True,
+        "aquifer_zone": "Sand and Shell",
+        "aquifer_zone_depth_range_ft": [103, 137],
+        "well_depth_ft": 120,
+    },
+    # Hawthorn — SW Florida confining/intermediate, USGS aqfr_cd 122HTRN/122HTRNN
+    "hawthorn": {
+        "aquifer": "Hawthorn Group",
+        "aquifer_type": "confined",
+        "confined": True,
+        "aquifer_zone": "Hawthorn",
+        "aquifer_zone_depth_range_ft": [177, 420],
+        "well_depth_ft": 250,
+    },
+    # Floridan — Sarasota, deep confined, USGS aqfr_cd 120FLRD/123SWNN
+    "floridan_aquifer": {
+        "aquifer": "Floridan Aquifer System",
+        "aquifer_type": "confined",
+        "confined": True,
+        "aquifer_zone": "Floridan",
+        "aquifer_zone_depth_range_ft": [446, 591],
+        "well_depth_ft": 520,
+    },
+    "floridan": {
+        "aquifer": "Floridan Aquifer System",
+        "aquifer_type": "confined",
+        "confined": True,
+        "aquifer_zone": "Floridan",
+        "aquifer_zone_depth_range_ft": [446, 591],
+        "well_depth_ft": 520,
+    },
+    # Generic fallback
     "florida": {
         "aquifer": "Florida Aquifer",
         "aquifer_type": "unconfined",

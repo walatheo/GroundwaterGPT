@@ -15,22 +15,53 @@ from api.site_metadata import SITE_METADATA
 
 router = APIRouter(prefix="/api", tags=["wells"])
 
-# Normalise user input (e.g. "Floridan Aquifer") to the JSON key used in SITE_METADATA
+# Normalise user input to the aquifer display name substring stored in SITE_METADATA.
+# Keys are lowercase query strings; values are substrings to match against site["aquifer"].
 _AQUIFER_KEY_MAP: dict[str, str] = {
+    # Biscayne
     "biscayne": "biscayne",
     "biscayne aquifer": "biscayne",
+    # Surficial / Near-Surface
+    "surficial": "surficial",
+    "surficial aquifer": "surficial",
+    "near-surface": "surficial",
+    "water table": "surficial",
+    "water-table": "surficial",
+    # Tamiami (intermediate)
+    "tamiami": "tamiami",
+    "tamiami aquifer": "tamiami",
+    "lower tamiami": "tamiami",
+    "tamiami aquifer system": "tamiami",
+    "intermediate": "tamiami",
+    "intermediate aquifer": "tamiami",
+    # Sand and Shell (Lee County intermediate)
+    "sand and shell": "sand and shell",
+    "sand shell": "sand and shell",
+    # Hawthorn
+    "hawthorn": "hawthorn",
+    "hawthorn group": "hawthorn",
+    "hawthorn formation": "hawthorn",
+    # Floridan
     "floridan": "floridan",
     "floridan aquifer": "floridan",
     "floridan aquifer system": "floridan",
-    "surficial": "surficial",
-    "surficial aquifer": "surficial",
+    "upper floridan": "upper floridan",
+    "lower floridan": "lower floridan",
+    "tampa limestone": "tampa limestone",
+    "tampa": "tampa limestone",
 }
 
-# Substring that must appear in the stored aquifer display name for each key
+# Substring that must appear in the stored aquifer display name for each normalised value
 _AQUIFER_NAME_FILTER: dict[str, str] = {
     "biscayne": "biscayne",
-    "floridan": "floridan",
     "surficial": "surficial",
+    "tamiami": "tamiami",
+    "sand and shell": "sand and shell",
+    "hawthorn": "hawthorn",
+    "floridan": "floridan",
+    "upper floridan": "upper floridan",
+    "lower floridan": "lower floridan",
+    "tampa limestone": "tampa limestone",
 }
 
 
