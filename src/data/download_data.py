@@ -21,8 +21,9 @@ import requests
 # Add parent to path for config
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from config.config import (ACTIVE_REGION, CDS_API_KEY, CDS_URL,  # noqa: E402
-                           DATA_DIR, REGIONS, TIME_CONFIG)
+from config.config import CDS_URL  # noqa: E402
+from config.config import (ACTIVE_REGION, CDS_API_KEY, DATA_DIR, REGIONS,
+                           TIME_CONFIG)
 
 # =============================================================================
 # USGS CONFIGURATION

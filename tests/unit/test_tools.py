@@ -14,8 +14,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import src.agent.tools as tools_module  # noqa: E402
-from src.agent.tools import (GROUNDWATER_TOOLS, _load_site_csv,  # noqa: E402
-                             _load_site_metadata, analyze_seasonal_patterns,
+from src.agent.tools import _load_site_csv  # noqa: E402
+from src.agent.tools import (GROUNDWATER_TOOLS, _load_site_metadata,
+                             analyze_seasonal_patterns,
                              create_research_experiment_plan, detect_anomalies,
                              draft_research_paper, generate_comparison_chart,
                              generate_time_series_plot,

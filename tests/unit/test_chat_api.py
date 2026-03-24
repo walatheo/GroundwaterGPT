@@ -21,8 +21,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 # FastAPI test client — avoids starting a real server
 from fastapi.testclient import TestClient  # noqa: E402
 
-from api.main import (GROUNDWATER_KB, _fallback_response,  # noqa: E402
-                      _get_site_context, app)
+from api.main import _fallback_response  # noqa: E402
+from api.main import GROUNDWATER_KB, _get_site_context, app
 
 client = TestClient(app)
 

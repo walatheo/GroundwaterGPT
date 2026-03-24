@@ -37,8 +37,8 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from src.agent.knowledge import (get_knowledge_stats,  # noqa: E402
-                                 search_knowledge, search_usgs_data,
+from src.agent.knowledge import get_knowledge_stats  # noqa: E402
+from src.agent.knowledge import (search_knowledge, search_usgs_data,
                                  search_with_fallback)
 
 # ============================================================================
