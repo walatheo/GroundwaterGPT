@@ -67,8 +67,8 @@ import logging
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -334,8 +334,7 @@ def fetch_single_site(
                 if records:
                     df = pd.DataFrame(records)
                     logger.info(
-                        f"  ✓ Fetched {len(df)} records from {site_id} "
-                        f"(parameter {param_code})"
+                        f"  ✓ Fetched {len(df)} records from {site_id} " f"(parameter {param_code})"
                     )
                     return df
 
@@ -343,7 +342,7 @@ def fetch_single_site(
                 continue
 
             except requests.RequestException as e:
-                wait_time = USGS_API_BACKOFF_FACTOR ** attempt
+                wait_time = USGS_API_BACKOFF_FACTOR**attempt
                 logger.debug(
                     f"  Attempt {attempt + 1}/{USGS_API_RETRY_MAX} failed: {e}. "
                     f"Retrying in {wait_time}s..."
@@ -413,9 +412,7 @@ def validate_schema(df: pd.DataFrame, site_id: str) -> ValidationResult:
         result.warnings.append(
             f"Values outside typical range: min={min_val:.2f}, max={max_val:.2f}"
         )
-        logger.warning(
-            f"  Value range warning for {site_id}: {min_val:.2f} to {max_val:.2f} ft"
-        )
+        logger.warning(f"  Value range warning for {site_id}: {min_val:.2f} to {max_val:.2f} ft")
     else:
         result.checks["values_in_range"] = True
 
@@ -529,8 +526,7 @@ def run_pipeline(
     engineer_features_enabled: bool = False,
     log_dir: Path = LOG_DIR,
 ) -> Dict[str, Path]:
-    """
-    Main USGS groundwater data pipeline orchestrator.
+    """Main USGS groundwater data pipeline orchestrator.
 
     This is the canonical entry point for all data fetching operations.
     It orchestrates the complete pipeline:
@@ -770,6 +766,123 @@ def _save_manifest(stats: PipelineStats, output_dir: Path = DATA_DIR) -> Path:
 
     logger.info(f"✓ Manifest saved: {manifest_path}")
     return manifest_path
+
+
+# ============================================================================
+# USGS SITE SERVICE — WELL DEPTH ENRICHMENT
+# ============================================================================
+# These functions fetch actual drilled-depth metadata from the USGS NWIS Site
+# Service and can be run offline to overwrite the static defaults in
+# config/usgs_sites.json with verified values.
+#
+# Usage:
+#   from src.data.pipeline import enrich_sites_with_well_depths, get_all_site_ids
+#   results = enrich_sites_with_well_depths(get_all_site_ids())
+#   # results: {site_id: {"well_depth_ft": float|None, "usgs_aquifer_code": str}}
+# ============================================================================
+
+USGS_SITE_SERVICE_URL = "https://waterservices.usgs.gov/nwis/site/"
+
+# USGS National Aquifer Codes → zone names used in usgs_sites.json
+_USGS_AQ_CODE_TO_ZONE: Dict[str, str] = {
+    "112BNQR": "Biscayne",  # Biscayne aquifer
+    "112FLRD": "Upper Floridan",  # Floridan aquifer system (upper)
+    "112FLRL": "Lower Floridan",  # Floridan aquifer system (lower)
+    "112SRFL": "Surficial Sand",  # Surficial aquifer
+}
+
+
+def fetch_site_well_metadata(site_id: str) -> Dict[str, Optional[float]]:
+    """Fetch well depth and aquifer code from USGS NWIS Site Service.
+
+    Calls the NWIS site service with ``siteOutput=expanded`` to retrieve:
+        - ``well_depth_va``  — depth of well casing (ft)
+        - ``hole_depth_va``  — total drilled depth (ft)
+        - ``aq_cd``          — USGS aquifer code (e.g. ``112FLRD`` = Upper Floridan)
+
+    Returns a dict with keys ``well_depth_ft``, ``hole_depth_ft``,
+    ``usgs_aquifer_code``, and ``aquifer_zone``.  Returns an empty dict on
+    any failure so callers can safely fall back to static defaults.
+    """
+    params = {
+        "sites": site_id,
+        "siteOutput": "expanded",
+        "format": "rdb",
+    }
+    try:
+        resp = requests.get(
+            USGS_SITE_SERVICE_URL,
+            params=params,
+            timeout=USGS_API_TIMEOUT,
+        )
+        resp.raise_for_status()
+
+        # RDB format: lines starting with # are comments; first non-comment
+        # line is the tab-delimited header; second is the data-type line;
+        # third (if present) is the first data row.
+        lines = [ln for ln in resp.text.splitlines() if not ln.startswith("#") and ln.strip()]
+        if len(lines) < 3:
+            return {}
+
+        headers = lines[0].split("\t")
+        # lines[1] is the format descriptor row (e.g. "5s\t15d\t…") — skip
+        data_row = lines[2].split("\t") if len(lines) > 2 else []
+        if not data_row:
+            return {}
+
+        row = dict(zip(headers, data_row))
+
+        def _safe_float(val: str) -> Optional[float]:
+            try:
+                return float(val.strip()) if val.strip() else None
+            except ValueError:
+                return None
+
+        aq_code = row.get("aq_cd", "").strip()
+        return {
+            "well_depth_ft": _safe_float(row.get("well_depth_va", "")),
+            "hole_depth_ft": _safe_float(row.get("hole_depth_va", "")),
+            "usgs_aquifer_code": aq_code,
+            "aquifer_zone": _USGS_AQ_CODE_TO_ZONE.get(aq_code, ""),
+        }
+    except Exception as exc:
+        logger.warning("NWIS site service failed for %s: %s", site_id, exc)
+        return {}
+
+
+def enrich_sites_with_well_depths(
+    site_ids: List[str],
+    parallel: bool = True,
+    max_workers: int = 8,
+) -> Dict[str, dict]:
+    """Batch-fetch NWIS well depth metadata for a list of site IDs.
+
+    Returns ``{site_id: metadata_dict}`` where each value contains the keys
+    returned by :func:`fetch_site_well_metadata`.  Sites that fail return an
+    empty dict so callers can detect missing data.
+
+    Run this offline to refresh the static ``well_depth_ft`` defaults in
+    ``config/usgs_sites.json`` with authoritative NWIS values.
+    """
+    results: Dict[str, dict] = {}
+
+    if parallel:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            future_map = {pool.submit(fetch_site_well_metadata, sid): sid for sid in site_ids}
+            for future in as_completed(future_map):
+                sid = future_map[future]
+                try:
+                    results[sid] = future.result()
+                except Exception as exc:
+                    logger.warning("Depth enrichment failed for %s: %s", sid, exc)
+                    results[sid] = {}
+    else:
+        for sid in site_ids:
+            results[sid] = fetch_site_well_metadata(sid)
+
+    fetched = sum(1 for v in results.values() if v.get("well_depth_ft") is not None)
+    logger.info("Well depth enrichment: %d/%d sites returned depth data", fetched, len(site_ids))
+    return results
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ Endpoints:
  • GET  /api/chat/status — System health for chat subsystem
 """
 
+import json
 import logging
 import os
 import traceback
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
+_CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
 ESTERO_REFERENCE_LAT = 26.4381
 ESTERO_REFERENCE_LNG = -81.8068
 MIN_CLAIM_CITATION_COVERAGE = float(os.getenv("GROUNDWATERGPT_MIN_CLAIM_COVERAGE", "0.90"))
@@ -52,6 +54,27 @@ except Exception as exc:
     logger.warning("Claim disagreement engine unavailable, using conservative fallback: %s", exc)
     _claim_disagreement_engine = None
     _summarize_claim_verdicts_fn = None
+
+
+# ---------------------------------------------------------------------------
+# Aquifer zone reference — loaded once from usgs_sites.json at import time
+# Maps aquifer display name → list of zone dicts (zone_name, depth_range_ft, …)
+# ---------------------------------------------------------------------------
+
+
+def _load_aquifer_zones() -> dict[str, list[dict]]:
+    json_path = _CONFIG_DIR / "usgs_sites.json"
+    if not json_path.exists():
+        return {}
+    try:
+        with open(json_path) as fh:
+            raw = json.load(fh)
+        return {aq.get("name", ""): aq.get("zones", []) for aq in raw.get("aquifers", {}).values()}
+    except Exception:
+        return {}
+
+
+_AQUIFER_ZONES_REFERENCE: dict[str, list[dict]] = _load_aquifer_zones()
 
 
 # ---------------------------------------------------------------------------
@@ -277,9 +300,56 @@ def _usgs_site_url(site_id: str) -> str:
     return f"https://waterdata.usgs.gov/monitoring-location/{site_id}/"
 
 
-def _distance_to_estero(lat: float, lng: float) -> float:
-    """Approximate distance from Estero reference point using lat/lng deltas."""
-    return ((lat - ESTERO_REFERENCE_LAT) ** 2 + (lng - ESTERO_REFERENCE_LNG) ** 2) ** 0.5
+# ---------------------------------------------------------------------------
+# Location keyword → (ref_lat, ref_lng, display_name, county_hint)
+# Covers all known monitored areas so any site-related query gets a fast path
+# ---------------------------------------------------------------------------
+_LOCATION_REFERENCE_POINTS: dict[str, tuple[float, float, str, Optional[str]]] = {
+    # Lee County
+    "estero": (26.4381, -81.8068, "Estero", "lee"),
+    "fort myers": (26.6406, -81.8723, "Fort Myers", "lee"),
+    "cape coral": (26.5629, -81.9495, "Cape Coral", "lee"),
+    "bonita springs": (26.3398, -81.7787, "Bonita Springs", "lee"),
+    "lee county": (26.5, -81.8, "Lee County", "lee"),
+    # Collier County
+    "naples": (26.1420, -81.7948, "Naples", "collier"),
+    "marco island": (25.9406, -81.7223, "Marco Island", "collier"),
+    "collier county": (26.0, -81.5, "Collier County", "collier"),
+    "collier": (26.0, -81.5, "Collier County", "collier"),
+    # Miami-Dade County
+    "miami": (25.7617, -80.1918, "Miami", "miami-dade"),
+    "miami-dade": (25.7617, -80.1918, "Miami-Dade", "miami-dade"),
+    "miami dade": (25.7617, -80.1918, "Miami-Dade", "miami-dade"),
+    "biscayne": (25.5, -80.4, "Biscayne Aquifer Area", "miami-dade"),
+    "homestead": (25.4687, -80.4776, "Homestead", "miami-dade"),
+    "florida city": (25.4477, -80.4787, "Florida City", "miami-dade"),
+    "kendall": (25.6751, -80.4201, "Kendall", "miami-dade"),
+    # Sarasota County
+    "sarasota": (27.3364, -82.5307, "Sarasota", "sarasota"),
+    "verna": (27.3622, -82.2584, "Verna", "sarasota"),
+    # Hendry County
+    "hendry": (26.5, -81.1, "Hendry County", "hendry"),
+    "labelle": (26.7637, -81.4395, "LaBelle", "hendry"),
+    "clewiston": (26.7534, -80.9351, "Clewiston", "hendry"),
+    # General / aquifer
+    "everglades": (25.9, -80.7, "Everglades Area", None),
+    "florida": (26.5, -81.0, "Florida", None),
+}
+
+
+def _detect_location(question: str) -> Optional[tuple[float, float, str, Optional[str]]]:
+    """Return (lat, lng, display_name, county_hint) for the first location keyword found."""
+    q = question.lower()
+    # Longest match first to prefer "fort myers" over plain "miami" etc.
+    for keyword in sorted(_LOCATION_REFERENCE_POINTS, key=len, reverse=True):
+        if keyword in q:
+            return _LOCATION_REFERENCE_POINTS[keyword]
+    return None
+
+
+def _distance_between(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Approximate distance using lat/lng deltas (no projection needed for proximity ranking)."""
+    return ((lat1 - lat2) ** 2 + (lng1 - lng2) ** 2) ** 0.5
 
 
 def _load_site_timeseries(site_id: str) -> Optional[pd.DataFrame]:
@@ -302,8 +372,17 @@ def _load_site_timeseries(site_id: str) -> Optional[pd.DataFrame]:
         return None
 
 
-def _best_estero_sites(max_sites: int = 3) -> list[dict]:
-    """Select nearest available sites for Estero-oriented fallback analysis."""
+def _best_sites_near(
+    ref_lat: float,
+    ref_lng: float,
+    county_hint: Optional[str] = None,
+    max_sites: int = 3,
+) -> list[dict]:
+    """Select nearest available sites to an arbitrary reference point.
+
+    ``county_hint`` (lowercase county name) gives a small proximity bonus so
+    sites in the expected county are preferred when equidistant.
+    """
     candidates = []
     for site_id, meta in SITE_METADATA.items():
         lat = meta.get("lat")
@@ -315,8 +394,8 @@ def _best_estero_sites(max_sites: int = 3) -> list[dict]:
             continue
 
         county = str(meta.get("county", "")).strip().lower()
-        county_bonus = -0.5 if county == "lee" else 0.0
-        distance_score = _distance_to_estero(float(lat), float(lng)) + county_bonus
+        county_bonus = -0.3 if county_hint and county == county_hint else 0.0
+        distance_score = _distance_between(float(lat), float(lng), ref_lat, ref_lng) + county_bonus
         candidates.append(
             {
                 "site_id": site_id,
@@ -332,6 +411,71 @@ def _best_estero_sites(max_sites: int = 3) -> list[dict]:
 
     candidates = sorted(candidates, key=lambda item: item["distance_score"])
     return candidates[:max_sites]
+
+
+def _best_estero_sites(max_sites: int = 3) -> list[dict]:
+    """Backwards-compatible wrapper — selects nearest sites to Estero."""
+    return _best_sites_near(ESTERO_REFERENCE_LAT, ESTERO_REFERENCE_LNG, "lee", max_sites)
+
+
+# Keywords that indicate the user is asking about aquifer type / well depth
+_AQUIFER_QUERY_KEYWORDS = [
+    "which aquifer",
+    "what aquifer",
+    "aquifer type",
+    "aquifer zone",
+    "confined",
+    "unconfined",
+    "artesian",
+    "aquifer depth",
+    "well depth",
+    "how deep",
+]
+
+
+def _is_aquifer_query(question: str) -> bool:
+    """Return True when the question is specifically about aquifer type or well depth."""
+    q = question.lower()
+    return any(kw in q for kw in _AQUIFER_QUERY_KEYWORDS)
+
+
+def _build_wells_payload(sites: list[dict]) -> list[dict]:
+    """Convert _best_sites_near() results to the structured wells wire format."""
+    wells = []
+    for site in sites:
+        site_id = site["site_id"]
+        meta = SITE_METADATA.get(site_id, {})
+        wells.append(
+            {
+                "site_id": site_id,
+                "name": site.get("name", site_id),
+                "county": site.get("county", "Florida"),
+                "lat": site.get("lat"),
+                "lng": site.get("lng"),
+                "well_depth_ft": meta.get("well_depth_ft", meta.get("depth", 50)),
+                "aquifer": site.get("aquifer", "Unknown"),
+                "aquifer_type": meta.get("aquifer_type", "unconfined"),
+                "confined": meta.get("confined", False),
+                "aquifer_zone": meta.get("aquifer_zone", ""),
+                "aquifer_zone_depth_range_ft": meta.get("aquifer_zone_depth_range_ft", [0, 100]),
+                "aquifer_description": meta.get("aquifer_description", ""),
+                "usgs_url": _usgs_site_url(site_id),
+            }
+        )
+    return wells
+
+
+def _build_aquifer_info(aquifer_name: str) -> dict:
+    """Return structured aquifer metadata for a given aquifer display name."""
+    for meta in SITE_METADATA.values():
+        if meta.get("aquifer", "") == aquifer_name:
+            return {
+                "name": aquifer_name,
+                "aquifer_type": meta.get("aquifer_type", "unconfined"),
+                "confined": meta.get("confined", False),
+                "zones": _AQUIFER_ZONES_REFERENCE.get(aquifer_name, []),
+            }
+    return {"name": aquifer_name, "aquifer_type": "unknown", "confined": False, "zones": []}
 
 
 def _trend_label(net_change: float) -> str:
@@ -445,9 +589,8 @@ def _build_claim_verdict_summary(claim_verdicts: list[dict[str, Any]]) -> dict[s
     }
 
 
-def _estero_research_fallback(question: str) -> dict:
-    """Generate a deterministic, cited response for Estero benchmark questions."""
-    sites = _best_estero_sites(max_sites=2)
+def _site_research_fallback(question: str, sites: list[dict], location_name: str) -> dict:
+    """Generate a deterministic, cited response for any USGS site/location query."""
     if not sites:
         fallback = _fallback_response(question)
         claim_citations = [
@@ -531,26 +674,6 @@ def _estero_research_fallback(question: str) -> dict:
             }
         )
 
-    supply_claim = (
-        "Estero supply context should consider Lower Tamiami, Hawthorn Group, "
-        "and Upper Floridan aquifer units; exact source shares require utility "
-        "records and should be treated as uncertain."
-    )
-    claim_citations.append(
-        {
-            "claim_id": f"claim_{len(claim_citations) + 1:03d}",
-            "claim": supply_claim,
-            "confidence": 0.6,
-            "citations": [
-                {
-                    "url": "GroundwaterGPT KB: estero_supply_context",
-                    "verified": True,
-                    "trust_level": "moderate",
-                }
-            ],
-        }
-    )
-
     implications_claim = (
         "Observed trends imply sustainability risk and potential saltwater "
         "intrusion stress if drawdown persists."
@@ -571,41 +694,43 @@ def _estero_research_fallback(question: str) -> dict:
     )
 
     report = (
-        "Estero benchmark fallback analysis (USGS-backed):\n\n"
+        f"{location_name} groundwater analysis (USGS-backed):\n\n"
         "Data period used (available local record):\n"
         f"{chr(10).join(site_blocks)}\n\n"
         "Interpretation:\n"
-        "- The available record does not span a full 30 years in this local snapshot, "
-        "so results reflect the actual observed period listed above.\n"
+        "- The available record may not span the full requested period; "
+        "results reflect the actual observed period listed above.\n"
         "- Trend direction (rising/falling/stable) is computed from net change over "
         "the available record.\n"
-        "- Aquifer framing for Estero includes Lower Tamiami, Hawthorn Group, and "
-        "Upper Floridan; this response distinguishes groundwater source context from "
-        "monitoring-well trend evidence.\n"
         "- Implications include sustainability and saltwater intrusion risk under "
         "persistent decline."
     )
 
-    sources = source_urls + ["GroundwaterGPT KB: estero_supply_context"]
     claim_verdicts = _build_claim_verdicts(claim_citations)
     return {
         "report": report,
         "insights": insights,
-        "sources": sources,
+        "sources": source_urls,
         "claim_citations": claim_citations,
         "claim_verdicts": claim_verdicts,
         "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),
         "citation_summary": _build_citation_summary(claim_citations),
         "section_confidence": _build_section_confidence_from_claims(claim_citations),
         "hallucination_guardrail": {
-            "strategy": "deterministic_estero_fallback",
+            "strategy": "deterministic_site_fallback",
             "removed_uncited_factual_sentences": 0,
             "all_factual_claims_cited": True,
         },
-        "search_history": [question, "USGS Estero proxy sites trend analysis"],
+        "search_history": [question, f"USGS {location_name} proxy sites trend analysis"],
         "depth_reached": 1,
         "elapsed_seconds": 0.12,
     }
+
+
+def _estero_research_fallback(question: str) -> dict:
+    """Backwards-compatible wrapper for the Estero benchmark fast path."""
+    sites = _best_estero_sites(max_sites=2)
+    return _site_research_fallback(question, sites, "Estero")
 
 
 # ---------------------------------------------------------------------------
@@ -712,6 +837,25 @@ def chat_endpoint(query: dict):
     user_query = query.get("message", "")
     if not user_query:
         raise HTTPException(status_code=400, detail="Message is required")
+
+    # --- Location fast path: return deterministic USGS-backed answer immediately ---
+    loc = _detect_location(user_query)
+    if loc is not None:
+        ref_lat, ref_lng, loc_name, county_hint = loc
+        sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=3)
+        result = _site_research_fallback(user_query, sites, loc_name)
+        wells_payload = _build_wells_payload(sites)
+        response_dict: dict[str, Any] = {
+            "response": result["report"],
+            "context": _get_site_context(county_hint.title() if county_hint else None),
+            "sources": result["sources"],
+            "mode": "site_fallback",
+            "status": "ok",
+            "wells": wells_payload,
+        }
+        if _is_aquifer_query(user_query) and wells_payload:
+            response_dict["aquifer_info"] = _build_aquifer_info(wells_payload[0]["aquifer"])
+        return response_dict
 
     # --- Try real agent first ---
     if _chat_agent is not None:
@@ -823,41 +967,43 @@ def research_endpoint(query: dict):
             _set_runtime_error("research", exc)
             # Fall through to fallback
 
-    # --- Fallback ---
-    question_lower = question.lower()
-    if "estero" in question_lower:
-        estero = _estero_research_fallback(question)
-        estero_claim_verdicts = estero.get(
+    # --- Fallback: location-aware deterministic USGS response ---
+    loc = _detect_location(question)
+    if loc is not None:
+        ref_lat, ref_lng, loc_name, county_hint = loc
+        loc_sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=2)
+        site_result = _site_research_fallback(question, loc_sites, loc_name)
+        site_claim_verdicts = site_result.get(
             "claim_verdicts",
-            _build_claim_verdicts(estero["claim_citations"]),
+            _build_claim_verdicts(site_result["claim_citations"]),
         )
         return {
             "status": "ok",
             "mode": "fallback",
-            "report": estero["report"],
-            "insights": estero["insights"],
-            "sources": estero["sources"],
-            "search_history": estero["search_history"],
-            "depth_reached": estero["depth_reached"],
-            "elapsed_seconds": estero["elapsed_seconds"],
-            "claim_citations": estero["claim_citations"],
-            "claim_verdicts": estero_claim_verdicts,
-            "claim_verdict_summary": estero.get(
+            "report": site_result["report"],
+            "insights": site_result["insights"],
+            "sources": site_result["sources"],
+            "search_history": site_result["search_history"],
+            "depth_reached": site_result["depth_reached"],
+            "elapsed_seconds": site_result["elapsed_seconds"],
+            "claim_citations": site_result["claim_citations"],
+            "claim_verdicts": site_claim_verdicts,
+            "claim_verdict_summary": site_result.get(
                 "claim_verdict_summary",
-                _build_claim_verdict_summary(estero_claim_verdicts),
+                _build_claim_verdict_summary(site_claim_verdicts),
             ),
-            "citation_summary": estero["citation_summary"],
-            "section_confidence": estero.get("section_confidence", {}),
-            "hallucination_guardrail": estero.get(
+            "citation_summary": site_result["citation_summary"],
+            "section_confidence": site_result.get("section_confidence", {}),
+            "hallucination_guardrail": site_result.get(
                 "hallucination_guardrail",
                 {
-                    "strategy": "deterministic_estero_fallback",
+                    "strategy": "deterministic_site_fallback",
                     "removed_uncited_factual_sentences": 0,
                     "all_factual_claims_cited": True,
                 },
             ),
             "citation_integrity": _build_citation_integrity(
-                estero["claim_citations"], estero.get("section_confidence", {})
+                site_result["claim_citations"], site_result.get("section_confidence", {})
             ),
         }
 

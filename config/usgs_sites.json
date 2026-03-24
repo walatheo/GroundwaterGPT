@@ -8,57 +8,96 @@
       "name": "Biscayne Aquifer",
       "description": "Supplies water to Miami-Dade and Broward counties",
       "counties": ["Miami-Dade", "Broward"],
+      "aquifer_type": "unconfined",
+      "confined": false,
+      "depth_range_ft": [0, 100],
+      "zones": [
+        {
+          "zone_name": "Biscayne",
+          "depth_range_ft": [0, 100],
+          "confined": false,
+          "description": "Highly permeable limestone and sand; primary Miami-Dade drinking water source; unconfined water-table aquifer; vulnerable to saltwater intrusion and surface contamination."
+        }
+      ],
       "sites": [
-        {"site_id": "251241080385301", "name": "Miami-Dade G-3764", "county": "Miami-Dade", "lat": 25.2114, "lng": -80.6481},
-        {"site_id": "251457080395802", "name": "Miami-Dade G-3777", "county": "Miami-Dade", "lat": 25.2492, "lng": -80.6661},
-        {"site_id": "251922080340701", "name": "Miami-Dade G-1251", "county": "Miami-Dade", "lat": 25.3228, "lng": -80.5686},
-        {"site_id": "252007080335701", "name": "Miami-Dade G-3336", "county": "Miami-Dade", "lat": 25.3353, "lng": -80.5658},
-        {"site_id": "252036080293501", "name": "Miami-Dade G-5004", "county": "Miami-Dade", "lat": 25.3433, "lng": -80.4931},
-        {"site_id": "252332080300501", "name": "Miami-Dade G-3355", "county": "Miami-Dade", "lat": 25.3922, "lng": -80.5014},
-        {"site_id": "252502080253901", "name": "Miami-Dade G-3356", "county": "Miami-Dade", "lat": 25.4172, "lng": -80.4275},
-        {"site_id": "252612080300701", "name": "Miami-Dade G-864", "county": "Miami-Dade", "lat": 25.4367, "lng": -80.5019},
-        {"site_id": "252918080234201", "name": "Miami-Dade G-1183", "county": "Miami-Dade", "lat": 25.4883, "lng": -80.3950},
-        {"site_id": "253029080295601", "name": "Miami-Dade S-196A", "county": "Miami-Dade", "lat": 25.5081, "lng": -80.4989},
-        {"site_id": "253215080282101", "name": "Miami-Dade G-2051", "county": "Miami-Dade", "lat": 25.5375, "lng": -80.4725},
-        {"site_id": "253445080310401", "name": "Miami-Dade G-3353", "county": "Miami-Dade", "lat": 25.5792, "lng": -80.5178},
-        {"site_id": "253516080265301", "name": "Miami-Dade G-3362", "county": "Miami-Dade", "lat": 25.5878, "lng": -80.4481},
-        {"site_id": "253618080333301", "name": "Miami-Dade G-3454", "county": "Miami-Dade", "lat": 25.6050, "lng": -80.5592},
-        {"site_id": "253643080301701", "name": "Miami-Dade G-3365", "county": "Miami-Dade", "lat": 25.6119, "lng": -80.5047},
-        {"site_id": "253714080304501", "name": "Miami-Dade G-3366", "county": "Miami-Dade", "lat": 25.6206, "lng": -80.5125}
+        {"site_id": "251241080385301", "name": "Miami-Dade G-3764", "county": "Miami-Dade", "lat": 25.2114, "lng": -80.6481, "well_depth_ft": 45, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "251457080395802", "name": "Miami-Dade G-3777", "county": "Miami-Dade", "lat": 25.2492, "lng": -80.6661, "well_depth_ft": 38, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "251922080340701", "name": "Miami-Dade G-1251", "county": "Miami-Dade", "lat": 25.3228, "lng": -80.5686, "well_depth_ft": 52, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "252007080335701", "name": "Miami-Dade G-3336", "county": "Miami-Dade", "lat": 25.3353, "lng": -80.5658, "well_depth_ft": 40, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "252036080293501", "name": "Miami-Dade G-5004", "county": "Miami-Dade", "lat": 25.3433, "lng": -80.4931, "well_depth_ft": 35, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "252332080300501", "name": "Miami-Dade G-3355", "county": "Miami-Dade", "lat": 25.3922, "lng": -80.5014, "well_depth_ft": 48, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "252502080253901", "name": "Miami-Dade G-3356", "county": "Miami-Dade", "lat": 25.4172, "lng": -80.4275, "well_depth_ft": 42, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "252612080300701", "name": "Miami-Dade G-864",  "county": "Miami-Dade", "lat": 25.4367, "lng": -80.5019, "well_depth_ft": 60, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "252918080234201", "name": "Miami-Dade G-1183", "county": "Miami-Dade", "lat": 25.4883, "lng": -80.3950, "well_depth_ft": 55, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "253029080295601", "name": "Miami-Dade S-196A", "county": "Miami-Dade", "lat": 25.5081, "lng": -80.4989, "well_depth_ft": 30, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "253215080282101", "name": "Miami-Dade G-2051", "county": "Miami-Dade", "lat": 25.5375, "lng": -80.4725, "well_depth_ft": 44, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "253445080310401", "name": "Miami-Dade G-3353", "county": "Miami-Dade", "lat": 25.5792, "lng": -80.5178, "well_depth_ft": 50, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "253516080265301", "name": "Miami-Dade G-3362", "county": "Miami-Dade", "lat": 25.5878, "lng": -80.4481, "well_depth_ft": 46, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "253618080333301", "name": "Miami-Dade G-3454", "county": "Miami-Dade", "lat": 25.6050, "lng": -80.5592, "well_depth_ft": 58, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "253643080301701", "name": "Miami-Dade G-3365", "county": "Miami-Dade", "lat": 25.6119, "lng": -80.5047, "well_depth_ft": 43, "aquifer_zone": "Biscayne", "confined": false},
+        {"site_id": "253714080304501", "name": "Miami-Dade G-3366", "county": "Miami-Dade", "lat": 25.6206, "lng": -80.5125, "well_depth_ft": 47, "aquifer_zone": "Biscayne", "confined": false}
       ]
     },
     "floridan": {
       "name": "Floridan Aquifer System",
       "description": "Largest aquifer in Florida, primary drinking water source",
-      "counties": ["Lee", "Collier", "Sarasota", "Hendry"],
+      "counties": ["Lee", "Collier", "Sarasota", "Hendry", "Charlotte"],
+      "aquifer_type": "confined",
+      "confined": true,
+      "depth_range_ft": [200, 2000],
+      "zones": [
+        {
+          "zone_name": "Upper Floridan",
+          "depth_range_ft": [200, 700],
+          "confined": true,
+          "description": "Confined artesian aquifer; primary municipal and agricultural water supply for SW Florida. Pressure head often rises above land surface in areas with strong artesian conditions."
+        },
+        {
+          "zone_name": "Lower Floridan",
+          "depth_range_ft": [700, 2000],
+          "confined": true,
+          "description": "Deep confined zone of the Floridan Aquifer System; generally higher salinity than Upper Floridan; used for deep injection wells (Class I/V UIC). Extends to ~2000 ft in SW Florida."
+        }
+      ],
       "sites": [
-        {"site_id": "262724081260701", "name": "Lee County L-2194", "county": "Lee", "lat": 26.4567, "lng": -81.4356},
-        {"site_id": "263525081193601", "name": "Lee County L-581", "county": "Lee", "lat": 26.5903, "lng": -81.3267},
-        {"site_id": "264211080555901", "name": "Lee County L-1999", "county": "Lee", "lat": 26.7031, "lng": -80.9331},
-        {"site_id": "265532081213801", "name": "Lee County L-3112", "county": "Lee", "lat": 26.9256, "lng": -81.3606},
-        {"site_id": "263156082022801", "name": "Charlotte County C-1", "county": "Charlotte", "lat": 26.5267, "lng": -82.0411},
-        {"site_id": "271453082165901", "name": "Sarasota County S-1", "county": "Sarasota", "lat": 27.2425, "lng": -82.2831},
-        {"site_id": "271845082015201", "name": "Sarasota County S-2", "county": "Sarasota", "lat": 27.3125, "lng": -82.0256},
-        {"site_id": "273612082240601", "name": "Sarasota County S-3", "county": "Sarasota", "lat": 27.6033, "lng": -82.4017},
-        {"site_id": "265203081422101", "name": "Collier County C-951R", "county": "Collier", "lat": 26.8672, "lng": -81.7058},
-        {"site_id": "265447081410801", "name": "Collier County C-953R", "county": "Collier", "lat": 26.9131, "lng": -81.6856},
-        {"site_id": "270419081483101", "name": "Collier County C-1004", "county": "Collier", "lat": 27.0719, "lng": -81.8086},
-        {"site_id": "271238081532301", "name": "Collier County C-1059", "county": "Collier", "lat": 27.2106, "lng": -81.8897},
-        {"site_id": "271949081444401", "name": "Collier County C-1089", "county": "Collier", "lat": 27.3303, "lng": -81.7456},
-        {"site_id": "264812081392701", "name": "Hendry County HE-1042", "county": "Hendry", "lat": 26.8033, "lng": -81.6575},
-        {"site_id": "265236081385301", "name": "Hendry County HE-859", "county": "Hendry", "lat": 26.8767, "lng": -81.6481},
-        {"site_id": "265642081475001", "name": "Hendry County HE-1076", "county": "Hendry", "lat": 26.9450, "lng": -81.7917},
-        {"site_id": "270142081492101", "name": "Hendry County HE-1136", "county": "Hendry", "lat": 27.0283, "lng": -81.8225}
+        {"site_id": "262724081260701", "name": "Lee County L-2194",    "county": "Lee",      "lat": 26.4567, "lng": -81.4356, "well_depth_ft": 380, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "263525081193601", "name": "Lee County L-581",     "county": "Lee",      "lat": 26.5903, "lng": -81.3267, "well_depth_ft": 420, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "264211080555901", "name": "Lee County L-1999",    "county": "Lee",      "lat": 26.7031, "lng": -80.9331, "well_depth_ft": 450, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "265532081213801", "name": "Lee County L-3112",    "county": "Lee",      "lat": 26.9256, "lng": -81.3606, "well_depth_ft": 400, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "263156082022801", "name": "Charlotte County C-1", "county": "Charlotte","lat": 26.5267, "lng": -82.0411, "well_depth_ft": 360, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "271453082165901", "name": "Sarasota County S-1",  "county": "Sarasota", "lat": 27.2425, "lng": -82.2831, "well_depth_ft": 500, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "271845082015201", "name": "Sarasota County S-2",  "county": "Sarasota", "lat": 27.3125, "lng": -82.0256, "well_depth_ft": 480, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "273612082240601", "name": "Sarasota County S-3",  "county": "Sarasota", "lat": 27.6033, "lng": -82.4017, "well_depth_ft": 520, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "265203081422101", "name": "Collier County C-951R","county": "Collier",  "lat": 26.8672, "lng": -81.7058, "well_depth_ft": 410, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "265447081410801", "name": "Collier County C-953R","county": "Collier",  "lat": 26.9131, "lng": -81.6856, "well_depth_ft": 430, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "270419081483101", "name": "Collier County C-1004","county": "Collier",  "lat": 27.0719, "lng": -81.8086, "well_depth_ft": 440, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "271238081532301", "name": "Collier County C-1059","county": "Collier",  "lat": 27.2106, "lng": -81.8897, "well_depth_ft": 460, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "271949081444401", "name": "Collier County C-1089","county": "Collier",  "lat": 27.3303, "lng": -81.7456, "well_depth_ft": 470, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "264812081392701", "name": "Hendry County HE-1042","county": "Hendry",   "lat": 26.8033, "lng": -81.6575, "well_depth_ft": 390, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "265236081385301", "name": "Hendry County HE-859", "county": "Hendry",   "lat": 26.8767, "lng": -81.6481, "well_depth_ft": 375, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "265642081475001", "name": "Hendry County HE-1076","county": "Hendry",   "lat": 26.9450, "lng": -81.7917, "well_depth_ft": 395, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "270142081492101", "name": "Hendry County HE-1136","county": "Hendry",   "lat": 27.0283, "lng": -81.8225, "well_depth_ft": 405, "aquifer_zone": "Upper Floridan", "confined": true}
       ]
     },
     "surficial": {
       "name": "Surficial Aquifer",
       "description": "Shallow aquifer across Florida",
       "counties": ["Martin", "Palm Beach", "St. Lucie"],
+      "aquifer_type": "unconfined",
+      "confined": false,
+      "depth_range_ft": [10, 50],
+      "zones": [
+        {
+          "zone_name": "Surficial Sand",
+          "depth_range_ft": [10, 50],
+          "confined": false,
+          "description": "Shallow unconfined sand and shell unit; recharged directly by rainfall; water table responds quickly to seasonal precipitation; sensitive to drought and over-pumping."
+        }
+      ],
       "sites": [
-        {"site_id": "270915080161501", "name": "Martin County M-1", "county": "Martin", "lat": 27.1542, "lng": -80.2708},
-        {"site_id": "265532080091401", "name": "Palm Beach County P-1", "county": "Palm Beach", "lat": 26.9256, "lng": -80.1517},
-        {"site_id": "272038080334501", "name": "St. Lucie County SL-1", "county": "St. Lucie", "lat": 27.3439, "lng": -80.5575}
+        {"site_id": "270915080161501", "name": "Martin County M-1",      "county": "Martin",     "lat": 27.1542, "lng": -80.2708, "well_depth_ft": 28, "aquifer_zone": "Surficial Sand", "confined": false},
+        {"site_id": "265532080091401", "name": "Palm Beach County P-1",  "county": "Palm Beach", "lat": 26.9256, "lng": -80.1517, "well_depth_ft": 22, "aquifer_zone": "Surficial Sand", "confined": false},
+        {"site_id": "272038080334501", "name": "St. Lucie County SL-1",  "county": "St. Lucie",  "lat": 27.3439, "lng": -80.5575, "well_depth_ft": 25, "aquifer_zone": "Surficial Sand", "confined": false}
       ]
     }
   },
