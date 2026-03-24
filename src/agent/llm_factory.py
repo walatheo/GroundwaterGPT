@@ -22,11 +22,14 @@ class LLMProvider(Enum):
     GEMINI = "gemini"
 
 
-# Default configuration - easy to change
-# Options: OLLAMA (local/free), OPENAI, ANTHROPIC, GEMINI
+# Default configuration — switch provider here or via LLM_PROVIDER / LLM_MODEL env vars.
+# Reads env vars at import time so the running server picks up changes without
+# code edits: LLM_PROVIDER=anthropic LLM_MODEL=claude-3-5-sonnet-20241022
+import os as _os
+
 LLM_CONFIG = {
-    "provider": LLMProvider.OLLAMA,  # Using Ollama while Gemini quota resets
-    "model": "llama3.2",  # Change to "gemini-2.0-flash" when ready
+    "provider": LLMProvider(_os.getenv("LLM_PROVIDER", "anthropic")),
+    "model": _os.getenv("LLM_MODEL", "claude-3-5-sonnet-20241022"),
     "temperature": 0.7,
     "max_tokens": 2048,
 }

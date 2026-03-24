@@ -31,12 +31,21 @@ import re
 from pathlib import Path
 from typing import Any, List, Optional
 
-import chromadb
-from langchain_chroma import Chroma
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_core.documents import Document
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+# These packages require onnxruntime (no Python 3.13 wheel yet) and other
+# optional extras.  Guard the imports so the rest of the app can start up
+# even when they are absent; functions that actually need them will raise a
+# clear RuntimeError at call time rather than crashing at import.
+try:
+    import chromadb
+    from langchain_chroma import Chroma
+    from langchain_community.document_loaders import PyPDFLoader
+    from langchain_core.documents import Document
+    from langchain_huggingface import HuggingFaceEmbeddings
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    _CHROMADB_AVAILABLE = True
+except ImportError as _chromadb_import_err:
+    _CHROMADB_AVAILABLE = False
+    _chromadb_import_err_msg = str(_chromadb_import_err)
 
 from .source_verification import TrustLevel, verify_document
 
@@ -283,12 +292,20 @@ def get_embeddings():
         ) from exc
 
 
-def get_vectorstore() -> Chroma:
+def get_vectorstore():
     """Get or create the ChromaDB vector store.
 
     Returns:
         Chroma vector store instance
+
+    Raises:
+        RuntimeError: if chromadb / onnxruntime are not installed.
     """
+    if not _CHROMADB_AVAILABLE:
+        raise RuntimeError(
+            f"ChromaDB is not available ({_chromadb_import_err_msg}). "
+            "Install the full requirements: pip install -r requirements.txt"
+        )
     embeddings = get_embeddings()
 
     # Check if ChromaDB exists

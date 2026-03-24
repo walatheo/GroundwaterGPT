@@ -1,14 +1,18 @@
 """Chat & research routes — AI agent endpoints and rule-based fallback.
 
 Endpoints:
- • POST /api/chat       — Conversational agent
- • POST /api/research   — Deep iterative research
- • GET  /api/chat/status — System health for chat subsystem
+ • POST /api/chat             — Conversational agent
+ • POST /api/research         — Deep iterative research (blocking)
+ • POST /api/research/stream  — Deep iterative research with SSE progress stream
+ • GET  /api/chat/status      — System health for chat subsystem
 """
 
+import json
 import logging
 import os
+import queue
 import sys
+import threading
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +20,7 @@ from typing import Optional
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from api.site_metadata import SITE_METADATA
 
@@ -572,6 +577,208 @@ def research_endpoint(query: dict):
         "claim_citations": fallback_claims,
         "citation_summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/research/stream — streaming deep research via SSE
+# ---------------------------------------------------------------------------
+
+# SSE stream timeout: slightly longer than the agent's own 120s ceiling so
+# the generator never hangs indefinitely if the research thread crashes.
+_STREAM_QUEUE_TIMEOUT = 135  # seconds
+
+
+def _run_research_in_thread(
+    question: str,
+    max_depth: int,
+    timeout: float,
+    event_queue: "queue.Queue[dict | None]",
+) -> None:
+    """Run the research agent in a background thread.
+
+    Puts SSE event dicts onto *event_queue* as work progresses, then puts
+    None as a sentinel to tell the generator the stream is finished.
+
+    Each event has a "type" key:
+      • "progress"  — intermediate status update while the agent works
+      • "result"    — the complete research payload (final event before None)
+      • "error"     — something went wrong; contains a "message" key
+    """
+
+    def progress_callback(message: str, progress: float) -> None:
+        """Bridge the agent's callback to the SSE queue."""
+        event_queue.put(
+            {
+                "type": "progress",
+                "message": message,
+                # Round to 2 decimal places so the frontend can drive a
+                # progress bar without floating-point noise.
+                "progress": round(progress, 2),
+            }
+        )
+
+    try:
+        if _research_agent is not None:
+            # Real LLM-backed research — progress events will flow.
+            result = _research_agent.research(
+                query=question,
+                max_depth=max_depth,
+                timeout=timeout,
+                progress_callback=progress_callback,
+            )
+            event_queue.put(
+                {
+                    "type": "result",
+                    "status": "ok",
+                    "mode": "deep_research",
+                    "report": result.get("report", ""),
+                    "insights": result.get("insights", []),
+                    "sources": result.get("sources", []),
+                    "search_history": result.get("search_history", []),
+                    "depth_reached": result.get("depth_reached", 0),
+                    "elapsed_seconds": result.get("elapsed_seconds", 0),
+                    "claim_citations": result.get("claim_citations", []),
+                    "citation_summary": result.get(
+                        "citation_summary",
+                        {
+                            "total_claims": 0,
+                            "cited_claims": 0,
+                            "citation_coverage": 0.0,
+                        },
+                    ),
+                }
+            )
+        else:
+            # Fallback mode — no progress updates, instant result.
+            question_lower = question.lower()
+            if "estero" in question_lower:
+                estero = _estero_research_fallback(question)
+                event_queue.put(
+                    {
+                        "type": "result",
+                        "status": "ok",
+                        "mode": "fallback",
+                        **estero,
+                    }
+                )
+            else:
+                fb = _fallback_response(question)
+                fallback_claims = [
+                    {
+                        "claim_id": "claim_001",
+                        "claim": fb["response"],
+                        "confidence": 0.6,
+                        "citations": [
+                            {
+                                "url": str(src),
+                                "verified": True,
+                                "trust_level": "moderate",
+                            }
+                            for src in fb["sources"]
+                        ],
+                    }
+                ]
+                event_queue.put(
+                    {
+                        "type": "result",
+                        "status": "ok",
+                        "mode": "fallback",
+                        "report": fb["response"],
+                        "insights": [],
+                        "sources": fb["sources"],
+                        "search_history": [question],
+                        "depth_reached": 0,
+                        "elapsed_seconds": 0,
+                        "claim_citations": fallback_claims,
+                        "citation_summary": _build_citation_summary(fallback_claims),
+                    }
+                )
+    except Exception as exc:
+        logger.error(
+            "Streaming research thread error: %s\n%s",
+            exc,
+            traceback.format_exc(),
+        )
+        event_queue.put({"type": "error", "message": str(exc)})
+    finally:
+        # Sentinel: tells the generator's while-loop to stop.
+        event_queue.put(None)
+
+
+@router.post("/research/stream")
+def research_stream_endpoint(query: dict):
+    """Streaming deep research endpoint using Server-Sent Events.
+
+    Identical contract to POST /api/research but returns a text/event-stream
+    response so the frontend can display live progress as the agent works.
+
+    Request body::
+
+        {
+            "question": "...",
+            "max_depth": 3,
+            "timeout": 120
+        }
+
+    Each SSE line is a JSON-encoded event dict with a "type" key:
+      • type="progress"  — intermediate status; "message" + "progress" (0-1)
+      • type="result"    — final research payload (same shape as /api/research)
+      • type="error"     — failure; "message" contains the error description
+    """
+    question = query.get("question", "")
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required")
+
+    max_depth = int(query.get("max_depth", 3))
+    timeout = float(query.get("timeout", 120))
+
+    # Queue bridges the research thread to the streaming generator.
+    # maxsize=0 means unbounded — the thread can push events freely without
+    # blocking even if the client is slow to read.
+    event_queue: queue.Queue = queue.Queue(maxsize=0)
+
+    # Kick off the research in a daemon thread so it doesn't block the
+    # FastAPI worker and is automatically reaped if the process exits.
+    research_thread = threading.Thread(
+        target=_run_research_in_thread,
+        args=(question, max_depth, timeout, event_queue),
+        daemon=True,
+    )
+    research_thread.start()
+
+    def generate():
+        """Pull events off the queue and yield them as SSE-formatted lines.
+
+        The SSE wire format is:  data: <json>\n\n
+        Each pair of newlines completes one event frame.  Browsers and fetch
+        streams both parse this natively.
+        """
+        while True:
+            try:
+                # Block until the next event arrives, or time out if the
+                # research thread has silently died.
+                event = event_queue.get(timeout=_STREAM_QUEUE_TIMEOUT)
+            except queue.Empty:
+                # Thread took too long without a sentinel — emit an error
+                # event and close the stream rather than hanging forever.
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Research timed out waiting for agent response'})}\n\n"
+                break
+
+            # Sentinel from the thread: research is fully done.
+            if event is None:
+                break
+
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        # These headers prevent proxies / CDNs from buffering the stream.
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
