@@ -480,16 +480,28 @@ def _build_wells_payload(sites: list[dict]) -> list[dict]:
 
 
 def _build_aquifer_info(aquifer_name: str) -> dict:
-    """Return structured aquifer metadata for a given aquifer display name."""
-    for meta in SITE_METADATA.values():
-        if meta.get("aquifer", "") == aquifer_name:
-            return {
-                "name": aquifer_name,
-                "aquifer_type": meta.get("aquifer_type", "unconfined"),
-                "confined": meta.get("confined", False),
-                "zones": _AQUIFER_ZONES_REFERENCE.get(aquifer_name, []),
-            }
-    return {"name": aquifer_name, "aquifer_type": "unknown", "confined": False, "zones": []}
+    """Return structured aquifer metadata for a given aquifer display name.
+
+    Includes well statistics (count, depth range, counties) aggregated from
+    all sites in SITE_METADATA that belong to this aquifer.
+    """
+    matching = [m for m in SITE_METADATA.values() if m.get("aquifer", "") == aquifer_name]
+    if not matching:
+        return {"name": aquifer_name, "aquifer_type": "unknown", "confined": False, "zones": []}
+
+    first = matching[0]
+    depths = [m["well_depth_ft"] for m in matching if m.get("well_depth_ft") is not None]
+    counties = sorted({m.get("county", "Florida") for m in matching})
+
+    return {
+        "name": aquifer_name,
+        "aquifer_type": first.get("aquifer_type", "unconfined"),
+        "confined": first.get("confined", False),
+        "zones": _AQUIFER_ZONES_REFERENCE.get(aquifer_name, []),
+        "monitored_wells": len(matching),
+        "well_depth_range_ft": [min(depths), max(depths)] if depths else None,
+        "counties": counties,
+    }
 
 
 def _trend_label(net_change: float) -> str:
@@ -657,16 +669,44 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
         site_url = _usgs_site_url(site["site_id"])
         source_urls.append(site_url)
 
+        # Aquifer context fields — use zone name when available, fall back to aquifer name
+        aq_zone = site.get("aquifer_zone") or site.get("aquifer", "Unknown Aquifer")
+        aq_label = site.get("aquifer", aq_zone)
+        confinement = "confined" if site.get("confined") else "unconfined"
+        well_depth = site.get("well_depth_ft")
+        zone_range = site.get("aquifer_zone_depth_range_ft")
+        aq_desc = site.get("aquifer_description", "")
+
+        depth_str = f"well depth: {well_depth:.0f} ft" if well_depth else ""
+        range_str = (
+            f"zone: {zone_range[0]}–{zone_range[1]} ft"
+            if zone_range and len(zone_range) == 2
+            else ""
+        )
+        meta_parts = [p for p in [depth_str, range_str] if p]
+        meta_str = f" [{'; '.join(meta_parts)}]" if meta_parts else ""
+
         site_blocks.append(
-            (
-                f"- Site {site['site_id']} ({site['name']}, {site['aquifer']}): "
-                f"{start_date} to {end_date}; net change {net_change:+.2f} ft "
-                f"({annual_change:+.2f} ft/year), trend={trend}."
+            f"- {site['name']} [site {site['site_id']}] — "
+            f"{aq_label} ({aq_zone}, {confinement}){meta_str}:\n"
+            f"  {start_date} to {end_date}; "
+            f"net change {net_change:+.2f} ft ({annual_change:+.2f} ft/yr), "
+            f"trend: {trend}."
+            + (
+                f"\n  Note: {aq_desc}"
+                if aq_desc
+                and any(
+                    kw in aq_desc.lower()
+                    for kw in ("saltwater", "artesian", "vulnerable", "intrusion", "pressure")
+                )
+                else ""
             )
         )
 
         insight_text = (
-            f"{site['site_id']} shows a {trend} groundwater trend from "
+            f"{site['name']} ({aq_zone}, {confinement}, "
+            + (f"well depth {well_depth:.0f} ft" if well_depth else site["site_id"])
+            + f") shows a {trend} groundwater trend from "
             f"{start_date} to {end_date} with net change {net_change:+.2f} ft."
         )
         insights.append(
@@ -688,9 +728,21 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
             }
         )
 
+    # Build aquifer-aware implications based on confinement types present
+    confinement_types = {("confined" if s.get("confined") else "unconfined") for s in sites}
+    if "unconfined" in confinement_types:
+        implication_note = (
+            "Unconfined (water-table) aquifers are directly sensitive to "
+            "recharge variability, drought, and over-pumping."
+        )
+    else:
+        implication_note = (
+            "Confined artesian aquifers show pressure-head decline; "
+            "sustained drawdown may reduce artesian flow and increase pumping costs."
+        )
     implications_claim = (
-        "Observed trends imply sustainability risk and potential saltwater "
-        "intrusion stress if drawdown persists."
+        f"Observed trends imply sustainability risk. {implication_note} "
+        "Saltwater intrusion risk increases under persistent decline in coastal zones."
     )
     claim_citations.append(
         {
@@ -707,8 +759,13 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
         }
     )
 
+    # Summarise aquifer types present for the interpretation section
+    aquifer_summary = ", ".join(
+        sorted({s.get("aquifer_zone") or s.get("aquifer", "Unknown") for s in sites})
+    )
     report = (
         f"{location_name} groundwater analysis (USGS-backed):\n\n"
+        f"Aquifer systems monitored: {aquifer_summary}\n\n"
         "Data period used (available local record):\n"
         f"{chr(10).join(site_blocks)}\n\n"
         "Interpretation:\n"
@@ -716,8 +773,7 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
         "results reflect the actual observed period listed above.\n"
         "- Trend direction (rising/falling/stable) is computed from net change over "
         "the available record.\n"
-        "- Implications include sustainability and saltwater intrusion risk under "
-        "persistent decline."
+        f"- {implications_claim}"
     )
 
     claim_verdicts = _build_claim_verdicts(claim_citations)

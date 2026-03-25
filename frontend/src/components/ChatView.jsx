@@ -112,6 +112,8 @@ export default function ChatView({ selectedSite }) {
             insights: data.insights || [],
             claimCitations: data.claim_citations || [],
             citationSummary: data.citation_summary || null,
+            wells: data.wells || [],
+            aquiferInfo: data.aquifer_info || null,
             mode: data.mode,
           }]
         })
@@ -277,6 +279,62 @@ export default function ChatView({ selectedSite }) {
                         )}
                       </li>
                     ))}
+                  </ul>
+                </details>
+              )}
+
+              {msg.wells && msg.wells.length > 0 && (
+                <details className="mt-2 pt-2 border-t border-slate-200">
+                  <summary className="text-xs text-slate-500 cursor-pointer">
+                    Well details — {msg.wells.length} monitoring site{msg.wells.length > 1 ? 's' : ''}
+                    {msg.aquiferInfo && (
+                      <span className="ml-2 text-slate-400">
+                        | {msg.aquiferInfo.name}
+                        {msg.aquiferInfo.monitored_wells != null && ` (${msg.aquiferInfo.monitored_wells} wells monitored)`}
+                      </span>
+                    )}
+                  </summary>
+                  <ul className="mt-2 space-y-2">
+                    {msg.wells.map((w) => {
+                      const confined = w.confined
+                      const badgeColor = confined
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-green-100 text-green-700'
+                      const badgeLabel = confined ? 'confined' : 'unconfined'
+                      const zoneRange = Array.isArray(w.aquifer_zone_depth_range_ft)
+                        ? `${w.aquifer_zone_depth_range_ft[0]}–${w.aquifer_zone_depth_range_ft[1]} ft`
+                        : null
+                      return (
+                        <li key={w.site_id} className="text-xs bg-slate-50 rounded p-2 space-y-0.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <a
+                              href={`https://waterdata.usgs.gov/monitoring-location/${w.site_id}/`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-medium text-blue-600 hover:underline"
+                            >
+                              {w.name}
+                            </a>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeColor}`}>
+                              {badgeLabel}
+                            </span>
+                            <span className="text-slate-400">{w.county}</span>
+                          </div>
+                          <div className="text-slate-600">
+                            {w.aquifer_zone || w.aquifer}
+                            {w.well_depth_ft != null && ` · well depth ${w.well_depth_ft} ft`}
+                            {zoneRange && ` · zone ${zoneRange}`}
+                          </div>
+                          {w.aquifer_description && (
+                            <div className="text-slate-400 italic leading-snug">
+                              {w.aquifer_description.length > 120
+                                ? w.aquifer_description.slice(0, 120) + '…'
+                                : w.aquifer_description}
+                            </div>
+                          )}
+                        </li>
+                      )
+                    })}
                   </ul>
                 </details>
               )}

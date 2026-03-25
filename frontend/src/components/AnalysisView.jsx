@@ -81,8 +81,50 @@ export default function AnalysisView({ data, site, stats }) {
     return null
   }
 
+  // Aquifer metadata from site object (populated by /api/wells or SITE_METADATA)
+  const aquiferZone = site.aquifer_zone || site.aquifer || null
+  const confined = site.confined ?? null
+  const wellDepth = site.well_depth_ft ?? site.depth ?? null
+  const zoneRange = Array.isArray(site.aquifer_zone_depth_range_ft)
+    ? site.aquifer_zone_depth_range_ft
+    : null
+  const aquiferDesc = site.aquifer_description || null
+  const hasAquiferMeta = aquiferZone || confined !== null || wellDepth !== null
+
   return (
     <div className="p-6 space-y-8">
+
+      {/* Aquifer Metadata Strip */}
+      {hasAquiferMeta && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            {aquiferZone && (
+              <span className="font-medium text-slate-700">{aquiferZone}</span>
+            )}
+            {confined !== null && (
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                confined ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+              }`}>
+                {confined ? 'confined' : 'unconfined'}
+              </span>
+            )}
+            {wellDepth != null && (
+              <span className="text-slate-500 text-xs">well depth: {wellDepth} ft</span>
+            )}
+            {zoneRange && (
+              <span className="text-slate-500 text-xs">
+                zone: {zoneRange[0]}–{zoneRange[1]} ft
+              </span>
+            )}
+          </div>
+          {aquiferDesc && (
+            <p className="mt-1 text-xs text-slate-400 leading-snug">
+              {aquiferDesc.length > 160 ? aquiferDesc.slice(0, 160) + '…' : aquiferDesc}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Statistics Summary */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
