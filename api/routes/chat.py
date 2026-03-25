@@ -9,6 +9,7 @@ Endpoints:
 import json
 import logging
 import os
+import re
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -335,13 +336,6 @@ _LOCATION_REFERENCE_POINTS: dict[str, tuple[float, float, str, Optional[str]]] =
     "hendry county": (26.5, -81.1, "Hendry County", "hendry"),
     "labelle": (26.7637, -81.4395, "LaBelle", "hendry"),
     "clewiston": (26.7534, -80.9351, "Clewiston", "hendry"),
-    # Aquifer-system reference points (centroid of monitored wells per aquifer)
-    "tamiami": (26.30, -81.50, "Tamiami Aquifer Area", "collier"),
-    "tamiami aquifer": (26.30, -81.50, "Tamiami Aquifer Area", "collier"),
-    "hawthorn": (26.50, -81.88, "Hawthorn Formation Area", "lee"),
-    "hawthorn group": (26.50, -81.88, "Hawthorn Formation Area", "lee"),
-    "floridan": (27.33, -82.45, "Floridan Aquifer Area", "sarasota"),
-    "floridan aquifer": (27.33, -82.45, "Floridan Aquifer Area", "sarasota"),
     # General / aquifer
     "everglades": (25.9, -80.7, "Everglades Area", None),
     "florida": (26.5, -81.0, "Florida", None),
@@ -349,11 +343,14 @@ _LOCATION_REFERENCE_POINTS: dict[str, tuple[float, float, str, Optional[str]]] =
 
 
 def _detect_location(question: str) -> Optional[tuple[float, float, str, Optional[str]]]:
-    """Return (lat, lng, display_name, county_hint) for the first location keyword found."""
+    """Return (lat, lng, display_name, county_hint) for the first location keyword found.
+
+    Uses word-boundary matching so "florida" does not match inside "floridan",
+    and prefers longer keywords to avoid "miami" shadowing "miami-dade".
+    """
     q = question.lower()
-    # Longest match first to prefer "fort myers" over plain "miami" etc.
     for keyword in sorted(_LOCATION_REFERENCE_POINTS, key=len, reverse=True):
-        if keyword in q:
+        if re.search(r"\b" + re.escape(keyword) + r"\b", q):
             return _LOCATION_REFERENCE_POINTS[keyword]
     return None
 
@@ -413,6 +410,12 @@ def _best_sites_near(
                 "name": meta.get("name", site_id),
                 "county": meta.get("county", "Florida"),
                 "aquifer": meta.get("aquifer", "Unknown Aquifer"),
+                "aquifer_type": meta.get("aquifer_type", "unconfined"),
+                "confined": meta.get("confined", False),
+                "aquifer_zone": meta.get("aquifer_zone", ""),
+                "aquifer_zone_depth_range_ft": meta.get("aquifer_zone_depth_range_ft", [0, 100]),
+                "aquifer_description": meta.get("aquifer_description", ""),
+                "well_depth_ft": meta.get("well_depth_ft"),
                 "lat": float(lat),
                 "lng": float(lng),
                 "distance_score": distance_score,
@@ -736,12 +739,6 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
         "depth_reached": 1,
         "elapsed_seconds": 0.12,
     }
-
-
-def _estero_research_fallback(question: str) -> dict:
-    """Backwards-compatible wrapper for the Estero benchmark fast path."""
-    sites = _best_estero_sites(max_sites=2)
-    return _site_research_fallback(question, sites, "Estero")
 
 
 # ---------------------------------------------------------------------------
