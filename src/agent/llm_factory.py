@@ -5,6 +5,7 @@ Change the provider in config to switch between:
 - openai (GPT-4o, GPT-4.1)
 - anthropic (Claude)
 - gemini (Google)
+- qwen (Alibaba Qwen via DashScope API — set DASHSCOPE_API_KEY)
 """
 
 import os
@@ -19,11 +20,12 @@ class LLMProvider(Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+    QWEN = "qwen"
 
 
 # Default configuration — switch provider here or via LLM_PROVIDER / LLM_MODEL env vars.
 # Reads env vars at import time so the running server picks up changes without
-# code edits: LLM_PROVIDER=anthropic LLM_MODEL=claude-3-5-sonnet-20241022
+# code edits: LLM_PROVIDER=qwen LLM_MODEL=qwen-plus DASHSCOPE_API_KEY=sk-...
 LLM_CONFIG = {
     "provider": LLMProvider(os.getenv("LLM_PROVIDER", "anthropic")),
     "model": os.getenv("LLM_MODEL", "claude-3-5-sonnet-20241022"),
@@ -101,6 +103,20 @@ def get_llm(
             **kwargs,
         )
 
+    elif provider == LLMProvider.QWEN:
+        from langchain_openai import ChatOpenAI
+
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        if not api_key:
+            raise ValueError("DASHSCOPE_API_KEY environment variable not set")
+        return ChatOpenAI(
+            model=model or "qwen-plus",
+            temperature=temperature,
+            api_key=api_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            **kwargs,
+        )
+
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -128,6 +144,16 @@ def get_embeddings(provider: Optional[LLMProvider] = None):
 
         return GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
+    elif provider == LLMProvider.QWEN:
+        from langchain_openai import OpenAIEmbeddings
+
+        api_key = os.getenv("DASHSCOPE_API_KEY", "")
+        return OpenAIEmbeddings(
+            model="text-embedding-v3",
+            api_key=api_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+
     else:
         # Fallback to HuggingFace embeddings
         from langchain_huggingface import HuggingFaceEmbeddings
@@ -148,4 +174,7 @@ RECOMMENDED_MODELS = {
     LLMProvider.OPENAI: ["gpt-4o", "gpt-4.1", "gpt-4o-mini"],
     LLMProvider.ANTHROPIC: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
     LLMProvider.GEMINI: ["gemini-2.0-flash", "gemini-1.5-pro"],
+    # Qwen via DashScope (https://dashscope.aliyuncs.com)
+    # qwen-turbo: fastest/cheapest; qwen-plus: balanced; qwen-max: most capable
+    LLMProvider.QWEN: ["qwen-plus", "qwen-max", "qwen-turbo", "qwen2.5-72b-instruct"],
 }

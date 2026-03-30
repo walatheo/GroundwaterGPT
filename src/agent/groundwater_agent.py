@@ -114,8 +114,12 @@ class GroundwaterAgent:
     """GroundwaterGPT Research Agent.
 
     Combines RAG with custom tools for comprehensive groundwater analysis.
-    Uses a simple retrieval-augmented approach for local models,
-    or LangGraph ReAct for larger models (GPT-4, Claude, Gemini).
+    Uses LangGraph ReAct with the configured LLM provider (Anthropic, OpenAI,
+    Gemini, Qwen, or Ollama) as the reasoning engine driving 14 data tools
+    for well queries, seasonal analysis, anomaly detection, and ML forecasts.
+
+    Qwen (via DashScope): set LLM_PROVIDER=qwen and DASHSCOPE_API_KEY.
+    Recommended model: qwen-plus (balanced) or qwen-max (most capable).
     """
 
     def __init__(
