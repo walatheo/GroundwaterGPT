@@ -21,11 +21,12 @@ class LLMProvider(Enum):
     GEMINI = "gemini"
 
 
-# Default configuration - easy to change
-# Options: OLLAMA (local/free), OPENAI, ANTHROPIC, GEMINI
+# Default configuration — switch provider here or via LLM_PROVIDER / LLM_MODEL env vars.
+# Reads env vars at import time so the running server picks up changes without
+# code edits: LLM_PROVIDER=anthropic LLM_MODEL=claude-3-5-sonnet-20241022
 LLM_CONFIG = {
-    "provider": LLMProvider.OLLAMA,  # Local default for reliable dev iteration
-    "model": "qwen3:8b",  # Preferred Ollama default (current Qwen generation)
+    "provider": LLMProvider(os.getenv("LLM_PROVIDER", "anthropic")),
+    "model": os.getenv("LLM_MODEL", "claude-3-5-sonnet-20241022"),
     "temperature": 0.7,
     "max_tokens": 2048,
 }
@@ -49,7 +50,7 @@ def get_llm(
         LangChain chat model instance
 
     Example:
-        # Use default (Ollama/Qwen)
+        # Use default (Ollama/Llama)
         llm = get_llm()
 
         # Override provider
@@ -81,7 +82,7 @@ def get_llm(
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
         return ChatAnthropic(
-            model=model or "claude-sonnet-4-6",
+            model=model or "claude-3-sonnet-20240229",
             temperature=temperature,
             api_key=api_key,
             **kwargs,
@@ -105,7 +106,7 @@ def get_llm(
 
 
 def get_embeddings(provider: Optional[LLMProvider] = None):
-    """Get the embeddings model for the specified provider.
+    """Get embeddings model for the specified provider.
 
     For Ollama, uses nomic-embed-text.
     For others, uses their native embedding models.
@@ -143,8 +144,8 @@ def set_provider(provider: LLMProvider, model: Optional[str] = None):
 
 # Provider-specific model recommendations
 RECOMMENDED_MODELS = {
-    LLMProvider.OLLAMA: ["qwen3:8b", "qwen2.5:7b", "llama3.2", "mistral", "deepseek-r1:7b"],
+    LLMProvider.OLLAMA: ["llama3.2", "qwen2.5:7b", "mistral", "deepseek-r1:7b"],
     LLMProvider.OPENAI: ["gpt-4o", "gpt-4.1", "gpt-4o-mini"],
-    LLMProvider.ANTHROPIC: ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5-20251001"],
+    LLMProvider.ANTHROPIC: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
     LLMProvider.GEMINI: ["gemini-2.0-flash", "gemini-1.5-pro"],
 }

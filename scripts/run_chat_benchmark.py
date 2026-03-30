@@ -48,15 +48,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exit non-zero if benchmark fails configured thresholds",
     )
-    parser.add_argument(
-        "--mode",
-        choices=["fallback", "live", "both"],
-        default=None,
-        help=(
-            "Benchmark execution mode. "
-            "Default follows thresholds config (fallback if force_fallback_mode=true)."
-        ),
-    )
     return parser.parse_args()
 
 
@@ -65,11 +56,7 @@ def main() -> int:
     from src.evaluation.chat_benchmark import run_chat_benchmark
 
     args = parse_args()
-    report = run_chat_benchmark(
-        cases_path=args.cases,
-        thresholds_path=args.thresholds,
-        mode=args.mode,
-    )
+    report = run_chat_benchmark(cases_path=args.cases, thresholds_path=args.thresholds)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "w") as fh:
@@ -79,25 +66,8 @@ def main() -> int:
     print("Chat benchmark complete")
     print(f"- Cases: {report.get('metadata', {}).get('case_count', 0)}")
     print(f"- Overall score: {summary.get('overall_score', 0.0):.3f}")
-    print(
-        "- Average claim citation coverage: "
-        f"{summary.get('average_claim_citation_coverage', 0.0):.3f}"
-    )
-    print(
-        "- Average section citation coverage: "
-        f"{summary.get('average_section_citation_coverage', 0.0):.3f}"
-    )
+    print("- Average citation coverage: " f"{summary.get('average_citation_coverage', 0.0):.3f}")
     print(f"- Threshold pass: {summary.get('passed', False)}")
-    metadata = report.get("metadata", {})
-    print(f"- Primary mode: {metadata.get('primary_mode', 'unknown')}")
-    if metadata.get("requested_mode") == "both":
-        for mode_name, mode_payload in report.get("mode_runs", {}).items():
-            mode_summary = mode_payload.get("summary", {})
-            print(
-                f"  - {mode_name}: score={mode_summary.get('overall_score', 0.0):.3f}, "
-                f"coverage={mode_summary.get('average_citation_coverage', 0.0):.3f}, "
-                f"pass={mode_summary.get('passed', False)}"
-            )
     print(f"- Report: {args.output}")
 
     if args.enforce_thresholds and not summary.get("passed", False):

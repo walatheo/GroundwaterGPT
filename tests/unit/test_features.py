@@ -56,7 +56,8 @@ class TestFeatureCreation:
 
     def test_lag_features_shifted_correctly(self, sample_groundwater_data):
         """Lag features should be properly shifted."""
-        from train_groundwater import FORECAST_HORIZON, LAG_DAYS, create_features
+        from train_groundwater import (FORECAST_HORIZON, LAG_DAYS,
+                                       create_features)
 
         result = create_features(sample_groundwater_data)
         original = sample_groundwater_data.copy()
@@ -85,10 +86,14 @@ class TestFeatureCreation:
 
         # Should have expected number of features (24 in current implementation)
         feature_cols = [
-            c for c in result.columns if c not in ["date", "water_level", "month", "day_of_year"]
+            c
+            for c in result.columns
+            if c not in ["date", "water_level", "month", "day_of_year"]
         ]
 
-        assert len(feature_cols) >= 20, f"Expected 20+ features, got {len(feature_cols)}"
+        assert (
+            len(feature_cols) >= 20
+        ), f"Expected 20+ features, got {len(feature_cols)}"
 
 
 class TestDataLeakage:

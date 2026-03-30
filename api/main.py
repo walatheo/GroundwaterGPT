@@ -3,16 +3,21 @@
 Thin application factory — all endpoint logic lives in ``api.routes.*``.
 """
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+# Load .env before any other project imports so API keys are available when
+# the route modules initialise their LLM agents at import time.
+from dotenv import load_dotenv
 
-from api.routes.chat import GROUNDWATER_KB, _fallback_response, _get_site_context  # noqa: F401
-from api.routes.chat import router as chat_router
-from api.routes.data import router as data_router
-from api.routes.knowledge import router as knowledge_router
-from api.routes.research_workflow import router as research_workflow_router
-from api.routes.wells import router as wells_router
-from api.site_metadata import SITE_METADATA  # noqa: F401
+load_dotenv()
+
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+from api.routes.chat import router as chat_router  # noqa: E402
+from api.routes.data import router as data_router  # noqa: E402
+from api.routes.knowledge import router as knowledge_router  # noqa: E402
+from api.routes.research_workflow import router as research_workflow_router  # noqa: E402
+from api.routes.wells import router as wells_router  # noqa: E402
+from api.site_metadata import SITE_METADATA  # noqa: F401, E402
 
 app = FastAPI(title="GroundwaterGPT API", version="1.0.0")
 

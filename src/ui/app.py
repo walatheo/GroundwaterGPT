@@ -16,7 +16,10 @@ import streamlit as st
 
 # Page configuration
 st.set_page_config(
-    page_title="GroundwaterGPT", page_icon="💧", layout="wide", initial_sidebar_state="expanded"
+    page_title="GroundwaterGPT",
+    page_icon="💧",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 # Custom CSS
@@ -46,14 +49,12 @@ st.markdown(
 def main():
     # Header
     st.title("💧 GroundwaterGPT")
-    st.markdown(
-        """
+    st.markdown("""
     **A self-sustaining AI research agent for groundwater science.**
 
     This system combines a deep research agent with user-friendly tools for
     researchers and the general public to explore groundwater data and research.
-    """
-    )
+    """)
 
     st.markdown("---")
 
@@ -194,8 +195,7 @@ def main():
     # Architecture
     st.header("🏗️ Architecture")
 
-    st.markdown(
-        """
+    st.markdown("""
     ```
     ┌─────────────────────────────────────────────────────────────────┐
     │                    DEEP RESEARCH AGENT                          │
@@ -225,16 +225,14 @@ def main():
     │  └─────────────┘  └─────────────┘  └─────────────┘             │
     └─────────────────────────────────────────────────────────────────┘
     ```
-    """
-    )
+    """)
 
     st.markdown("---")
 
     # Quick start
     st.header("🚀 Quick Start")
 
-    st.markdown(
-        """
+    st.markdown("""
     **Terminal Commands:**
     ```bash
     # Start Research Chat (main interface)
@@ -249,15 +247,13 @@ def main():
     # Download fresh USGS data
     python download_data.py
     ```
-    """
-    )
+    """)
 
     # Training data
     st.markdown("---")
     st.header("📚 Training Data Sources")
 
-    st.markdown(
-        """
+    st.markdown("""
     The agent is trained on:
 
     | Source | Type | Status |
@@ -267,8 +263,7 @@ def main():
     | Age Dating Young Groundwater | PDF research | ✅ Indexed |
     | Brines and Evaporites | PDF research | ✅ Indexed |
     | Web Research | Verified sources | ✅ Auto-learning |
-    """
-    )
+    """)
 
 
 if __name__ == "__main__":

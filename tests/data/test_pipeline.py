@@ -32,17 +32,10 @@ import requests
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data.pipeline import (
-    ValidationResult,
-    PipelineStats,
-    engineer_features,
-    fetch_single_site,
-    get_all_site_ids,
-    run_pipeline,
-    save_site_data,
-    validate_schema,
-)
-
+from src.data.pipeline import (PipelineStats, ValidationResult,
+                               engineer_features, fetch_single_site,
+                               get_all_site_ids, run_pipeline, save_site_data,
+                               validate_schema)
 
 # ============================================================================
 # FIXTURES
@@ -112,7 +105,9 @@ class TestFetchSingleSite:
     """Test the fetch_single_site() function."""
 
     @patch("src.data.pipeline.requests.get")
-    def test_successful_fetch_with_parameter_72019(self, mock_get, sample_usgs_response):
+    def test_successful_fetch_with_parameter_72019(
+        self, mock_get, sample_usgs_response
+    ):
         """Fetch should succeed with parameter code 72019."""
         mock_response = Mock()
         mock_response.json.return_value = sample_usgs_response
@@ -137,9 +132,18 @@ class TestFetchSingleSite:
                         "values": [
                             {
                                 "value": [
-                                    {"dateTime": "2023-01-01T00:00:00", "value": "15.2"},
-                                    {"dateTime": "2023-01-02T00:00:00", "value": "-999999"},
-                                    {"dateTime": "2023-01-03T00:00:00", "value": "15.1"},
+                                    {
+                                        "dateTime": "2023-01-01T00:00:00",
+                                        "value": "15.2",
+                                    },
+                                    {
+                                        "dateTime": "2023-01-02T00:00:00",
+                                        "value": "-999999",
+                                    },
+                                    {
+                                        "dateTime": "2023-01-03T00:00:00",
+                                        "value": "15.1",
+                                    },
                                 ]
                             }
                         ],
@@ -263,7 +267,9 @@ class TestValidateSchema:
         df = pd.DataFrame(
             {
                 "site_no": ["251241080385301"] * 3,
-                "datetime": pd.to_datetime(["2023-01-01", "2023-01-01", "2023-01-02"]),  # First two are duplicates
+                "datetime": pd.to_datetime(
+                    ["2023-01-01", "2023-01-01", "2023-01-02"]
+                ),  # First two are duplicates
                 "value": [15.2, 15.5, 15.3],
             }
         )
@@ -357,19 +363,25 @@ class TestPipelineOrchestration:
     """Test the main run_pipeline() orchestrator function."""
 
     @patch("src.data.pipeline.fetch_single_site")
-    def test_run_pipeline_all_sites(self, mock_fetch, sample_valid_dataframe, temp_data_dir):
+    def test_run_pipeline_all_sites(
+        self, mock_fetch, sample_valid_dataframe, temp_data_dir
+    ):
         """Pipeline should process all sites when sites=None."""
         mock_fetch.return_value = sample_valid_dataframe
 
         with patch("src.data.pipeline.DATA_DIR", temp_data_dir):
-            with patch("src.data.pipeline.get_all_site_ids", return_value=["251241080385301"]):
+            with patch(
+                "src.data.pipeline.get_all_site_ids", return_value=["251241080385301"]
+            ):
                 results = run_pipeline(parallel=False)
 
         assert len(results) >= 1
         assert "251241080385301" in results
 
     @patch("src.data.pipeline.fetch_single_site")
-    def test_run_pipeline_specific_sites(self, mock_fetch, sample_valid_dataframe, temp_data_dir):
+    def test_run_pipeline_specific_sites(
+        self, mock_fetch, sample_valid_dataframe, temp_data_dir
+    ):
         """Pipeline should process only specified sites."""
         mock_fetch.return_value = sample_valid_dataframe
 
@@ -380,7 +392,9 @@ class TestPipelineOrchestration:
         assert "251241080385301" in results
 
     @patch("src.data.pipeline.fetch_single_site")
-    def test_run_pipeline_with_parallel(self, mock_fetch, sample_valid_dataframe, temp_data_dir):
+    def test_run_pipeline_with_parallel(
+        self, mock_fetch, sample_valid_dataframe, temp_data_dir
+    ):
         """Pipeline should work with parallel processing."""
         mock_fetch.return_value = sample_valid_dataframe
 
@@ -396,7 +410,9 @@ class TestPipelineOrchestration:
         assert len(results_parallel) == len(results_sequential)
 
     @patch("src.data.pipeline.fetch_single_site")
-    def test_run_pipeline_error_resilience(self, mock_fetch, sample_valid_dataframe, temp_data_dir):
+    def test_run_pipeline_error_resilience(
+        self, mock_fetch, sample_valid_dataframe, temp_data_dir
+    ):
         """Pipeline should continue even if one site fails."""
         # First site succeeds, second fails
         mock_fetch.side_effect = [sample_valid_dataframe, None]
@@ -411,7 +427,9 @@ class TestPipelineOrchestration:
         assert "251241080385301" in results
 
     @patch("src.data.pipeline.fetch_single_site")
-    def test_run_pipeline_creates_manifest(self, mock_fetch, sample_valid_dataframe, temp_data_dir):
+    def test_run_pipeline_creates_manifest(
+        self, mock_fetch, sample_valid_dataframe, temp_data_dir
+    ):
         """Pipeline should create manifest.json with execution details."""
         mock_fetch.return_value = sample_valid_dataframe
 
@@ -460,7 +478,9 @@ class TestValidationResult:
 
     def test_creation_and_fields(self):
         """ValidationResult should initialize with proper defaults."""
-        result = ValidationResult(site_id="251241080385301", valid=True, record_count=100)
+        result = ValidationResult(
+            site_id="251241080385301", valid=True, record_count=100
+        )
 
         assert result.site_id == "251241080385301"
         assert result.valid is True
@@ -476,7 +496,9 @@ class TestPipelineStats:
         """PipelineStats should convert to JSON-serializable dict."""
         from datetime import datetime
 
-        stats = PipelineStats(timestamp=datetime.now(), sites_total=36, sites_successful=36)
+        stats = PipelineStats(
+            timestamp=datetime.now(), sites_total=36, sites_successful=36
+        )
 
         dict_repr = stats.to_dict()
 

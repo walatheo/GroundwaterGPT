@@ -20,7 +20,9 @@ def load_site_data(site_id: str) -> pd.DataFrame:
     """
     csv_path = DATA_DIR / f"usgs_{site_id}.csv"
     if not csv_path.exists():
-        raise HTTPException(status_code=404, detail=f"Data not found for site {site_id}")
+        raise HTTPException(
+            status_code=404, detail=f"Data not found for site {site_id}"
+        )
 
     df = pd.read_csv(csv_path)
     df["datetime"] = pd.to_datetime(df["datetime"])

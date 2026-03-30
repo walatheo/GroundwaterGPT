@@ -92,7 +92,11 @@ def create_dashboard() -> str:
     gw["daily_change"] = gw["water_level_ft"].diff()
 
     # Monthly stats
-    monthly = gw.groupby("month")["water_level_ft"].agg(["mean", "std", "min", "max"]).reset_index()
+    monthly = (
+        gw.groupby("month")["water_level_ft"]
+        .agg(["mean", "std", "min", "max"])
+        .reset_index()
+    )
     month_names = [
         "Jan",
         "Feb",
@@ -263,7 +267,9 @@ def create_dashboard() -> str:
     # Panel 3: Seasonal Pattern with Range
     # =========================================================================
     # Dry season (Nov-May) vs Wet season (Jun-Oct) coloring
-    season_colors = [ORANGE if m in [11, 12, 1, 2, 3, 4, 5] else BLUE for m in monthly["month"]]
+    season_colors = [
+        ORANGE if m in [11, 12, 1, 2, 3, 4, 5] else BLUE for m in monthly["month"]
+    ]
     fig.add_trace(
         go.Bar(
             x=month_names,
@@ -428,7 +434,8 @@ def create_dashboard() -> str:
             x=coverage["year"],
             y=coverage["count"],
             marker_color=[
-                GREEN if p >= 95 else ORANGE if p >= 80 else RED for p in coverage["pct"]
+                GREEN if p >= 95 else ORANGE if p >= 80 else RED
+                for p in coverage["pct"]
             ],
             name="Days with Data",
             hovertemplate="Year: %{x}<br>Days: %{y}<br>Coverage: %{customdata:.1f}%<extra></extra>",

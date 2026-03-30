@@ -94,7 +94,13 @@ def run_viz():
     """Start the integrated visualization app with research + charts."""
     print("📊 Starting GroundwaterGPT Integrated App (Research + Visualization)...")
     subprocess.run(
-        ["streamlit", "run", str(SRC_DIR / "ui" / "integrated_app.py"), "--server.port", "8501"]
+        [
+            "streamlit",
+            "run",
+            str(SRC_DIR / "ui" / "integrated_app.py"),
+            "--server.port",
+            "8501",
+        ]
     )
 
 

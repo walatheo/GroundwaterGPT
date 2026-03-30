@@ -159,7 +159,9 @@ class TestComparisonChartEndpoint:
     def test_max_five_sites(self):
         """Only the first 5 site IDs are processed."""
         data_dir = Path(__file__).parent.parent.parent / "data"
-        ids = [sid for sid in SITE_METADATA if (data_dir / f"usgs_{sid}.csv").exists()][:7]
+        ids = [sid for sid in SITE_METADATA if (data_dir / f"usgs_{sid}.csv").exists()][
+            :7
+        ]
         if len(ids) < 6:
             pytest.skip("Need 6+ site CSVs")
         body = client.get(f"/api/compare/chart?site_ids={','.join(ids)}").json()
@@ -207,4 +209,6 @@ class TestChartDataIntegrity:
                 if not any(abs(row["level"] - lv) <= 0.01 for lv in day_levels[d]):
                     mismatches += 1
 
-        assert mismatches == 0, f"{mismatches} level mismatches between chart and data endpoints"
+        assert (
+            mismatches == 0
+        ), f"{mismatches} level mismatches between chart and data endpoints"

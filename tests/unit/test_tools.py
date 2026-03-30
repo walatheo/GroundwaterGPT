@@ -14,24 +14,17 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import src.agent.tools as tools_module  # noqa: E402
-from src.agent.tools import (  # noqa: E402
-    GROUNDWATER_TOOLS,
-    _load_site_csv,
-    _load_site_metadata,
-    analyze_seasonal_patterns,
-    create_research_experiment_plan,
-    detect_anomalies,
-    draft_research_paper,
-    generate_comparison_chart,
-    generate_time_series_plot,
-    get_data_quality_report,
-    get_water_level_prediction,
-    list_available_sites,
-    list_research_experiment_plans,
-    log_experiment_run,
-    query_groundwater_data,
-    query_site_data,
-)
+from src.agent.tools import _load_site_csv  # noqa: E402
+from src.agent.tools import (GROUNDWATER_TOOLS, _load_site_metadata,
+                             analyze_seasonal_patterns,
+                             create_research_experiment_plan, detect_anomalies,
+                             draft_research_paper, generate_comparison_chart,
+                             generate_time_series_plot,
+                             get_data_quality_report,
+                             get_water_level_prediction, list_available_sites,
+                             list_research_experiment_plans,
+                             log_experiment_run, query_groundwater_data,
+                             query_site_data)
 
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
@@ -183,7 +176,9 @@ class TestQuerySiteData:
 
     def test_unknown_site(self):
         """Unknown site returns error message (not exception)."""
-        result = query_site_data.invoke({"site_id": "000000000000000", "stat_type": "summary"})
+        result = query_site_data.invoke(
+            {"site_id": "000000000000000", "stat_type": "summary"}
+        )
         assert "No data" in result or "not found" in result.lower()
 
 
@@ -302,7 +297,9 @@ class TestResearchWorkflowTools:
 
     def _redirect_research_dirs(self, tmp_path, monkeypatch):
         monkeypatch.setattr(tools_module, "OUTPUTS_DIR", tmp_path / "outputs")
-        monkeypatch.setattr(tools_module, "RESEARCH_DIR", tmp_path / "outputs" / "research")
+        monkeypatch.setattr(
+            tools_module, "RESEARCH_DIR", tmp_path / "outputs" / "research"
+        )
         monkeypatch.setattr(
             tools_module,
             "EXPERIMENTS_DIR",
@@ -345,6 +342,8 @@ class TestResearchWorkflowTools:
         )
         assert "Run Logged" in logged
 
-        drafted = draft_research_paper.invoke({"plan_id": plan_id, "target_venue": "NeurIPS"})
+        drafted = draft_research_paper.invoke(
+            {"plan_id": plan_id, "target_venue": "NeurIPS"}
+        )
         assert "Draft saved to" in drafted
         assert "## Abstract (Draft)" in drafted

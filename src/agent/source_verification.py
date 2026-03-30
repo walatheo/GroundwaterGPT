@@ -97,10 +97,16 @@ class SourceVerification:
 # NUMERICAL DATA SOURCES (Highest Priority - score: 1.0)
 # These provide raw, quantitative data for analysis
 NUMERICAL_DATA_DOMAINS = {
-    "waterdata.usgs.gov": ("USGS NWIS", "USGS National Water Information System - Real-time data"),
+    "waterdata.usgs.gov": (
+        "USGS NWIS",
+        "USGS National Water Information System - Real-time data",
+    ),
     "waterservices.usgs.gov": ("USGS API", "USGS Water Services API - Numerical data"),
     "water.usgs.gov": ("USGS Water", "USGS Water Resources - Data portal"),
-    "cdec.water.ca.gov": ("CA CDEC", "California Data Exchange Center - Real-time data"),
+    "cdec.water.ca.gov": (
+        "CA CDEC",
+        "California Data Exchange Center - Real-time data",
+    ),
     "water.weather.gov": ("NWS Hydro", "National Weather Service Hydrologic data"),
     "climatedata.ca": ("ClimateData", "Canadian climate data portal"),
     "ncdc.noaa.gov": ("NCDC", "National Climatic Data Center"),
@@ -174,7 +180,10 @@ VERIFIED_DOMAINS = {
     "waterservices.usgs.gov": ("USGS API", "USGS Water Services API"),
     "ngwa.org": ("NGWA", "National Ground Water Association"),
     # International Scientific
-    "unesco.org": ("UNESCO", "United Nations Educational, Scientific and Cultural Organization"),
+    "unesco.org": (
+        "UNESCO",
+        "United Nations Educational, Scientific and Cultural Organization",
+    ),
     "ipcc.ch": ("IPCC", "Intergovernmental Panel on Climate Change"),
     "who.int": ("WHO", "World Health Organization"),
     # Academic Publishers (peer-reviewed)
@@ -431,7 +440,9 @@ def verify_usgs_data(site_id: str, response_data: dict) -> SourceVerification:
         SourceVerification confirming data authenticity
     """
     # Check for required USGS response structure
-    has_timeseries = "value" in response_data and "timeSeries" in response_data.get("value", {})
+    has_timeseries = "value" in response_data and "timeSeries" in response_data.get(
+        "value", {}
+    )
 
     if has_timeseries:
         return SourceVerification(
@@ -610,10 +621,14 @@ def prioritize_sources(sources: list[str]) -> list[tuple[str, SourceVerification
     verified = [(url, verify_source(url)) for url in sources]
 
     # Sort by priority_score descending, then by trust level
-    return sorted(verified, key=lambda x: (x[1].priority_score, x[1].is_approved), reverse=True)
+    return sorted(
+        verified, key=lambda x: (x[1].priority_score, x[1].is_approved), reverse=True
+    )
 
 
-def filter_by_category(sources: list[str], categories: list[SourceCategory]) -> list[str]:
+def filter_by_category(
+    sources: list[str], categories: list[SourceCategory]
+) -> list[str]:
     """Filter sources to only include specific categories.
 
     Args:

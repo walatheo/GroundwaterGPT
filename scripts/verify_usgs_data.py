@@ -119,7 +119,9 @@ def main():
     for csv_file, site_name in sites[:2]:
         df = pd.read_csv(PROJECT_ROOT / csv_file)
         site_id = df["site_no"].iloc[0]
-        print(f"   - {site_name}: https://waterdata.usgs.gov/nwis/gwlevels?site_no={site_id}")
+        print(
+            f"   - {site_name}: https://waterdata.usgs.gov/nwis/gwlevels?site_no={site_id}"
+        )
 
     return 0 if all_verified else 1
 
