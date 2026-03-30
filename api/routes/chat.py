@@ -555,6 +555,18 @@ def _build_wells_payload(sites: list[dict]) -> list[dict]:
     for site in sites:
         site_id = site["site_id"]
         meta = SITE_METADATA.get(site_id, {})
+
+        # Compute saturation margin and artesian flag from live timeseries when available
+        series = site.get("series")
+        zone_range = meta.get("aquifer_zone_depth_range_ft", [0, 100])
+        sat_margin: Optional[float] = None
+        site_is_artesian = False
+        if series is not None and not series.empty:
+            last_val = float(series.iloc[-1]["value"])
+            site_is_artesian = bool(series["value"].min() < 0)
+            if zone_range and len(zone_range) >= 1:
+                sat_margin = round(float(zone_range[0]) - last_val, 2)
+
         wells.append(
             {
                 "site_id": site_id,
@@ -570,6 +582,8 @@ def _build_wells_payload(sites: list[dict]) -> list[dict]:
                 "aquifer_zone_depth_range_ft": meta.get("aquifer_zone_depth_range_ft", [0, 100]),
                 "aquifer_description": meta.get("aquifer_description", ""),
                 "usgs_url": _usgs_site_url(site_id),
+                "saturation_margin_ft": sat_margin,
+                "is_artesian": site_is_artesian,
             }
         )
     return wells
@@ -607,6 +621,65 @@ def _trend_label(net_change: float) -> str:
     if net_change < -0.25:
         return "falling"
     return "stable"
+
+
+def _half_trend(series: "pd.Series") -> str:
+    """Map year-by-year seasonal means to a worsening/recovering/stable label.
+
+    Compares the second half of the annual record against the first half.
+    Higher values mean the water level is deeper (worse for unconfined wells).
+    """
+    if len(series) < 3:
+        return "insufficient_data"
+    mid = len(series) // 2
+    diff = float(series.iloc[mid:].mean()) - float(series.iloc[:mid].mean())
+    if diff > 0.15:
+        return "worsening"
+    if diff < -0.15:
+        return "recovering"
+    return "stable"
+
+
+def _seasonal_decomposition(df: "pd.DataFrame") -> dict:
+    """Compute Florida wet/dry season statistics from a site timeseries.
+
+    Wet season: June–October (months 6–10). Dry season: November–May.
+    Returns ``{"has_seasonal": False}`` when fewer than 2 years of data exist.
+    Water-level values are in ft below land surface (higher value = deeper level).
+    """
+    if df is None or df.empty:
+        return {"has_seasonal": False}
+
+    ts = df.copy()
+    ts["_month"] = ts["datetime"].dt.month
+    ts["_year"] = ts["datetime"].dt.year
+    ts["_season"] = ts["_month"].apply(lambda m: "wet" if 6 <= m <= 10 else "dry")
+
+    year_span = int(ts["_year"].max()) - int(ts["_year"].min())
+    if year_span < 2:
+        return {"has_seasonal": False}
+
+    wet_vals = ts[ts["_season"] == "wet"]["value"]
+    dry_vals = ts[ts["_season"] == "dry"]["value"]
+    if wet_vals.empty or dry_vals.empty:
+        return {"has_seasonal": False}
+
+    wet_mean = float(wet_vals.mean())
+    dry_mean = float(dry_vals.mean())
+    amplitude = abs(dry_mean - wet_mean)
+
+    dry_by_year = ts[ts["_season"] == "dry"].groupby("_year")["value"].mean()
+    wet_by_year = ts[ts["_season"] == "wet"].groupby("_year")["value"].mean()
+
+    return {
+        "has_seasonal": True,
+        "wet_season_mean_ft": round(wet_mean, 2),
+        "dry_season_mean_ft": round(dry_mean, 2),
+        "seasonal_amplitude_ft": round(amplitude, 2),
+        "dry_season_trend": _half_trend(dry_by_year),
+        "wet_season_trend": _half_trend(wet_by_year),
+        "n_years": year_span + 1,
+    }
 
 
 def _build_citation_summary(claim_citations: list[dict]) -> dict:
@@ -870,6 +943,75 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
         meta_parts = [p for p in [depth_str, range_str] if p]
         meta_str = f" [{'; '.join(meta_parts)}]" if meta_parts else ""
 
+        # Head margin: ft above zone top (negative = below zone top)
+        current_level_ft = float(last["value"])
+        zone_top_ft: Optional[float] = (
+            float(zone_range[0]) if zone_range and len(zone_range) >= 1 else None
+        )
+        head_margin_ft: Optional[float] = (
+            round(zone_top_ft - current_level_ft, 2) if zone_top_ft is not None else None
+        )
+        is_artesian = bool(df["value"].min() < 0)
+
+        # Seasonal decomposition
+        seasonal = _seasonal_decomposition(df)
+
+        # Physics note: one-line summary of aquifer mechanics
+        if site.get("confined"):
+            physics_note = (
+                "Confined aquifer — pressure-head decline; "
+                "not seasonally recharged by local rainfall."
+            )
+        else:
+            physics_note = (
+                "Unconfined water-table aquifer — "
+                "responds directly to local precipitation and seasonal recharge."
+            )
+
+        # Head margin alert — confinement-aware thresholds
+        # Confined: flag when within 15 ft of zone top (losing artesian head)
+        # Unconfined: flag only when within 2 ft of or below zone top (near dewatering)
+        head_margin_line = ""
+        if head_margin_ft is not None:
+            is_confined_site = bool(site.get("confined", False))
+            margin_threshold = 15.0 if is_confined_site else 2.0
+            if head_margin_ft < margin_threshold:
+                if head_margin_ft < 0:
+                    zone_status = (
+                        "approaching unconfined conditions"
+                        if is_confined_site
+                        else "partial dewatering"
+                    )
+                    head_margin_line = (
+                        f"\n  CAUTION: head {abs(head_margin_ft):.1f} ft below zone top"
+                        f" — {zone_status}."
+                    )
+                else:
+                    head_margin_line = (
+                        f"\n  Head margin: {head_margin_ft:.1f} ft above zone top"
+                        " (approaching zone boundary)."
+                    )
+
+        # Artesian note
+        artesian_line = ""
+        if is_artesian:
+            artesian_line = (
+                "\n  Artesian: pressure head exceeded land surface during record period."
+            )
+
+        # Seasonal summary line
+        seasonal_line = ""
+        if seasonal.get("has_seasonal"):
+            amp = seasonal["seasonal_amplitude_ft"]
+            wet_m = seasonal["wet_season_mean_ft"]
+            dry_m = seasonal["dry_season_mean_ft"]
+            dry_trend = seasonal["dry_season_trend"]
+            seasonal_line = (
+                f"\n  Seasonal ({seasonal['n_years']} yr): amplitude {amp:.1f} ft"
+                f" (wet avg {wet_m:.1f} ft, dry avg {dry_m:.1f} ft);"
+                f" dry-season trend: {dry_trend}."
+            )
+
         site_blocks.append(
             f"- {site['name']} [site {site['site_id']}] — "
             f"{aq_label} ({aq_zone}, {confinement}){meta_str}:\n"
@@ -885,13 +1027,25 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
                 )
                 else ""
             )
+            + f"\n  Physics: {physics_note}"
+            + head_margin_line
+            + artesian_line
+            + seasonal_line
         )
+
+        # Insight/claim text — include critical flags
+        extra_flags = []
+        if is_artesian:
+            extra_flags.append("artesian conditions observed")
+        if head_margin_ft is not None and head_margin_ft < 0:
+            extra_flags.append(f"head {abs(head_margin_ft):.1f} ft below zone top")
+        flag_str = (" [" + "; ".join(extra_flags) + "]") if extra_flags else ""
 
         insight_text = (
             f"{site['name']} ({aq_zone}, {confinement}, "
             + (f"well depth {well_depth:.0f} ft" if well_depth else site["site_id"])
             + f") shows a {trend} groundwater trend from "
-            f"{start_date} to {end_date} with net change {net_change:+.2f} ft."
+            f"{start_date} to {end_date} with net change {net_change:+.2f} ft{flag_str}."
         )
         insights.append(
             {
