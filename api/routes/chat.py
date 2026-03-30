@@ -9,6 +9,7 @@ Endpoints:
 
 import json
 import logging
+import math
 import os
 import queue
 import re
@@ -359,6 +360,60 @@ def _detect_location(question: str) -> Optional[tuple[float, float, str, Optiona
     return None
 
 
+# ---------------------------------------------------------------------------
+# Aquifer keyword → (aquifer_key, display_name)
+# Longer keywords are sorted first to prevent prefix collisions
+# (e.g. "tamiami aquifer system" before "tamiami").
+# ---------------------------------------------------------------------------
+_AQUIFER_DETECTION_MAP: dict[str, tuple[str, str]] = {
+    "biscayne aquifer": ("biscayne", "Biscayne Aquifer"),
+    "biscayne": ("biscayne", "Biscayne Aquifer"),
+    "surficial aquifer system": ("surficial", "Surficial Aquifer"),
+    "surficial aquifer": ("surficial", "Surficial Aquifer"),
+    "surficial": ("surficial", "Surficial Aquifer"),
+    "water table aquifer": ("surficial", "Surficial Aquifer"),
+    "tamiami aquifer system": ("tamiami", "Tamiami Aquifer System"),
+    "tamiami aquifer": ("tamiami", "Tamiami Aquifer System"),
+    "lower tamiami": ("tamiami", "Tamiami Aquifer System"),
+    "tamiami": ("tamiami", "Tamiami Aquifer System"),
+    "intermediate aquifer system": ("intermediate", "Intermediate Aquifer System"),
+    "intermediate aquifer": ("intermediate", "Intermediate Aquifer System"),
+    "sand and shell": ("intermediate", "Intermediate Aquifer System"),
+    "hawthorn group": ("hawthorn", "Hawthorn Group"),
+    "hawthorn formation": ("hawthorn", "Hawthorn Group"),
+    "hawthorn": ("hawthorn", "Hawthorn Group"),
+    "floridan aquifer system": ("floridan", "Floridan Aquifer System"),
+    "floridan aquifer": ("floridan", "Floridan Aquifer System"),
+    "upper floridan": ("floridan", "Floridan Aquifer System"),
+    "lower floridan": ("floridan", "Floridan Aquifer System"),
+    "tampa limestone": ("floridan", "Floridan Aquifer System"),
+    "floridan": ("floridan", "Floridan Aquifer System"),
+}
+
+# Maps aquifer_key → lowercase substring present in SITE_METADATA["aquifer"]
+_AQUIFER_NEEDLE: dict[str, str] = {
+    "biscayne": "biscayne",
+    "surficial": "surficial",
+    "tamiami": "tamiami",
+    "intermediate": "intermediate",
+    "hawthorn": "hawthorn",
+    "floridan": "floridan",
+}
+
+
+def _detect_aquifer(question: str) -> Optional[tuple[str, str]]:
+    """Return (aquifer_key, display_name) for the first aquifer name found.
+
+    Uses word-boundary matching and longest-first ordering.
+    Returns None when no aquifer keyword is matched.
+    """
+    q = question.lower()
+    for keyword in sorted(_AQUIFER_DETECTION_MAP, key=len, reverse=True):
+        if re.search(r"\b" + re.escape(keyword) + r"\b", q):
+            return _AQUIFER_DETECTION_MAP[keyword]
+    return None
+
+
 def _distance_between(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """Approximate distance using lat/lng deltas (no projection needed for proximity ranking)."""
     return ((lat1 - lat2) ** 2 + (lng1 - lng2) ** 2) ** 0.5
@@ -434,6 +489,43 @@ def _best_sites_near(
 def _best_estero_sites(max_sites: int = 3) -> list[dict]:
     """Backwards-compatible wrapper — selects nearest sites to Estero."""
     return _best_sites_near(ESTERO_REFERENCE_LAT, ESTERO_REFERENCE_LNG, "lee", max_sites)
+
+
+def _sites_for_aquifer(aquifer_key: str, max_sites: int = 8) -> list[dict]:
+    """Return up to max_sites sites belonging to aquifer_key, with loaded timeseries.
+
+    Each returned dict has the same shape as ``_best_sites_near()`` output so it
+    is a drop-in argument for ``_site_research_fallback()``.
+    Sites without an available CSV timeseries are excluded.
+    Results are sorted by county then name for reproducibility.
+    """
+    needle = _AQUIFER_NEEDLE.get(aquifer_key, aquifer_key)
+    candidates = []
+    for site_id, meta in SITE_METADATA.items():
+        if needle not in meta.get("aquifer", "").lower():
+            continue
+        series = _load_site_timeseries(site_id)
+        if series is None:
+            continue
+        candidates.append(
+            {
+                "site_id": site_id,
+                "name": meta.get("name", site_id),
+                "county": meta.get("county", "Florida"),
+                "aquifer": meta.get("aquifer", "Unknown Aquifer"),
+                "aquifer_type": meta.get("aquifer_type", "unconfined"),
+                "confined": meta.get("confined", False),
+                "aquifer_zone": meta.get("aquifer_zone", ""),
+                "aquifer_zone_depth_range_ft": meta.get("aquifer_zone_depth_range_ft", [0, 100]),
+                "aquifer_description": meta.get("aquifer_description", ""),
+                "well_depth_ft": meta.get("well_depth_ft"),
+                "lat": meta.get("lat"),
+                "lng": meta.get("lng"),
+                "series": series,
+            }
+        )
+    candidates.sort(key=lambda s: (s["county"], s["name"]))
+    return candidates[:max_sites]
 
 
 # Keywords that indicate the user is asking about aquifer type / well depth
@@ -619,6 +711,94 @@ def _build_claim_verdict_summary(claim_verdicts: list[dict[str, Any]]) -> dict[s
     }
 
 
+def _cross_well_analysis(sites: list[dict]) -> dict:
+    """Compute cohort-level statistics across a set of wells with loaded timeseries.
+
+    Returns trend_distribution, mean/std annual change, divergent pairs, and risk level.
+    Only meaningful when len(sites) >= 2; returns a zeroed dict for 0-1 sites.
+    """
+    if len(sites) < 2:
+        return {
+            "n_total": len(sites),
+            "trend_distribution": {},
+            "cohort_trend": "unknown",
+            "mean_annual_change_ft_yr": None,
+            "std_dev_annual_change": None,
+            "divergent_pairs": [],
+            "risk_level": "unknown",
+            "per_site_metrics": [],
+        }
+
+    per_site: list[dict] = []
+    annual_changes: list[float] = []
+    for site in sites:
+        df = site["series"]
+        first, last = df.iloc[0], df.iloc[-1]
+        net = float(last["value"] - first["value"])
+        years = max(0.01, (last["datetime"] - first["datetime"]).days / 365.25)
+        ann = net / years
+        per_site.append(
+            {
+                "site_id": site["site_id"],
+                "name": site["name"],
+                "trend": _trend_label(net),
+                "net_change_ft": round(net, 3),
+                "annual_change_ft_yr": round(ann, 4),
+            }
+        )
+        annual_changes.append(ann)
+
+    n_total = len(per_site)
+    dist: dict[str, int] = {"falling": 0, "stable": 0, "rising": 0}
+    for s in per_site:
+        dist[s["trend"]] = dist.get(s["trend"], 0) + 1
+    cohort_trend = max(dist, key=dist.get)
+
+    mean_ann = sum(annual_changes) / n_total
+    std_dev = math.sqrt(sum((x - mean_ann) ** 2 for x in annual_changes) / n_total)
+
+    divergent: list[dict] = []
+    for i in range(n_total):
+        for j in range(i + 1, n_total):
+            a, b = per_site[i], per_site[j]
+            if {a["trend"], b["trend"]} == {"falling", "rising"}:
+                divergent.append(
+                    {
+                        "site_a": {
+                            k: a[k] for k in ("site_id", "name", "trend", "annual_change_ft_yr")
+                        },
+                        "site_b": {
+                            k: b[k] for k in ("site_id", "name", "trend", "annual_change_ft_yr")
+                        },
+                        "divergence_magnitude": abs(
+                            a["annual_change_ft_yr"] - b["annual_change_ft_yr"]
+                        ),
+                    }
+                )
+    divergent.sort(key=lambda p: p["divergence_magnitude"], reverse=True)
+    divergent = divergent[:3]
+
+    pct_falling = dist["falling"] / n_total
+    mostly_confined = sum(1 for s in sites if s.get("confined", False)) > n_total / 2
+    if pct_falling >= 0.66:
+        risk = "high"
+    elif pct_falling >= 0.33 or (pct_falling >= 0.20 and mostly_confined):
+        risk = "moderate"
+    else:
+        risk = "low"
+
+    return {
+        "n_total": n_total,
+        "trend_distribution": dist,
+        "cohort_trend": cohort_trend,
+        "mean_annual_change_ft_yr": round(mean_ann, 4),
+        "std_dev_annual_change": round(std_dev, 4),
+        "divergent_pairs": divergent,
+        "risk_level": risk,
+        "per_site_metrics": per_site,
+    }
+
+
 def _site_research_fallback(question: str, sites: list[dict], location_name: str) -> dict:
     """Generate a deterministic, cited response for any USGS site/location query."""
     if not sites:
@@ -732,6 +912,76 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
             }
         )
 
+    # Cross-well cohort analysis (only when 2+ sites available)
+    cross_well = _cross_well_analysis(sites)
+    if cross_well["n_total"] >= 2:
+        cw_dist = cross_well["trend_distribution"]
+        cw_mean = cross_well["mean_annual_change_ft_yr"]
+        cw_std = cross_well["std_dev_annual_change"]
+        cw_risk = cross_well["risk_level"].upper()
+        cw_n = cross_well["n_total"]
+        pct_falling = cw_dist["falling"] / cw_n
+
+        # Claim A — cohort trend summary
+        cohort_claim = (
+            f"Of {cw_n} {location_name} monitoring wells analysed, "
+            f"{cw_dist['falling']} show a falling trend, "
+            f"{cw_dist['stable']} stable, and {cw_dist['rising']} rising. "
+            f"Mean annual change: {cw_mean:+.3f} ft/yr "
+            f"(\u03c3\u202f=\u202f{cw_std:.3f}\u202fft/yr)."
+        )
+        claim_citations.append(
+            {
+                "claim_id": f"claim_{len(claim_citations) + 1:03d}",
+                "claim": cohort_claim,
+                "confidence": 0.90,
+                "citations": [
+                    {"url": u, "verified": True, "trust_level": "verified"} for u in source_urls
+                ],
+            }
+        )
+
+        # Claim B — divergence (only when opposing trends exist)
+        if cross_well["divergent_pairs"]:
+            top = cross_well["divergent_pairs"][0]
+            sa, sb = top["site_a"], top["site_b"]
+            div_claim = (
+                f"{sa['name']} ({sa['trend']}, {sa['annual_change_ft_yr']:+.3f}\u202fft/yr) "
+                f"vs {sb['name']} ({sb['trend']}, {sb['annual_change_ft_yr']:+.3f}\u202fft/yr) "
+                "— differential behaviour may reflect local recharge heterogeneity "
+                "or proximity to pumping centres."
+            )
+            div_urls = [
+                _usgs_site_url(sa["site_id"]),
+                _usgs_site_url(sb["site_id"]),
+            ]
+            claim_citations.append(
+                {
+                    "claim_id": f"claim_{len(claim_citations) + 1:03d}",
+                    "claim": div_claim,
+                    "confidence": 0.80,
+                    "citations": [
+                        {"url": u, "verified": True, "trust_level": "verified"} for u in div_urls
+                    ],
+                }
+            )
+
+        # Claim C — risk assessment
+        mostly_confined = sum(1 for s in sites if s.get("confined", False)) > cw_n / 2
+        conf_label = "confined" if mostly_confined else "unconfined"
+        risk_claim = (
+            f"{pct_falling:.0%} of monitored {location_name} wells show declining trends "
+            f"({conf_label} aquifer) — cohort sustainability risk: {cw_risk}."
+        )
+        claim_citations.append(
+            {
+                "claim_id": f"claim_{len(claim_citations) + 1:03d}",
+                "claim": risk_claim,
+                "confidence": 0.85,
+                "citations": [{"url": source_urls[0], "verified": True, "trust_level": "verified"}],
+            }
+        )
+
     # Build aquifer-aware implications based on confinement types present
     confinement_types = {("confined" if s.get("confined") else "unconfined") for s in sites}
     if "unconfined" in confinement_types:
@@ -763,6 +1013,26 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
         }
     )
 
+    # Build cross-well cohort section for report text
+    cohort_section = ""
+    if cross_well["n_total"] >= 2:
+        cw_dist = cross_well["trend_distribution"]
+        cw_n = cross_well["n_total"]
+        cohort_section = (
+            f"\nCross-well cohort ({cw_n} wells):\n"
+            f"- Trend distribution: {cw_dist['falling']} falling, "
+            f"{cw_dist['stable']} stable, {cw_dist['rising']} rising\n"
+            f"- Mean annual change: {cross_well['mean_annual_change_ft_yr']:+.3f} ft/yr "
+            f"(\u03c3\u202f=\u202f{cross_well['std_dev_annual_change']:.3f}\u202fft/yr)\n"
+            f"- Cohort trend: {cross_well['cohort_trend'].upper()}\n"
+            f"- Risk level: {cross_well['risk_level'].upper()}\n"
+        )
+        for pair in cross_well["divergent_pairs"][:2]:
+            sa, sb = pair["site_a"], pair["site_b"]
+            cohort_section += (
+                f"- Divergence: {sa['name']} ({sa['trend']}) " f"vs {sb['name']} ({sb['trend']})\n"
+            )
+
     # Summarise aquifer types present for the interpretation section
     aquifer_summary = ", ".join(
         sorted({s.get("aquifer_zone") or s.get("aquifer", "Unknown") for s in sites})
@@ -771,7 +1041,8 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
         f"{location_name} groundwater analysis (USGS-backed):\n\n"
         f"Aquifer systems monitored: {aquifer_summary}\n\n"
         "Data period used (available local record):\n"
-        f"{chr(10).join(site_blocks)}\n\n"
+        f"{chr(10).join(site_blocks)}\n"
+        f"{cohort_section}\n"
         "Interpretation:\n"
         "- The available record may not span the full requested period; "
         "results reflect the actual observed period listed above.\n"
@@ -906,6 +1177,22 @@ def chat_endpoint(query: dict):
     if not user_query:
         raise HTTPException(status_code=400, detail="Message is required")
 
+    # --- Aquifer fast path: named aquifer → all cohort sites (runs before location) ---
+    aq_hit = _detect_aquifer(user_query)
+    if aq_hit is not None:
+        aq_key, aq_display_name = aq_hit
+        aq_sites = _sites_for_aquifer(aq_key, max_sites=8)
+        aq_result = _site_research_fallback(user_query, aq_sites, aq_display_name)
+        return {
+            "response": aq_result["report"],
+            "context": _get_site_context(),
+            "sources": aq_result["sources"],
+            "mode": "aquifer_fallback",
+            "status": "ok",
+            "wells": _build_wells_payload(aq_sites),
+            "aquifer_info": _build_aquifer_info(aq_display_name),
+        }
+
     # --- Location fast path: return deterministic USGS-backed answer immediately ---
     loc = _detect_location(user_query)
     if loc is not None:
@@ -1034,6 +1321,46 @@ def research_endpoint(query: dict):
             )
             _set_runtime_error("research", exc)
             # Fall through to fallback
+
+    # --- Aquifer fast path: named aquifer → all cohort sites (runs before location) ---
+    aq_hit = _detect_aquifer(question)
+    if aq_hit is not None:
+        aq_key, aq_display_name = aq_hit
+        aq_sites = _sites_for_aquifer(aq_key, max_sites=6)
+        aq_result = _site_research_fallback(question, aq_sites, aq_display_name)
+        aq_claim_verdicts = aq_result.get(
+            "claim_verdicts",
+            _build_claim_verdicts(aq_result["claim_citations"]),
+        )
+        return {
+            "status": "ok",
+            "mode": "aquifer_fallback",
+            "report": aq_result["report"],
+            "insights": aq_result["insights"],
+            "sources": aq_result["sources"],
+            "search_history": aq_result["search_history"],
+            "depth_reached": aq_result["depth_reached"],
+            "elapsed_seconds": aq_result["elapsed_seconds"],
+            "claim_citations": aq_result["claim_citations"],
+            "claim_verdicts": aq_claim_verdicts,
+            "claim_verdict_summary": aq_result.get(
+                "claim_verdict_summary",
+                _build_claim_verdict_summary(aq_claim_verdicts),
+            ),
+            "citation_summary": aq_result["citation_summary"],
+            "section_confidence": aq_result.get("section_confidence", {}),
+            "hallucination_guardrail": aq_result.get(
+                "hallucination_guardrail",
+                {
+                    "strategy": "deterministic_site_fallback",
+                    "removed_uncited_factual_sentences": 0,
+                    "all_factual_claims_cited": True,
+                },
+            ),
+            "citation_integrity": _build_citation_integrity(
+                aq_result["claim_citations"], aq_result.get("section_confidence", {})
+            ),
+        }
 
     # --- Fallback: location-aware deterministic USGS response ---
     loc = _detect_location(question)

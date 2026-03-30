@@ -642,5 +642,39 @@
       "has_implications",
       "within_time_budget"
     ]
+  },
+  {
+    "id": "L1_tamiami_aquifer_01",
+    "level": "L1",
+    "question": "Tamiami aquifer groundwater trends",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_biscayne_aquifer_01",
+    "level": "L1",
+    "question": "Are Biscayne aquifer wells declining?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
   }
 ]
