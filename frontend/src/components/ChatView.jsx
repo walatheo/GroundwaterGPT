@@ -134,6 +134,8 @@ export default function ChatView({ selectedSite }) {
             claimVerdictSummary: data.claim_verdict_summary || null,
             wells: data.wells || [],
             aquiferInfo: data.aquifer_info || null,
+            divergentPairs: data.divergent_pairs || [],
+            cohortRisk: data.cohort_risk_level || null,
             mode: data.mode,
           }]
         })
@@ -148,6 +150,10 @@ export default function ChatView({ selectedSite }) {
           chart,
           context: data.context,
           sources: data.sources || [],
+          wells: data.wells || [],
+          aquiferInfo: data.aquifer_info || null,
+          divergentPairs: data.divergent_pairs || [],
+          cohortRisk: data.cohort_risk_level || null,
           mode: data.mode,
           status: data.status,
         }])
@@ -386,12 +392,15 @@ export default function ChatView({ selectedSite }) {
                   <ul className="mt-2 space-y-2">
                     {msg.wells.map((w) => {
                       const confined = w.confined
-                      const badgeColor = confined
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'bg-green-100 text-green-700'
-                      const badgeLabel = confined ? 'confined' : 'unconfined'
+                      const badgeColor = confined ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
                       const zoneRange = Array.isArray(w.aquifer_zone_depth_range_ft)
                         ? `${w.aquifer_zone_depth_range_ft[0]}–${w.aquifer_zone_depth_range_ft[1]} ft`
+                        : null
+                      const marginFt = w.saturation_margin_ft
+                      const marginLabel = marginFt != null
+                        ? marginFt >= 0
+                          ? `${marginFt} ft above zone top`
+                          : `${Math.abs(marginFt)} ft below zone top ⚠️`
                         : null
                       return (
                         <li key={w.site_id} className="text-xs bg-slate-50 rounded p-2 space-y-0.5">
@@ -405,8 +414,13 @@ export default function ChatView({ selectedSite }) {
                               {w.name}
                             </a>
                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeColor}`}>
-                              {badgeLabel}
+                              {confined ? 'confined' : 'unconfined'}
                             </span>
+                            {w.is_artesian && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-100 text-cyan-700">
+                                artesian
+                              </span>
+                            )}
                             <span className="text-slate-400">{w.county}</span>
                           </div>
                           <div className="text-slate-600">
@@ -414,6 +428,11 @@ export default function ChatView({ selectedSite }) {
                             {w.well_depth_ft != null && ` · well depth ${w.well_depth_ft} ft`}
                             {zoneRange && ` · zone ${zoneRange}`}
                           </div>
+                          {marginLabel && (
+                            <div className={`text-[10px] font-medium ${marginFt < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                              Head margin: {marginLabel}
+                            </div>
+                          )}
                           {w.aquifer_description && (
                             <div className="text-slate-400 italic leading-snug">
                               {w.aquifer_description.length > 120
@@ -428,11 +447,45 @@ export default function ChatView({ selectedSite }) {
                 </details>
               )}
 
+              {msg.divergentPairs && msg.divergentPairs.length > 0 && (
+                <details className="mt-2 pt-2 border-t border-slate-200">
+                  <summary className="text-xs text-slate-500 cursor-pointer">
+                    ⚡ {msg.divergentPairs.length} divergent well pair{msg.divergentPairs.length > 1 ? 's' : ''} detected
+                    {msg.cohortRisk && (
+                      <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        msg.cohortRisk === 'high' ? 'bg-red-100 text-red-700'
+                        : msg.cohortRisk === 'moderate' ? 'bg-amber-100 text-amber-700'
+                        : 'bg-green-100 text-green-700'
+                      }`}>
+                        {msg.cohortRisk} risk
+                      </span>
+                    )}
+                  </summary>
+                  <ul className="mt-1 space-y-1">
+                    {msg.divergentPairs.slice(0, 3).map((pair, i) => (
+                      <li key={i} className="text-xs bg-orange-50 border border-orange-100 rounded p-1.5">
+                        <span className="text-red-600 font-medium">{pair.site_a?.name}</span>
+                        <span className="text-slate-500">
+                          {' '}({pair.site_a?.trend}, {pair.site_a?.annual_change_ft_yr > 0 ? '+' : ''}{pair.site_a?.annual_change_ft_yr} ft/yr)
+                        </span>
+                        <span className="text-slate-400 mx-1">vs</span>
+                        <span className="text-green-600 font-medium">{pair.site_b?.name}</span>
+                        <span className="text-slate-500">
+                          {' '}({pair.site_b?.trend}, {pair.site_b?.annual_change_ft_yr > 0 ? '+' : ''}{pair.site_b?.annual_change_ft_yr} ft/yr)
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+
               {msg.mode && (
                 <div className="mt-2 flex items-center gap-1 text-xs text-slate-400">
                   {msg.mode === 'agent' && '🤖 Agent'}
                   {msg.mode === 'deep_research' && '🔬 Deep Research'}
                   {msg.mode === 'fallback' && '📋 Rule-based'}
+                  {msg.mode === 'site_fallback' && '📍 Location Analysis'}
+                  {msg.mode === 'aquifer_fallback' && '🌊 Aquifer Analysis'}
                 </div>
               )}
             </div>

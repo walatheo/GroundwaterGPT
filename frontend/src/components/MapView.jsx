@@ -64,14 +64,26 @@ export default function MapView({ sites = [], selectedSite, setSelectedSite }) {
               }}
             >
               <Popup>
-                <div className="min-w-[220px]">
+                <div className="min-w-[240px]">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="font-bold text-slate-800">{site.name}</h3>
                     <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">
                       ✓ USGS Verified
                     </span>
                   </div>
-                  <p className="text-sm text-slate-500">{site.aquifer}</p>
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <p className="text-sm text-slate-500">{site.aquifer}</p>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      site.confined
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-green-100 text-green-700'
+                    }`}>
+                      {site.confined ? 'confined' : 'unconfined'}
+                    </span>
+                    {site.aquifer_zone && (
+                      <span className="text-xs text-slate-400 italic">{site.aquifer_zone}</span>
+                    )}
+                  </div>
                   <p className="text-sm text-slate-500">{site.county} County, Florida</p>
 
                   <div className="mt-3 pt-3 border-t border-slate-200">
@@ -86,11 +98,15 @@ export default function MapView({ sites = [], selectedSite, setSelectedSite }) {
                       </div>
                       <div>
                         <p className="text-slate-400">Well Depth</p>
-                        <p className="font-semibold">{site.depth} ft</p>
+                        <p className="font-semibold">{site.well_depth_ft ?? site.depth} ft</p>
                       </div>
                       <div>
-                        <p className="text-slate-400">Coordinates</p>
-                        <p className="font-mono text-xs">{site.lat?.toFixed(3)}°N</p>
+                        <p className="text-slate-400">Zone Depth</p>
+                        <p className="font-semibold">
+                          {Array.isArray(site.aquifer_zone_depth_range_ft)
+                            ? `${site.aquifer_zone_depth_range_ft[0]}–${site.aquifer_zone_depth_range_ft[1]} ft`
+                            : `${site.lat?.toFixed(3)}°N`}
+                        </p>
                       </div>
                     </div>
                   </div>

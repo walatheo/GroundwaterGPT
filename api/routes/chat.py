@@ -419,23 +419,34 @@ def _distance_between(lat1: float, lng1: float, lat2: float, lng2: float) -> flo
     return ((lat1 - lat2) ** 2 + (lng1 - lng2) ** 2) ** 0.5
 
 
+# Module-level cache: avoids re-reading the same CSV on every request.
+# Populated lazily on first load; persists for the lifetime of the process.
+_SITE_SERIES_CACHE: dict[str, Optional[pd.DataFrame]] = {}
+
+
 def _load_site_timeseries(site_id: str) -> Optional[pd.DataFrame]:
-    """Load per-site groundwater series if available."""
+    """Load per-site groundwater series, returning cached copy when available."""
+    if site_id in _SITE_SERIES_CACHE:
+        return _SITE_SERIES_CACHE[site_id]
+
     csv_path = DATA_DIR / f"usgs_{site_id}.csv"
     if not csv_path.exists():
+        _SITE_SERIES_CACHE[site_id] = None
         return None
 
     try:
         df = pd.read_csv(csv_path)
         if "datetime" not in df.columns or "value" not in df.columns:
+            _SITE_SERIES_CACHE[site_id] = None
             return None
         df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
         df = df.dropna(subset=["datetime", "value"]).sort_values("datetime")
-        if df.empty:
-            return None
-        return df
+        result: Optional[pd.DataFrame] = df if not df.empty else None
+        _SITE_SERIES_CACHE[site_id] = result
+        return result
     except Exception:
+        _SITE_SERIES_CACHE[site_id] = None
         return None
 
 
@@ -1220,6 +1231,8 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
             "removed_uncited_factual_sentences": 0,
             "all_factual_claims_cited": True,
         },
+        "divergent_pairs": cross_well.get("divergent_pairs", []),
+        "cohort_risk_level": cross_well.get("risk_level"),
         "search_history": [question, f"USGS {location_name} proxy sites trend analysis"],
         "depth_reached": 1,
         "elapsed_seconds": 0.12,
@@ -1514,6 +1527,10 @@ def research_endpoint(query: dict):
             "citation_integrity": _build_citation_integrity(
                 aq_result["claim_citations"], aq_result.get("section_confidence", {})
             ),
+            "wells": _build_wells_payload(aq_sites),
+            "aquifer_info": _build_aquifer_info(aq_display_name),
+            "divergent_pairs": aq_result.get("divergent_pairs", []),
+            "cohort_risk_level": aq_result.get("cohort_risk_level"),
         }
 
     # --- Fallback: location-aware deterministic USGS response ---
@@ -1554,6 +1571,10 @@ def research_endpoint(query: dict):
             "citation_integrity": _build_citation_integrity(
                 site_result["claim_citations"], site_result.get("section_confidence", {})
             ),
+            "wells": _build_wells_payload(loc_sites),
+            "aquifer_info": (_build_aquifer_info(loc_sites[0]["aquifer"]) if loc_sites else None),
+            "divergent_pairs": site_result.get("divergent_pairs", []),
+            "cohort_risk_level": site_result.get("cohort_risk_level"),
         }
 
     fb = _fallback_response(question)
