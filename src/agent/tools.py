@@ -3,13 +3,12 @@
 Tools for querying groundwater data, making predictions, and analyzing trends.
 """
 
-import json as _json
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-import joblib
 import numpy as np
 import pandas as pd
 from langchain_core.tools import tool
@@ -23,6 +22,23 @@ OUTPUTS_DIR = BASE_DIR / "outputs"
 RESEARCH_DIR = OUTPUTS_DIR / "research"
 EXPERIMENTS_DIR = RESEARCH_DIR / "experiments"
 MANUSCRIPTS_DIR = RESEARCH_DIR / "manuscripts"
+
+
+# ---------------------------------------------------------------------------
+# Module-level caches — avoid re-reading files on every tool invocation
+# ---------------------------------------------------------------------------
+_GROUNDWATER_DF_CACHE: Optional[pd.DataFrame] = None
+_SITE_METADATA_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
+_SITE_CSV_CACHE: Dict[str, Optional[pd.DataFrame]] = {}
+
+
+def _load_groundwater_df() -> pd.DataFrame:
+    """Load groundwater.csv with caching. Raises FileNotFoundError if missing."""
+    global _GROUNDWATER_DF_CACHE
+    if _GROUNDWATER_DF_CACHE is not None:
+        return _GROUNDWATER_DF_CACHE
+    _GROUNDWATER_DF_CACHE = pd.read_csv(DATA_DIR / "groundwater.csv", parse_dates=["date"])
+    return _GROUNDWATER_DF_CACHE
 
 
 def _ensure_research_dirs() -> None:
@@ -43,7 +59,7 @@ def _load_experiment_plan(plan_id: str) -> Dict[str, Any]:
     if not plan_path.exists():
         raise FileNotFoundError(f"Experiment plan not found: {plan_id}")
     with open(plan_path) as fh:
-        return _json.load(fh)
+        return json.load(fh)
 
 
 def _save_experiment_plan(plan: Dict[str, Any]) -> Path:
@@ -51,14 +67,14 @@ def _save_experiment_plan(plan: Dict[str, Any]) -> Path:
     _ensure_research_dirs()
     plan_path = _experiment_file_path(plan["plan_id"])
     with open(plan_path, "w") as fh:
-        _json.dump(plan, fh, indent=2)
+        json.dump(plan, fh, indent=2)
     return plan_path
 
 
 def _parse_json_object(raw: str, field_name: str) -> Dict[str, Any]:
     """Parse a JSON object with clear error messaging."""
     try:
-        parsed = _json.loads(raw)
+        parsed = json.loads(raw)
     except Exception as exc:
         raise ValueError(f"{field_name} must be valid JSON: {exc}") from exc
 
@@ -94,7 +110,7 @@ def query_groundwater_data(
     """
     try:
         # Load groundwater data
-        df = pd.read_csv(DATA_DIR / "groundwater.csv", parse_dates=["date"])
+        df = _load_groundwater_df().copy()
 
         # Filter by date range if specified
         if start_date:
@@ -108,9 +124,7 @@ def query_groundwater_data(
         # Calculate statistics based on type
         if stat_type == "summary":
             tail30 = df.tail(30)
-            recent_change = (
-                tail30.iloc[-1]["water_level_ft"] - tail30.iloc[0]["water_level_ft"]
-            )
+            recent_change = tail30.iloc[-1]["water_level_ft"] - tail30.iloc[0]["water_level_ft"]
             result = f"""
 📊 **Groundwater Data Summary**
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -132,9 +146,7 @@ def query_groundwater_data(
 
         elif stat_type == "monthly":
             df["month"] = df["date"].dt.to_period("M")
-            monthly = df.groupby("month")["water_level_ft"].agg(
-                ["mean", "min", "max", "std"]
-            )
+            monthly = df.groupby("month")["water_level_ft"].agg(["mean", "min", "max", "std"])
             result = "📅 **Monthly Averages** (last 12 months):\n"
             for month, row in monthly.tail(12).iterrows():
                 result += (
@@ -144,21 +156,25 @@ def query_groundwater_data(
 
         elif stat_type == "yearly":
             df["year"] = df["date"].dt.year
-            yearly = df.groupby("year")["water_level_ft"].agg(
-                ["mean", "min", "max", "count"]
-            )
+            yearly = df.groupby("year")["water_level_ft"].agg(["mean", "min", "max", "count"])
             result = "📆 **Yearly Statistics**:\n"
             for year, row in yearly.iterrows():
-                result += f"   • {year}: avg {row['mean']:.2f} ft, {int(row['count'])} days of data\n"
+                result += (
+                    f"   • {year}: avg {row['mean']:.2f} ft, {int(row['count'])} days of data\n"
+                )
 
         elif stat_type == "raw":
             # Return last 10 records
             result = "📋 **Recent Raw Data** (last 10 records):\n"
             for _, row in df.tail(10).iterrows():
-                result += f"   • {row['date'].strftime('%Y-%m-%d')}: {row['water_level_ft']:.2f} ft\n"
+                result += (
+                    f"   • {row['date'].strftime('%Y-%m-%d')}: {row['water_level_ft']:.2f} ft\n"
+                )
 
         else:
-            result = f"Unknown stat_type: {stat_type}. Use 'summary', 'monthly', 'yearly', or 'raw'."
+            result = (
+                f"Unknown stat_type: {stat_type}. Use 'summary', 'monthly', 'yearly', or 'raw'."
+            )
 
         return result
 
@@ -182,17 +198,8 @@ def get_water_level_prediction(days_ahead: int = 7) -> str:
         # Validate days_ahead
         days_ahead = max(1, min(30, days_ahead))
 
-        # Load the trained model
-        model_path = MODELS_DIR / "best_ridge.joblib"
-        if not model_path.exists():
-            return (
-                "❌ Prediction model not found. Please run train_groundwater.py first."
-            )
-
-        _model = joblib.load(model_path)  # noqa: F841 — loaded for future use
-
         # Load recent data for features
-        df = pd.read_csv(DATA_DIR / "groundwater.csv", parse_dates=["date"])
+        df = _load_groundwater_df().copy()
         df = df.sort_values("date")
 
         # Get the latest water level data
@@ -206,9 +213,7 @@ def get_water_level_prediction(days_ahead: int = 7) -> str:
 
         # Simple prediction based on recent trends
         # Note: This is a simplified prediction; actual model uses more features
-        trend = (
-            df["water_level_ft"].tail(7).iloc[-1] - df["water_level_ft"].tail(7).iloc[0]
-        ) / 7
+        trend = (df["water_level_ft"].tail(7).iloc[-1] - df["water_level_ft"].tail(7).iloc[0]) / 7
 
         result = f"""
 🔮 **Water Level Prediction**
@@ -257,7 +262,7 @@ def analyze_seasonal_patterns() -> str:
         Seasonal analysis including wet/dry season comparisons
     """
     try:
-        df = pd.read_csv(DATA_DIR / "groundwater.csv", parse_dates=["date"])
+        df = _load_groundwater_df().copy()
 
         # Extract month
         df["month"] = df["date"].dt.month
@@ -268,9 +273,7 @@ def analyze_seasonal_patterns() -> str:
 
         # Florida seasons: Wet (Jun-Oct), Dry (Nov-May)
         df["season"] = df["month"].apply(lambda m: "Wet" if 6 <= m <= 10 else "Dry")
-        seasonal_avg = df.groupby("season")["water_level_ft"].agg(
-            ["mean", "std", "min", "max"]
-        )
+        seasonal_avg = df.groupby("season")["water_level_ft"].agg(["mean", "std", "min", "max"])
 
         # Find peak months
         shallowest_month = monthly_avg.idxmin()
@@ -318,9 +321,7 @@ def analyze_seasonal_patterns() -> str:
             )
             result += f"   {month_names[month][:3]}: {avg:.1f} ft {bar} {indicator}\n"
 
-        seasonal_diff = (
-            seasonal_avg.loc["Dry", "mean"] - seasonal_avg.loc["Wet", "mean"]
-        )
+        seasonal_diff = seasonal_avg.loc["Dry", "mean"] - seasonal_avg.loc["Wet", "mean"]
         result += f"""
 📊 **Key Insights**:
    • Shallowest water: {month_names[shallowest_month]} ({monthly_avg[shallowest_month]:.2f} ft)
@@ -346,7 +347,7 @@ def detect_anomalies(threshold: float = 2.0) -> str:
         List of detected anomalies and their dates
     """
     try:
-        df = pd.read_csv(DATA_DIR / "groundwater.csv", parse_dates=["date"])
+        df = _load_groundwater_df().copy()
 
         # Calculate z-scores
         mean_level = df["water_level_ft"].mean()
@@ -371,9 +372,7 @@ def detect_anomalies(threshold: float = 2.0) -> str:
             # High anomalies (unusually deep water)
             high_anomalies = anomalies[anomalies["z_score"] > threshold]
             if len(high_anomalies) > 0:
-                result += (
-                    f"\n📈 **Unusually Deep Water** ({len(high_anomalies)} events):\n"
-                )
+                result += f"\n📈 **Unusually Deep Water** ({len(high_anomalies)} events):\n"
                 for _, row in high_anomalies.head(5).iterrows():
                     d = row["date"].strftime("%Y-%m-%d")
                     lvl = row["water_level_ft"]
@@ -385,9 +384,7 @@ def detect_anomalies(threshold: float = 2.0) -> str:
             # Low anomalies (unusually shallow water)
             low_anomalies = anomalies[anomalies["z_score"] < -threshold]
             if len(low_anomalies) > 0:
-                result += (
-                    f"\n📉 **Unusually Shallow Water** ({len(low_anomalies)} events):\n"
-                )
+                result += f"\n📉 **Unusually Shallow Water** ({len(low_anomalies)} events):\n"
                 for _, row in low_anomalies.head(5).iterrows():
                     d = row["date"].strftime("%Y-%m-%d")
                     lvl = row["water_level_ft"]
@@ -418,7 +415,7 @@ def get_data_quality_report() -> str:
         Data quality metrics including completeness, gaps, and source info
     """
     try:
-        df = pd.read_csv(DATA_DIR / "groundwater.csv", parse_dates=["date"])
+        df = _load_groundwater_df().copy()
 
         # Calculate data quality metrics
         date_range = (df["date"].max() - df["date"].min()).days + 1
@@ -451,7 +448,9 @@ def get_data_quality_report() -> str:
         if len(gaps) > 0:
             result += "   • Largest gaps:\n"
             for _, row in gaps.nlargest(3, "gap").iterrows():
-                result += f"      - {int(row['gap'])} days ending {row['date'].strftime('%Y-%m-%d')}\n"
+                result += (
+                    f"      - {int(row['gap'])} days ending {row['date'].strftime('%Y-%m-%d')}\n"
+                )
 
         wl_min = df["water_level_ft"].min()
         wl_max = df["water_level_ft"].max()
@@ -488,13 +487,23 @@ def _load_site_csv(site_id: str) -> pd.DataFrame:
     The per-site CSVs use columns ``datetime`` and ``value``.
     This helper normalises them to ``date`` and ``water_level_ft``
     so that downstream tools can use a consistent schema.
+
+    Results are cached in ``_SITE_CSV_CACHE``.
     """
+    if site_id in _SITE_CSV_CACHE:
+        cached = _SITE_CSV_CACHE[site_id]
+        if cached is None:
+            raise FileNotFoundError(f"No data file for site {site_id}")
+        return cached
+
     csv_path = DATA_DIR / f"usgs_{site_id}.csv"
     if not csv_path.exists():
+        _SITE_CSV_CACHE[site_id] = None
         raise FileNotFoundError(f"No data file for site {site_id}")
     df = pd.read_csv(csv_path, parse_dates=["datetime"])
     df = df.rename(columns={"datetime": "date", "value": "water_level_ft"})
     df = df.sort_values("date")
+    _SITE_CSV_CACHE[site_id] = df
     return df
 
 
@@ -519,8 +528,6 @@ def generate_time_series_plot(
     Returns:
         JSON string with chart_type, title, series, and data arrays.
     """
-    import json
-
     try:
         df = _load_site_csv(site_id)
 
@@ -530,9 +537,7 @@ def generate_time_series_plot(
             df = df[df["date"] <= pd.Timestamp(end_date)]
 
         if df.empty:
-            return json.dumps(
-                {"type": "chart", "error": "No data for the requested range."}
-            )
+            return json.dumps({"type": "chart", "error": "No data for the requested range."})
 
         records = []
         levels = df["water_level_ft"].tolist()
@@ -558,9 +563,7 @@ def generate_time_series_plot(
             "data": records,
         }
         if include_rolling_avg:
-            chart["series"].append(
-                {"key": "rollingAvg", "name": "30-Day Avg", "color": "#f59e0b"}
-            )
+            chart["series"].append({"key": "rollingAvg", "name": "30-Day Avg", "color": "#f59e0b"})
 
         return json.dumps(chart)
 
@@ -586,8 +589,6 @@ def generate_comparison_chart(
     Returns:
         JSON string with chart data for all requested sites.
     """
-    import json
-
     COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6"]
 
     try:
@@ -645,7 +646,7 @@ def generate_comparison_chart(
         return json.dumps(chart)
 
     except Exception as exc:
-        return _json.dumps({"type": "chart", "error": f"Comparison failed: {exc}"})
+        return json.dumps({"type": "chart", "error": f"Comparison failed: {exc}"})
 
 
 # ---------------------------------------------------------------------------
@@ -657,12 +658,17 @@ def _load_site_metadata() -> Dict[str, Dict[str, Any]]:
     """Load site metadata from config/usgs_sites.json.
 
     Returns a flat ``{site_id: {name, aquifer, county, lat, lng}}`` dict.
+    Results are cached in ``_SITE_METADATA_CACHE``.
     """
+    global _SITE_METADATA_CACHE
+    if _SITE_METADATA_CACHE is not None:
+        return _SITE_METADATA_CACHE
+
     meta_path = CONFIG_DIR / "usgs_sites.json"
     if not meta_path.exists():
         return {}
     with open(meta_path) as fh:
-        raw = _json.load(fh)
+        raw = json.load(fh)
     flat: Dict[str, Dict[str, Any]] = {}
     for _aq_key, aq_info in raw.get("aquifers", {}).items():
         aquifer_name = aq_info.get("name", _aq_key)
@@ -675,6 +681,7 @@ def _load_site_metadata() -> Dict[str, Dict[str, Any]]:
                 "lat": site.get("lat"),
                 "lng": site.get("lng"),
             }
+    _SITE_METADATA_CACHE = flat
     return flat
 
 
@@ -703,14 +710,10 @@ def list_available_sites(
 
     if county:
         county_lower = county.lower()
-        sites = [
-            (sid, m) for sid, m in sites if county_lower in m.get("county", "").lower()
-        ]
+        sites = [(sid, m) for sid, m in sites if county_lower in m.get("county", "").lower()]
     if aquifer:
         aq_lower = aquifer.lower()
-        sites = [
-            (sid, m) for sid, m in sites if aq_lower in m.get("aquifer", "").lower()
-        ]
+        sites = [(sid, m) for sid, m in sites if aq_lower in m.get("aquifer", "").lower()]
 
     if not sites:
         return "No sites match the given filters."
@@ -719,9 +722,7 @@ def list_available_sites(
     for sid, m in sites:
         has_data = (DATA_DIR / f"usgs_{sid}.csv").exists()
         status = "✅" if has_data else "⬜"
-        lines.append(
-            f"  {status} **{m['name']}** ({sid})" f" — {m['county']}, {m['aquifer']}"
-        )
+        lines.append(f"  {status} **{m['name']}** ({sid})" f" — {m['county']}, {m['aquifer']}")
     return "\n".join(lines)
 
 
@@ -766,9 +767,7 @@ def query_site_data(
 
     if stat_type == "summary":
         tail30 = df.tail(30)
-        recent_chg = (
-            tail30.iloc[-1][col] - tail30.iloc[0][col] if len(tail30) > 1 else 0.0
-        )
+        recent_chg = tail30.iloc[-1][col] - tail30.iloc[0][col] if len(tail30) > 1 else 0.0
         return (
             f"📊 **{site_name}** (site {site_id})\n"
             f"   Aquifer: {meta.get('aquifer', 'N/A')}, "
@@ -789,8 +788,7 @@ def query_site_data(
         lines = [f"📅 **Monthly** — {site_name}:"]
         for month, row in monthly.tail(12).iterrows():
             lines.append(
-                f"  {month}: {row['mean']:.2f} ft "
-                f"(range {row['min']:.2f}–{row['max']:.2f})"
+                f"  {month}: {row['mean']:.2f} ft " f"(range {row['min']:.2f}–{row['max']:.2f})"
             )
         return "\n".join(lines)
 
@@ -799,9 +797,7 @@ def query_site_data(
         yearly = df.groupby("year")[col].agg(["mean", "count"])
         lines = [f"📆 **Yearly** — {site_name}:"]
         for year, row in yearly.iterrows():
-            lines.append(
-                f"  {year}: avg {row['mean']:.2f} ft " f"({int(row['count'])} records)"
-            )
+            lines.append(f"  {year}: avg {row['mean']:.2f} ft " f"({int(row['count'])} records)")
         return "\n".join(lines)
 
     if stat_type == "raw":
@@ -810,10 +806,7 @@ def query_site_data(
             lines.append(f"  {row['date']:%Y-%m-%d}: {row[col]:.2f} ft")
         return "\n".join(lines)
 
-    return (
-        f"Unknown stat_type: {stat_type}. "
-        "Use 'summary', 'monthly', 'yearly', or 'raw'."
-    )
+    return f"Unknown stat_type: {stat_type}. " "Use 'summary', 'monthly', 'yearly', or 'raw'."
 
 
 # ---------------------------------------------------------------------------
@@ -863,9 +856,7 @@ def _validate_reproducibility_metadata(
             normalized[key] = value
 
     missing = [
-        field
-        for field in sorted(REQUIRED_REPRODUCIBILITY_FIELDS)
-        if field not in normalized
+        field for field in sorted(REQUIRED_REPRODUCIBILITY_FIELDS) if field not in normalized
     ]
     if missing:
         joined = ", ".join(missing)
@@ -899,9 +890,7 @@ def _normalize_artifact_records(
         if not path:
             raise ValueError("artifact record path is required.")
         if checksum and len(checksum) != 64:
-            raise ValueError(
-                "artifact sha256 must be a 64-character hex string when provided."
-            )
+            raise ValueError("artifact sha256 must be a 64-character hex string when provided.")
 
         normalized.append(
             {
@@ -982,9 +971,7 @@ def create_experiment_plan(
 
     _ensure_research_dirs()
     now = datetime.now(timezone.utc).isoformat()
-    plan_id = (
-        f"exp_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
-    )
+    plan_id = f"exp_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
 
     plan: Dict[str, Any] = {
         "plan_id": plan_id,
@@ -1005,9 +992,7 @@ def create_experiment_plan(
     return {"plan": plan, "path": str(plan_path)}
 
 
-def list_experiment_plans(
-    status: Optional[str] = None, limit: int = 10
-) -> List[Dict[str, Any]]:
+def list_experiment_plans(status: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
     """Return saved experiment plans sorted by most-recent update."""
     _ensure_research_dirs()
     normalized_status = _normalize_plan_status(status)
@@ -1028,7 +1013,7 @@ def list_experiment_plans(
     for path in plan_files:
         try:
             with open(path) as fh:
-                plan = _json.load(fh)
+                plan = json.load(fh)
         except Exception:
             continue
 
@@ -1130,10 +1115,11 @@ def generate_research_paper_draft(
     key_findings = "No quantitative results logged yet."
     if best_run:
         metrics_text = ", ".join(
-            f"{k}: {v:.4g}"
-            for k, v in _numeric_metrics(best_run.get("metrics", {})).items()
+            f"{k}: {v:.4g}" for k, v in _numeric_metrics(best_run.get("metrics", {})).items()
         )
-        key_findings = f"Best run `{best_run.get('name', best_run.get('run_id'))}` achieved: {metrics_text}."
+        key_findings = (
+            f"Best run `{best_run.get('name', best_run.get('run_id'))}` achieved: {metrics_text}."
+        )
 
     methods_detail = (
         f"{plan.get('methodology', '')}\n\n"
@@ -1146,10 +1132,7 @@ def generate_research_paper_draft(
 
     runs_summary = (
         "\n".join(
-            [
-                f"- {run.get('run_id')} ({run.get('name')}): {run.get('metrics', {})}"
-                for run in runs
-            ]
+            [f"- {run.get('run_id')} ({run.get('name')}): {run.get('metrics', {})}" for run in runs]
         )
         if runs
         else "- No runs logged yet."
@@ -1164,9 +1147,7 @@ def generate_research_paper_draft(
         for record in run.get("artifact_records", []):
             path = record.get("path")
             if path:
-                citation_candidates.append(
-                    f"Artifact ({record.get('kind', 'artifact')}): {path}"
-                )
+                citation_candidates.append(f"Artifact ({record.get('kind', 'artifact')}): {path}")
 
     normalized_citations = _clean_citations(citation_candidates)
     citations_section = (
@@ -1250,7 +1231,7 @@ accelerate scientific writing while preserving transparency.
     with open(draft_path, "w") as fh:
         fh.write(draft)
     with open(provenance_path, "w") as fh:
-        _json.dump(
+        json.dump(
             {
                 "draft_path": str(draft_path),
                 "provenance": provenance,
@@ -1337,9 +1318,7 @@ def create_research_experiment_plan(
 
 
 @tool
-def list_research_experiment_plans(
-    status: Optional[str] = None, limit: int = 10
-) -> str:
+def list_research_experiment_plans(status: Optional[str] = None, limit: int = 10) -> str:
     """List saved experiment plans.
 
     Args:
@@ -1406,9 +1385,7 @@ def log_experiment_run(
     plan = result["plan"]
     run = result["run"]
     numeric = result["numeric_metrics"]
-    metric_preview = (
-        ", ".join(f"{k}={v:.4g}" for k, v in list(numeric.items())[:5]) or "none"
-    )
+    metric_preview = ", ".join(f"{k}={v:.4g}" for k, v in list(numeric.items())[:5]) or "none"
     total_runs = len(plan.get("runs", []))
 
     return (
