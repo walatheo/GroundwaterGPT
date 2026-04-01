@@ -129,6 +129,9 @@ export default function ChatView({ selectedSite }) {
             insights: data.insights || [],
             claimCitations: data.claim_citations || [],
             citationSummary: data.citation_summary || null,
+            // G5.9 — verdict data from the ClaimDisagreementEngine
+            claimVerdicts: data.claim_verdicts || [],
+            claimVerdictSummary: data.claim_verdict_summary || null,
             wells: data.wells || [],
             aquiferInfo: data.aquifer_info || null,
             mode: data.mode,
@@ -290,6 +293,38 @@ export default function ChatView({ selectedSite }) {
                 </details>
               )}
 
+              {/* G5.9 — Verdict summary banner, shown whenever the research
+                  agent returns claim_verdict_summary. One line of stats with
+                  colour-coded counts so reviewers see conflict level at a glance. */}
+              {msg.claimVerdictSummary && msg.claimVerdictSummary.total_claims > 0 && (
+                <div className="mt-2 pt-2 border-t border-slate-200 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-slate-500 font-medium">Verdict:</span>
+                  {/* Supported count — green */}
+                  <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">
+                    ✅ {msg.claimVerdictSummary.supported_claims} supported
+                  </span>
+                  {/* Contradicted count — red, only shown when >0 */}
+                  {msg.claimVerdictSummary.contradicted_claims > 0 && (
+                    <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-full">
+                      ⚠ {msg.claimVerdictSummary.contradicted_claims} contradicted
+                    </span>
+                  )}
+                  {/* Insufficient evidence count — grey */}
+                  {msg.claimVerdictSummary.insufficient_evidence_claims > 0 && (
+                    <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full">
+                      — {msg.claimVerdictSummary.insufficient_evidence_claims} insufficient
+                    </span>
+                  )}
+                  {/* Contradicted rate warning — only shown when rate exceeds 15% */}
+                  {msg.claimVerdictSummary.contradicted_claim_rate > 0.15 && (
+                    <span className="text-red-600 font-medium">
+                      ⚠ {Math.round(msg.claimVerdictSummary.contradicted_claim_rate * 100)}% of claims conflict — see report below
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Citations + per-claim verdict badges */}
               {(msg.citationSummary || (msg.claimCitations && msg.claimCitations.length > 0)) && (
                 <details className="mt-2 pt-2 border-t border-slate-200">
                   <summary className="text-xs text-slate-500 cursor-pointer">
@@ -297,16 +332,42 @@ export default function ChatView({ selectedSite }) {
                     {msg.citationSummary?.cited_claims || 0}/{msg.citationSummary?.total_claims || msg.claimCitations?.length || 0} claims cited)
                   </summary>
                   <ul className="mt-1 space-y-1">
-                    {(msg.claimCitations || []).map((claim, i) => (
-                      <li key={claim.claim_id || i} className="text-xs text-slate-600">
-                        • {claim.claim || 'Claim'}
-                        {Array.isArray(claim.citations) && claim.citations.length > 0 && (
-                          <span className="ml-1 text-blue-600">
-                            [{claim.citations.map(c => c.url).filter(Boolean).slice(0, 2).join(', ')}]
+                    {(msg.claimCitations || []).map((claim, i) => {
+                      // Look up the verdict for this claim_id so we can badge it.
+                      const verdict = (msg.claimVerdicts || []).find(
+                        v => v.claim_id === claim.claim_id
+                      )?.verdict || 'insufficient_evidence'
+
+                      // Colour map: supported → green, contradicted → red, else grey
+                      const badgeStyle =
+                        verdict === 'supported'
+                          ? 'bg-green-100 text-green-700'
+                          : verdict === 'contradicted'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-slate-100 text-slate-500'
+
+                      const badgeLabel =
+                        verdict === 'supported' ? '✅'
+                        : verdict === 'contradicted' ? '⚠'
+                        : '—'
+
+                      return (
+                        <li key={claim.claim_id || i} className="text-xs text-slate-600 flex items-start gap-1.5">
+                          {/* Verdict badge — coloured dot to the left of the claim */}
+                          <span className={`mt-0.5 flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${badgeStyle}`}>
+                            {badgeLabel}
                           </span>
-                        )}
-                      </li>
-                    ))}
+                          <span>
+                            {claim.claim || 'Claim'}
+                            {Array.isArray(claim.citations) && claim.citations.length > 0 && (
+                              <span className="ml-1 text-blue-600">
+                                [{claim.citations.map(c => c.url).filter(Boolean).slice(0, 2).join(', ')}]
+                              </span>
+                            )}
+                          </span>
+                        </li>
+                      )
+                    })}
                   </ul>
                 </details>
               )}
