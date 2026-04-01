@@ -370,7 +370,7 @@ class TestClaimVerdicts:
         monkeypatch.setattr(
             agent,
             "_synthesize_report",
-            lambda _context, _claims: (
+            lambda _context, _claims, _verdicts=None: (
                 "USGS site 262724081260701 shows a declining groundwater trend [claim_001]."
             ),
         )
