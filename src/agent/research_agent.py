@@ -343,27 +343,28 @@ class DeepResearchAgent:
 
             # Check if we were stopped
             claim_citations, citation_summary = self._build_claim_citations(context.insights)
-            section_confidence = self._build_section_confidence(context.insights)
             claim_verdicts = self.claim_disagreement_engine.evaluate_claims(claim_citations)
+            # Pass verdicts so contradicted sections get confidence penalties.
+            section_confidence = self._build_section_confidence(context.insights, claim_verdicts)
             claim_verdict_summary = summarize_claim_verdicts(claim_verdicts)
 
             if context.stop_requested:
                 context.update_progress("Research stopped by user")
                 report = (
-                    self._synthesize_report(context, claim_citations)
+                    self._synthesize_report(context, claim_citations, claim_verdicts)
                     if context.insights
                     else "Research was stopped before completion."
                 )
             elif context.is_timed_out():
                 context.update_progress("Research timed out")
                 report = (
-                    self._synthesize_report(context, claim_citations)
+                    self._synthesize_report(context, claim_citations, claim_verdicts)
                     if context.insights
                     else "Research timed out before completion."
                 )
             else:
                 context.update_progress("Synthesizing report...")
-                report = self._synthesize_report(context, claim_citations)
+                report = self._synthesize_report(context, claim_citations, claim_verdicts)
 
             # Auto-learn: Add high-confidence insights to knowledge base
             learned_count = 0
@@ -868,8 +869,16 @@ If the research seems complete, respond with: COMPLETE"""
         }
         return claims, summary
 
-    def _build_section_confidence(self, insights: list[ResearchInsight]) -> dict[str, Any]:
-        """Build section-level confidence and trust metadata from insights."""
+    def _build_section_confidence(
+        self,
+        insights: list[ResearchInsight],
+        claim_verdicts: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Build section-level confidence and trust metadata from insights.
+
+        If claim_verdicts is provided, contradicted claims have their confidence
+        halved so the overall section trust score reflects detected conflicts.
+        """
         trust_rank = {
             "unknown": 0,
             "untrusted": 0,
@@ -884,6 +893,13 @@ If the research seems complete, respond with: COMPLETE"""
             3: "verified",
         }
 
+        # Build a claim_id → verdict lookup for O(1) access below.
+        verdict_by_claim: dict[str, str] = {}
+        for v in (claim_verdicts or []):
+            cid = str(v.get("claim_id", ""))
+            if cid:
+                verdict_by_claim[cid] = str(v.get("verdict", "")).lower()
+
         sections: list[dict[str, Any]] = []
         confidence_values: list[float] = []
         trust_values: list[int] = []
@@ -894,6 +910,13 @@ If the research seems complete, respond with: COMPLETE"""
             trust = trust_rank.get(trust_level, 0)
             citation_count = 1 if (insight.source_url and insight.source_url != "unknown") else 0
 
+            # Contradicted claims get their confidence penalised by 50% so the
+            # overall section score reflects the detected conflict.
+            claim_id = f"claim_{index:03d}"
+            verdict = verdict_by_claim.get(claim_id, "")
+            if verdict == "contradicted":
+                confidence = round(confidence * 0.5, 3)
+
             confidence_values.append(confidence)
             trust_values.append(trust)
             sections.append(
@@ -903,6 +926,8 @@ If the research seems complete, respond with: COMPLETE"""
                     "confidence": round(confidence, 3),
                     "trust_level": rank_to_trust.get(trust, "unknown"),
                     "citation_count": citation_count,
+                    # Expose the verdict so the frontend can style the section.
+                    "verdict": verdict or "insufficient_evidence",
                 }
             )
 
@@ -964,11 +989,37 @@ If the research seems complete, respond with: COMPLETE"""
         return "No citation-safe factual claims were available in this response.", removed
 
     def _synthesize_report(
-        self, context: ResearchContext, claim_citations: list[dict[str, Any]]
+        self,
+        context: ResearchContext,
+        claim_citations: list[dict[str, Any]],
+        claim_verdicts: list[dict[str, Any]] | None = None,
     ) -> str:
-        """Synthesize all insights into a comprehensive research report."""
+        """Synthesize all insights into a comprehensive research report.
+
+        When claim_verdicts is supplied the LLM is told which claims are
+        contradicted so it can flag them inline with [⚠ contradicted by …].
+        A deterministic "Conflicting Evidence" section is appended in Python
+        (no extra LLM call) when the contradicted rate exceeds 15%.
+        """
         if not context.insights:
             return "No insights were gathered during research. Try a different query."
+
+        # Build a verdict lookup: claim_id → verdict string
+        verdict_map: dict[str, str] = {}
+        for v in (claim_verdicts or []):
+            cid = str(v.get("claim_id", ""))
+            if cid:
+                verdict_map[cid] = str(v.get("verdict", "")).lower()
+
+        # Separate contradicted from supported/insufficient claims so we can
+        # present them differently in the prompt and in the appended section.
+        contradicted_claims = [
+            c for c in claim_citations
+            if verdict_map.get(str(c.get("claim_id", ""))) == "contradicted"
+        ]
+        contradicted_rate = (
+            len(contradicted_claims) / len(claim_citations) if claim_citations else 0.0
+        )
 
         insights_text = "\n".join(
             [
@@ -977,12 +1028,28 @@ If the research seems complete, respond with: COMPLETE"""
             ]
         )
 
+        # Build the claim list with verdict labels so the LLM can cite them
+        # correctly and flag contradictions inline.
         claim_lines = []
         for claim in claim_citations:
-            claim_id = claim.get("claim_id", "claim_unknown")
+            claim_id = str(claim.get("claim_id", "claim_unknown"))
             claim_text = str(claim.get("claim", "")).strip()
             confidence = float(claim.get("confidence", 0.0))
-            claim_lines.append(f"- [{claim_id}] {claim_text} (confidence={confidence:.2f})")
+            verdict = verdict_map.get(claim_id, "insufficient_evidence")
+
+            # Append a warning marker on contradicted claims so the LLM knows
+            # to flag them with [⚠ contradicted] when it cites them.
+            flag = " ⚠ CONTRADICTED — flag this inline" if verdict == "contradicted" else ""
+            claim_lines.append(
+                f"- [{claim_id}] {claim_text} (confidence={confidence:.2f}){flag}"
+            )
+
+        contradiction_instruction = ""
+        if contradicted_claims:
+            contradiction_instruction = (
+                "\n- For any claim marked ⚠ CONTRADICTED, append "
+                "[⚠ contradicted by <claim_id>] immediately after citing it."
+            )
 
         prompt = f"""You are a groundwater science expert synthesizing research findings.
 
@@ -1006,13 +1073,42 @@ Structure your response with:
 Hard constraints:
 - Every factual sentence MUST end with at least one claim reference, e.g. [claim_001].
 - Do not include factual statements that are not supported by the evidence-backed claims above.
-- If evidence is limited, explicitly state uncertainty and cite the relevant claim ID."""
+- If evidence is limited, explicitly state uncertainty and cite the relevant claim ID.{contradiction_instruction}"""
 
         try:
-            return _llm_invoke_with_retry(self.llm, prompt)
+            report = _llm_invoke_with_retry(self.llm, prompt)
         except Exception as e:
             logger.error(f"Report synthesis failed: {e}")
             return f"Research gathered {len(context.insights)} insights but synthesis failed: {e}"
+
+        # Append a deterministic "Conflicting Evidence" section when the
+        # contradicted rate exceeds 15% — no extra LLM call needed.
+        if contradicted_rate > 0.15 and contradicted_claims:
+            conflict_lines = [
+                "\n\n---\n## ⚠ Conflicting Evidence\n",
+                f"**{len(contradicted_claims)} of {len(claim_citations)} claims "
+                f"({contradicted_rate:.0%}) were flagged as contradicted by other sources.**\n",
+            ]
+            for claim in contradicted_claims:
+                cid = claim.get("claim_id", "")
+                text = str(claim.get("claim", "")).strip()
+                confidence = float(claim.get("confidence", 0.0))
+                conflict_lines.append(
+                    f"- **[{cid}]** {text} *(confidence: {confidence:.2f})*"
+                )
+            conflict_lines.append(
+                "\nInterpret findings in this section with caution. "
+                "Cross-check with primary USGS data sources before drawing conclusions."
+            )
+            report += "\n".join(conflict_lines)
+            logger.info(
+                "Appended Conflicting Evidence section: %d/%d claims contradicted (%.0f%%)",
+                len(contradicted_claims),
+                len(claim_citations),
+                contradicted_rate * 100,
+            )
+
+        return report
 
     def quick_research(self, query: str) -> str:
         """Quick research mode - single depth, returns just the report."""
