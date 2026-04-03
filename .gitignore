@@ -62,3 +62,4 @@ outputs/
 
 # Large reference PDFs (too big for git; keep small docs in resources/pdfs/)
 resources/pdfs/references/
+resources/pdfs/usgs_reports/
