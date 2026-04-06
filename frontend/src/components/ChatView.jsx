@@ -483,9 +483,10 @@ export default function ChatView({ selectedSite }) {
                 <div className="mt-2 flex items-center gap-1 text-xs text-slate-400">
                   {msg.mode === 'agent' && '🤖 Agent'}
                   {msg.mode === 'deep_research' && '🔬 Deep Research'}
-                  {msg.mode === 'fallback' && '📋 Rule-based'}
-                  {msg.mode === 'site_fallback' && '📍 Location Analysis'}
+                  {msg.mode === 'fallback' && '📍 Location Analysis'}
+                  {msg.mode === 'site_fallback' && '📍 Site Analysis'}
                   {msg.mode === 'aquifer_fallback' && '🌊 Aquifer Analysis'}
+                  {msg.mode === 'network_fallback' && '🗺️ Network Analysis'}
                 </div>
               )}
             </div>

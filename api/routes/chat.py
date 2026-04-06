@@ -1497,6 +1497,8 @@ def chat_endpoint(query: dict):
             "mode": "site_fallback",
             "status": "ok",
             "wells": _build_wells_payload(named_sites),
+            "divergent_pairs": ns_result.get("divergent_pairs", []),
+            "cohort_risk_level": ns_result.get("cohort_risk_level"),
         }
 
     # --- Aquifer fast path: named aquifer → all cohort sites (runs before location) ---
@@ -1513,6 +1515,8 @@ def chat_endpoint(query: dict):
             "status": "ok",
             "wells": _build_wells_payload(aq_sites),
             "aquifer_info": _build_aquifer_info(aq_display_name),
+            "divergent_pairs": aq_result.get("divergent_pairs", []),
+            "cohort_risk_level": aq_result.get("cohort_risk_level"),
         }
 
     # --- Location fast path: return deterministic USGS-backed answer immediately ---
@@ -1529,6 +1533,8 @@ def chat_endpoint(query: dict):
             "mode": "site_fallback",
             "status": "ok",
             "wells": wells_payload,
+            "divergent_pairs": result.get("divergent_pairs", []),
+            "cohort_risk_level": result.get("cohort_risk_level"),
         }
         if _is_aquifer_query(user_query) and wells_payload:
             response_dict["aquifer_info"] = _build_aquifer_info(wells_payload[0]["aquifer"])
@@ -1546,6 +1552,8 @@ def chat_endpoint(query: dict):
                 "mode": "network_fallback",
                 "status": "ok",
                 "wells": _build_wells_payload(nw_sites),
+                "divergent_pairs": nw_result.get("divergent_pairs", []),
+                "cohort_risk_level": nw_result.get("cohort_risk_level"),
             }
 
     # --- Try real agent first ---
@@ -1879,6 +1887,113 @@ def research_endpoint(query: dict):
 _STREAM_QUEUE_TIMEOUT = 135  # seconds
 
 
+def _stream_fallback_result(question: str) -> dict:
+    """Build a streaming-compatible result using the same routing as /api/research.
+
+    Detection order: site-name → aquifer → location → network-wide → generic KB.
+    Returns a dict ready to push onto the SSE event queue.
+    """
+
+    def _wrap(site_result: dict, mode: str, sites: list) -> dict:
+        verdicts = site_result.get(
+            "claim_verdicts",
+            _build_claim_verdicts(site_result["claim_citations"]),
+        )
+        return {
+            "type": "result",
+            "status": "ok",
+            "mode": mode,
+            "report": site_result["report"],
+            "insights": site_result["insights"],
+            "sources": site_result["sources"],
+            "search_history": site_result["search_history"],
+            "depth_reached": site_result["depth_reached"],
+            "elapsed_seconds": site_result["elapsed_seconds"],
+            "claim_citations": site_result["claim_citations"],
+            "claim_verdicts": verdicts,
+            "claim_verdict_summary": site_result.get(
+                "claim_verdict_summary",
+                _build_claim_verdict_summary(verdicts),
+            ),
+            "citation_summary": site_result["citation_summary"],
+            "section_confidence": site_result.get("section_confidence", {}),
+            "wells": _build_wells_payload(sites),
+            "divergent_pairs": site_result.get("divergent_pairs", []),
+            "cohort_risk_level": site_result.get("cohort_risk_level"),
+        }
+
+    # 1. Site-name detection
+    named = _detect_site_names(question)
+    if named:
+        label = " vs ".join(s["name"] for s in named)
+        return _wrap(
+            _site_research_fallback(question, named, label),
+            "site_fallback",
+            named,
+        )
+
+    # 2. Aquifer detection
+    aq_hit = _detect_aquifer(question)
+    if aq_hit is not None:
+        aq_key, aq_name = aq_hit
+        aq_sites = _sites_for_aquifer(aq_key, max_sites=6)
+        if aq_sites:
+            return _wrap(
+                _site_research_fallback(question, aq_sites, aq_name),
+                "aquifer_fallback",
+                aq_sites,
+            )
+
+    # 3. Location detection
+    loc = _detect_location(question)
+    if loc is not None:
+        ref_lat, ref_lng, loc_name, county_hint = loc
+        loc_sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=2)
+        if loc_sites:
+            return _wrap(
+                _site_research_fallback(question, loc_sites, loc_name),
+                "fallback",
+                loc_sites,
+            )
+
+    # 4. Network-wide detection
+    if _is_network_wide_query(question):
+        nw_sites = _all_sites_with_data(max_sites=36)
+        if nw_sites:
+            return _wrap(
+                _site_research_fallback(question, nw_sites, "Florida monitoring network"),
+                "network_fallback",
+                nw_sites,
+            )
+
+    # 5. Generic KB
+    fb = _fallback_response(question)
+    fallback_claims = [
+        {
+            "claim_id": "claim_001",
+            "claim": fb["response"],
+            "confidence": 0.6,
+            "citations": [
+                {"url": str(src), "verified": True, "trust_level": "moderate"}
+                for src in fb["sources"]
+            ],
+        }
+    ]
+    return {
+        "type": "result",
+        "status": "ok",
+        "mode": "fallback",
+        "report": fb["response"],
+        "insights": [],
+        "sources": fb["sources"],
+        "search_history": [question],
+        "depth_reached": 0,
+        "elapsed_seconds": 0,
+        "claim_citations": fallback_claims,
+        "citation_summary": _build_citation_summary(fallback_claims),
+    }
+
+
 def _run_research_in_thread(
     question: str,
     max_depth: int,
@@ -1940,38 +2055,8 @@ def _run_research_in_thread(
                 }
             )
         else:
-            # Fallback mode — no progress updates, instant result.
-            fb = _fallback_response(question)
-            fallback_claims = [
-                {
-                    "claim_id": "claim_001",
-                    "claim": fb["response"],
-                    "confidence": 0.6,
-                    "citations": [
-                        {
-                            "url": str(src),
-                            "verified": True,
-                            "trust_level": "moderate",
-                        }
-                        for src in fb["sources"]
-                    ],
-                }
-            ]
-            event_queue.put(
-                {
-                    "type": "result",
-                    "status": "ok",
-                    "mode": "fallback",
-                    "report": fb["response"],
-                    "insights": [],
-                    "sources": fb["sources"],
-                    "search_history": [question],
-                    "depth_reached": 0,
-                    "elapsed_seconds": 0,
-                    "claim_citations": fallback_claims,
-                    "citation_summary": _build_citation_summary(fallback_claims),
-                }
-            )
+            # Fallback mode — use same routing chain as /api/research.
+            event_queue.put(_stream_fallback_result(question))
     except Exception as exc:
         logger.error(
             "Streaming research thread error: %s\n%s",
