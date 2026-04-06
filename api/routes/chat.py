@@ -1472,7 +1472,14 @@ def _site_research_fallback(
     aquifer_summaries: list[dict] = []  # For cross-aquifer synthesis
     for aq_name in sorted_aquifers:
         entries = by_aquifer[aq_name]
-        confinement = entries[0]["confinement"]
+        n_confined = sum(1 for e in entries if e["confined"])
+        n_unconfined = len(entries) - n_confined
+        if n_confined > 0 and n_unconfined > 0:
+            confinement = "mixed confined/unconfined"
+        elif n_confined > 0:
+            confinement = "confined"
+        else:
+            confinement = "unconfined"
         zone_range = entries[0].get("zone_range")
         range_label = (
             f", {zone_range[0]}–{zone_range[1]} ft" if zone_range and len(zone_range) == 2 else ""
@@ -1538,7 +1545,11 @@ def _site_research_fallback(
 
         # Shallow vs deep comparison
         shallow = [a for a in aquifer_summaries if a["confinement"] == "unconfined"]
-        deep = [a for a in aquifer_summaries if a["confinement"] == "confined"]
+        deep = [
+            a
+            for a in aquifer_summaries
+            if a["confinement"] in ("confined", "mixed confined/unconfined")
+        ]
         if shallow and deep:
             shallow_rate = sum(a["mean_annual_change"] for a in shallow) / len(shallow)
             deep_rate = sum(a["mean_annual_change"] for a in deep) / len(deep)
@@ -1653,13 +1664,23 @@ def _site_research_fallback(
                 f"{pri['depth_range_ft'][0]}–"
                 f"{pri['depth_range_ft'][1]} ft)."
             )
+            reg_auth = supply_info.get("regulatory_authority", "SFWMD")
             claim_citations.append(
                 {
                     "claim_id": f"claim_{len(claim_citations) + 1:03d}",
                     "claim": supply_claim,
                     "confidence": 0.70,
                     "citations": [
-                        {"url": source_urls[0], "verified": True, "trust_level": "moderate"}
+                        {
+                            "source": "config/water_supply_sources.json",
+                            "basis": (
+                                "Curated from USGS hydrogeologic framework "
+                                f"reports and {reg_auth} regional water "
+                                "supply plans"
+                            ),
+                            "verified": False,
+                            "trust_level": "curated",
+                        }
                     ],
                 }
             )
@@ -1743,6 +1764,15 @@ def _site_research_fallback(
             llm_text = re.sub(r"<think>.*?</think>", "", llm_text, flags=re.DOTALL).strip()
             if llm_text and len(llm_text) > 50:
                 synthesis_section = f"\n## Synthesis (LLM-assisted)\n{llm_text}\n"
+                claim_citations.append(
+                    {
+                        "claim_id": f"claim_{len(claim_citations) + 1:03d}",
+                        "claim": llm_text[:200],
+                        "confidence": 0.50,
+                        "citations": [],
+                        "source_type": "llm_synthesis",
+                    }
+                )
         except Exception as exc:
             logger.debug("LLM synthesis unavailable, using deterministic fallback: %s", exc)
 
@@ -1778,7 +1808,8 @@ def _site_research_fallback(
         "hallucination_guardrail": {
             "strategy": "deterministic_site_fallback",
             "removed_uncited_factual_sentences": 0,
-            "all_factual_claims_cited": True,
+            "all_factual_claims_cited": all(bool(c.get("citations")) for c in claim_citations),
+            "has_llm_synthesis": bool(synthesis_section),
         },
         "divergent_pairs": cross_well.get("divergent_pairs", []),
         "cohort_risk_level": cross_well.get("risk_level"),

@@ -243,11 +243,15 @@ def evaluate_thresholds(
         statistics.mean(r["citation_coverage"] for r in case_results) if case_results else 0.0
     )
     max_elapsed = max((r["elapsed_seconds"] for r in case_results), default=0.0)
+    median_elapsed = (
+        statistics.median(r["elapsed_seconds"] for r in case_results) if case_results else 0.0
+    )
 
     min_overall_score = float(thresholds.get("min_overall_score", 0.0))
     min_case_score = float(thresholds.get("min_case_score", 0.0))
     min_avg_citation_coverage = float(thresholds.get("min_avg_citation_coverage", 0.0))
     max_response_seconds = float(thresholds.get("max_response_seconds", 9999.0))
+    max_median_seconds = float(thresholds.get("max_median_seconds", 9999.0))
 
     failed_reasons: list[str] = []
     if overall_score < min_overall_score:
@@ -271,18 +275,25 @@ def evaluate_thresholds(
         failed_reasons.append(
             f"max_elapsed={max_elapsed:.3f}s > max_response_seconds={max_response_seconds:.3f}s"
         )
+    if median_elapsed > max_median_seconds:
+        failed_reasons.append(
+            f"median_elapsed={median_elapsed:.3f}s > "
+            f"max_median_seconds={max_median_seconds:.3f}s"
+        )
 
     return {
         "passed": not failed_reasons,
         "overall_score": round(overall_score, 3),
         "average_citation_coverage": round(avg_citation_coverage, 3),
         "max_elapsed_seconds": round(max_elapsed, 3),
+        "median_elapsed_seconds": round(median_elapsed, 3),
         "failed_reasons": failed_reasons,
         "thresholds": {
             "min_overall_score": min_overall_score,
             "min_case_score": min_case_score,
             "min_avg_citation_coverage": min_avg_citation_coverage,
             "max_response_seconds": max_response_seconds,
+            "max_median_seconds": max_median_seconds,
         },
     }
 
