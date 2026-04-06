@@ -1472,6 +1472,47 @@ else:
 # ---------------------------------------------------------------------------
 
 
+def _enrich_with_usgs_data(question: str, response: dict) -> dict:
+    """Attach relevant USGS well data to any response.
+
+    Runs site-name / aquifer / location detection against the original
+    question.  If matching sites are found, the structured ``wells``,
+    ``divergent_pairs``, and ``cohort_risk_level`` fields are added so
+    the frontend can render data cards alongside the text answer.
+    """
+    if response.get("wells"):
+        return response  # already enriched by a deterministic path
+
+    # Try to find relevant sites from the question text
+    sites: list[dict] = []
+    named = _detect_site_names(question)
+    if named:
+        sites = named
+    else:
+        aq_hit = _detect_aquifer(question)
+        if aq_hit is not None:
+            sites = _sites_for_aquifer(aq_hit[0], max_sites=6)
+        else:
+            loc = _detect_location(question)
+            if loc is not None:
+                ref_lat, ref_lng, _, county_hint = loc
+                sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=3)
+
+    if not sites:
+        return response
+
+    # Attach structured data
+    response["wells"] = _build_wells_payload(sites)
+
+    # Run cross-well analysis for divergence / risk if 2+ sites
+    if len(sites) >= 2:
+        cross_well = _cross_well_analysis(sites)
+        response["divergent_pairs"] = cross_well.get("divergent_pairs", [])
+        response["cohort_risk_level"] = cross_well.get("risk_level")
+
+    return response
+
+
 @router.post("/chat")
 def chat_endpoint(query: dict):
     """AI chat endpoint for groundwater questions.
@@ -1561,20 +1602,21 @@ def chat_endpoint(query: dict):
         try:
             response_text = _chat_agent.chat(user_query)
             _clear_runtime_error("chat")
-            return {
+            result: dict[str, Any] = {
                 "response": response_text,
                 "context": _get_site_context(),
                 "sources": ["GroundwaterGPT Agent (LLM-backed)"],
                 "mode": "agent",
                 "status": "ok",
             }
+            return _enrich_with_usgs_data(user_query, result)
         except Exception as exc:
             logger.error("Agent chat error: %s", exc)
             _set_runtime_error("chat", exc)
             # Fall through to rule-based fallback
 
     # --- Fallback ---
-    return _fallback_response(user_query)
+    return _enrich_with_usgs_data(user_query, _fallback_response(user_query))
 
 
 # ---------------------------------------------------------------------------
@@ -1876,6 +1918,12 @@ def research_endpoint(query: dict):
         },
         "citation_integrity": citation_integrity,
     }
+    # At this point we'd normally return a generic KB response. But the query
+    # may still reference sites/aquifers that we can attach as structured data.
+    # This is handled by _enrich_with_usgs_data for /api/chat; for /api/research
+    # the caller already has the full return dict, so we don't need a separate
+    # enrichment — the routing chain above should have caught it.  If it didn't,
+    # the generic KB response is still valid.
 
 
 # ---------------------------------------------------------------------------
