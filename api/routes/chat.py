@@ -1543,23 +1543,15 @@ def _site_research_fallback(
                 f"{trend_word}\n"
             )
 
-        # Shallow vs deep comparison
-        shallow = [a for a in aquifer_summaries if a["confinement"] == "unconfined"]
-        deep = [
-            a
-            for a in aquifer_summaries
-            if a["confinement"] in ("confined", "mixed confined/unconfined")
-        ]
-        if shallow and deep:
-            shallow_rate = sum(a["mean_annual_change"] for a in shallow) / len(shallow)
-            deep_rate = sum(a["mean_annual_change"] for a in deep) / len(deep)
-            # Check seasonal variability
-            shallow_seasonal = any(
-                sc["seasonal"].get("has_seasonal") for sc in site_computed if not sc["confined"]
-            )
-            deep_seasonal = any(
-                sc["seasonal"].get("has_seasonal") for sc in site_computed if sc["confined"]
-            )
+        # Shallow vs deep comparison — use per-well confinement so mixed
+        # zones are split correctly instead of being lumped into one side.
+        shallow_wells = [sc for sc in site_computed if not sc["confined"]]
+        deep_wells = [sc for sc in site_computed if sc["confined"]]
+        if shallow_wells and deep_wells:
+            shallow_rate = sum(w["annual_change"] for w in shallow_wells) / len(shallow_wells)
+            deep_rate = sum(w["annual_change"] for w in deep_wells) / len(deep_wells)
+            shallow_seasonal = any(w["seasonal"].get("has_seasonal") for w in shallow_wells)
+            deep_seasonal = any(w["seasonal"].get("has_seasonal") for w in deep_wells)
             pattern_parts = []
             if shallow_seasonal and not deep_seasonal:
                 pattern_parts.append("Shallow aquifers show higher seasonal variability")
@@ -1679,7 +1671,7 @@ def _site_research_fallback(
                                 "supply plans"
                             ),
                             "verified": False,
-                            "trust_level": "curated",
+                            "trust_level": "moderate",
                         }
                     ],
                 }
@@ -1785,8 +1777,7 @@ def _site_research_fallback(
         f"{supply_section}"
         f"{''.join(aquifer_sections)}\n"
         f"{cohort_section}"
-        f"{cross_aq_section}"
-        f"{synthesis_section}\n"
+        f"{cross_aq_section}\n"
         "Interpretation:\n"
         "- The available record may not span the full requested period; "
         "results reflect the actual observed period listed above.\n"
@@ -1811,6 +1802,7 @@ def _site_research_fallback(
             "all_factual_claims_cited": all(bool(c.get("citations")) for c in claim_citations),
             "has_llm_synthesis": bool(synthesis_section),
         },
+        "llm_synthesis": synthesis_section.strip() if synthesis_section else None,
         "divergent_pairs": cross_well.get("divergent_pairs", []),
         "cohort_risk_level": cross_well.get("risk_level"),
         "search_history": [question, f"USGS {location_name} proxy sites trend analysis"],
