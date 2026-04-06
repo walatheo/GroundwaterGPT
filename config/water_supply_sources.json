@@ -1,0 +1,113 @@
+{
+  "description": "Municipality-to-aquifer water supply mappings for SW Florida. Curated from USGS reports and SFWMD regional water supply plans. User should verify assignments.",
+  "last_updated": "2026-04-06",
+  "data_confidence": "moderate — based on USGS hydrogeologic framework reports and SFWMD general descriptions; municipality-specific permit data not yet ingested",
+  "municipalities": {
+    "estero": {
+      "municipality": "Village of Estero",
+      "utility": "Lee County Utilities",
+      "incorporated": 2014,
+      "supply_aquifers": [
+        {
+          "aquifer": "Intermediate Aquifer System",
+          "zone": "Sand and Shell",
+          "usage": "primary",
+          "depth_range_ft": [100, 200],
+          "notes": "Primary production zone for Lee County Utilities; confined sand-and-shell permeable unit"
+        },
+        {
+          "aquifer": "Hawthorn Group",
+          "zone": "Hawthorn",
+          "usage": "supplemental",
+          "depth_range_ft": [177, 420],
+          "notes": "Deep confined zone; supplemental to intermediate system"
+        },
+        {
+          "aquifer": "Floridan Aquifer System",
+          "zone": "Upper Floridan",
+          "usage": "brackish/ASR",
+          "depth_range_ft": [500, 1000],
+          "notes": "Used for reverse osmosis treatment and aquifer storage-recovery (ASR); brackish source"
+        }
+      ],
+      "non_supply_aquifers": [
+        {
+          "aquifer": "Surficial Aquifer",
+          "zone": "Surficial Sand",
+          "role": "Not used for municipal supply; serves as recharge indicator for deeper aquifer systems and supports ecosystem base flow"
+        }
+      ],
+      "regulatory_authority": "South Florida Water Management District (SFWMD)",
+      "known_risks": [
+        "Saltwater intrusion risk in coastal portions of the Intermediate aquifer",
+        "Over-pumping of Sand and Shell production zone during dry season",
+        "Seasonal drawdown in Surficial aquifer affecting vertical recharge to deeper systems",
+        "Population growth in Estero/Bonita Springs corridor increasing demand"
+      ]
+    },
+    "fort_myers": {
+      "municipality": "City of Fort Myers",
+      "utility": "Lee County Utilities / City of Fort Myers Utilities",
+      "supply_aquifers": [
+        {
+          "aquifer": "Intermediate Aquifer System",
+          "zone": "Sand and Shell",
+          "usage": "primary",
+          "depth_range_ft": [100, 200],
+          "notes": "Primary freshwater production zone"
+        },
+        {
+          "aquifer": "Floridan Aquifer System",
+          "zone": "Upper Floridan",
+          "usage": "brackish/ASR",
+          "depth_range_ft": [500, 700],
+          "notes": "Brackish source for RO treatment"
+        }
+      ],
+      "non_supply_aquifers": [
+        {
+          "aquifer": "Surficial Aquifer",
+          "zone": "Surficial Sand",
+          "role": "Recharge indicator; not used for municipal supply"
+        }
+      ],
+      "regulatory_authority": "South Florida Water Management District (SFWMD)",
+      "known_risks": [
+        "Saltwater intrusion in coastal intermediate zone",
+        "Urban development reducing recharge area"
+      ]
+    },
+    "naples": {
+      "municipality": "City of Naples",
+      "utility": "City of Naples Utilities",
+      "supply_aquifers": [
+        {
+          "aquifer": "Tamiami Aquifer System",
+          "zone": "Lower Tamiami",
+          "usage": "primary",
+          "depth_range_ft": [59, 176],
+          "notes": "Primary freshwater source for Collier County municipalities"
+        },
+        {
+          "aquifer": "Floridan Aquifer System",
+          "zone": "Upper Floridan",
+          "usage": "brackish/ASR",
+          "depth_range_ft": [500, 1000],
+          "notes": "Brackish source for reverse osmosis"
+        }
+      ],
+      "non_supply_aquifers": [
+        {
+          "aquifer": "Surficial Aquifer",
+          "zone": "Surficial Sand",
+          "role": "Ecosystem support and recharge indicator"
+        }
+      ],
+      "regulatory_authority": "South Florida Water Management District (SFWMD)",
+      "known_risks": [
+        "Saltwater intrusion in coastal Lower Tamiami",
+        "Seasonal over-pumping during dry season tourism peak"
+      ]
+    }
+  }
+}

@@ -16,6 +16,48 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "fallback",
+        "label": "routes_to_location_fallback"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "has_annual_rate",
+        "label": "reports_annual_rate"
+      },
+      {
+        "type": "min_wells",
+        "value": 6,
+        "label": "returns_6plus_wells"
+      },
+      {
+        "type": "min_report_length",
+        "value": 2000,
+        "label": "report_substantial"
+      },
+      {
+        "type": "has_aquifer_grouping",
+        "value": 2,
+        "label": "has_aquifer_sections"
+      },
+      {
+        "type": "has_cross_aquifer",
+        "label": "has_cross_aquifer_comparison"
+      },
+      {
+        "type": "has_period_transparency",
+        "label": "states_data_period"
+      },
+      {
+        "type": "has_proxy_justification",
+        "label": "has_proxy_distance"
+      }
     ]
   },
   {
@@ -35,6 +77,17 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      }
     ]
   },
   {
@@ -54,6 +107,22 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "min_wells",
+        "value": 2,
+        "label": "returns_2plus_wells"
+      },
+      {
+        "type": "min_report_length",
+        "value": 300,
+        "label": "report_not_stub"
+      }
     ]
   },
   {
@@ -73,6 +142,12 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_annual_rate",
+        "label": "reports_annual_rate"
+      }
     ]
   },
   {
@@ -92,6 +167,21 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "has_annual_rate",
+        "label": "reports_annual_rate"
+      },
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      }
     ]
   },
   {
@@ -111,6 +201,21 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "min_wells",
+        "value": 2,
+        "label": "returns_2plus_wells"
+      },
+      {
+        "type": "has_annual_rate",
+        "label": "reports_annual_rate"
+      }
     ]
   },
   {
@@ -130,6 +235,17 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_annual_rate",
+        "label": "reports_annual_rate"
+      },
+      {
+        "type": "contains",
+        "value": "ft/yr",
+        "label": "contains_ft_yr_unit"
+      }
     ]
   },
   {
@@ -149,6 +265,21 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "min_wells",
+        "value": 2,
+        "label": "returns_2plus_wells"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      }
     ]
   },
   {
@@ -168,6 +299,21 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "has_annual_rate",
+        "label": "reports_annual_rate"
+      },
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      }
     ]
   },
   {
@@ -187,6 +333,17 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "min_report_length",
+        "value": 300,
+        "label": "report_not_stub"
+      }
     ]
   },
   {
@@ -206,6 +363,21 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "has_annual_rate",
+        "label": "reports_annual_rate"
+      },
+      {
+        "type": "min_wells",
+        "value": 2,
+        "label": "returns_2plus_wells"
+      }
     ]
   },
   {
@@ -225,6 +397,17 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      },
+      {
+        "type": "contains",
+        "value": "risk",
+        "label": "mentions_risk_assessment"
+      }
     ]
   },
   {
@@ -233,7 +416,7 @@
     "question": "What are the groundwater sources used in Estero and how have those groundwater levels changed?",
     "max_depth": 3,
     "timeout": 120,
-    "max_seconds": 25,
+    "max_seconds": 120,
     "required_checks": [
       "ok_status",
       "has_report",
@@ -245,6 +428,18 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 4,
+        "label": "at_least_4_claims"
+      },
+      {
+        "type": "min_report_length",
+        "value": 500,
+        "label": "substantial_report"
+      }
     ]
   },
   {
@@ -253,7 +448,7 @@
     "question": "For the Village of Estero water supply, summarize source aquifers and groundwater trends.",
     "max_depth": 3,
     "timeout": 120,
-    "max_seconds": 25,
+    "max_seconds": 120,
     "required_checks": [
       "ok_status",
       "has_report",
@@ -265,6 +460,22 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      },
+      {
+        "type": "min_report_length",
+        "value": 400,
+        "label": "substantial_report"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      }
     ]
   },
   {
@@ -285,6 +496,17 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      }
     ]
   },
   {
@@ -305,6 +527,22 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "min_report_length",
+        "value": 400,
+        "label": "substantial_report"
+      }
     ]
   },
   {
@@ -325,6 +563,17 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      }
     ]
   },
   {
@@ -345,6 +594,22 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      },
+      {
+        "type": "min_report_length",
+        "value": 400,
+        "label": "substantial_report"
+      }
     ]
   },
   {
@@ -353,7 +618,7 @@
     "question": "Synthesize Estero water-supply source context with observed monitoring-well trend changes.",
     "max_depth": 3,
     "timeout": 120,
-    "max_seconds": 25,
+    "max_seconds": 120,
     "required_checks": [
       "ok_status",
       "has_report",
@@ -365,6 +630,21 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      }
     ]
   },
   {
@@ -385,6 +665,22 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      },
+      {
+        "type": "min_wells",
+        "value": 2,
+        "label": "returns_2plus_wells"
+      }
     ]
   },
   {
@@ -393,7 +689,7 @@
     "question": "What sustainability implications follow from Estero groundwater trend evidence?",
     "max_depth": 3,
     "timeout": 120,
-    "max_seconds": 25,
+    "max_seconds": 120,
     "required_checks": [
       "ok_status",
       "has_report",
@@ -405,6 +701,18 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "saltwater",
+        "label": "mentions_saltwater_intrusion"
+      },
+      {
+        "type": "contains",
+        "value": "recharge",
+        "label": "mentions_recharge"
+      }
     ]
   },
   {
@@ -413,7 +721,7 @@
     "question": "Evaluate potential saltwater intrusion risk in Estero using groundwater trend proxies.",
     "max_depth": 3,
     "timeout": 120,
-    "max_seconds": 25,
+    "max_seconds": 120,
     "required_checks": [
       "ok_status",
       "has_report",
@@ -425,6 +733,13 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "intrusion",
+        "label": "mentions_intrusion"
+      }
     ]
   },
   {
@@ -433,7 +748,7 @@
     "question": "Provide a management-oriented summary of Estero groundwater source trends and risks.",
     "max_depth": 3,
     "timeout": 120,
-    "max_seconds": 25,
+    "max_seconds": 120,
     "required_checks": [
       "ok_status",
       "has_report",
@@ -445,6 +760,22 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "contains",
+        "value": "risk",
+        "label": "discusses_risk"
+      }
     ]
   },
   {
@@ -453,7 +784,7 @@
     "question": "If Estero declines continue, what are likely groundwater supply implications by aquifer?",
     "max_depth": 3,
     "timeout": 120,
-    "max_seconds": 25,
+    "max_seconds": 120,
     "required_checks": [
       "ok_status",
       "has_report",
@@ -465,6 +796,22 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 3,
+        "label": "at_least_3_claims"
+      },
+      {
+        "type": "min_report_length",
+        "value": 400,
+        "label": "substantial_report"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      }
     ]
   },
   {
@@ -487,6 +834,27 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 4,
+        "label": "at_least_4_claims"
+      },
+      {
+        "type": "min_sources",
+        "value": 2,
+        "label": "at_least_2_sources"
+      },
+      {
+        "type": "min_report_length",
+        "value": 600,
+        "label": "research_grade_length"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      }
     ]
   },
   {
@@ -495,7 +863,7 @@
     "question": "Generate an Estero research-style report: wells, date ranges, aquifer framing, and implications.",
     "max_depth": 3,
     "timeout": 120,
-    "max_seconds": 25,
+    "max_seconds": 120,
     "required_checks": [
       "ok_status",
       "has_report",
@@ -509,6 +877,13 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_report_length",
+        "value": 600,
+        "label": "research_grade_length"
+      }
     ]
   },
   {
@@ -531,6 +906,27 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 4,
+        "label": "at_least_4_claims"
+      },
+      {
+        "type": "min_sources",
+        "value": 2,
+        "label": "at_least_2_sources"
+      },
+      {
+        "type": "min_report_length",
+        "value": 600,
+        "label": "research_grade_length"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      }
     ]
   },
   {
@@ -539,7 +935,7 @@
     "question": "For Estero decision-makers, provide a citation-rich groundwater trend and risk synthesis.",
     "max_depth": 3,
     "timeout": 120,
-    "max_seconds": 25,
+    "max_seconds": 120,
     "required_checks": [
       "ok_status",
       "has_report",
@@ -553,6 +949,27 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 4,
+        "label": "at_least_4_claims"
+      },
+      {
+        "type": "min_report_length",
+        "value": 600,
+        "label": "research_grade_length"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      },
+      {
+        "type": "contains",
+        "value": "risk",
+        "label": "discusses_risk"
+      }
     ]
   },
   {
@@ -561,7 +978,7 @@
     "question": "Draft a compact Estero groundwater assessment emphasizing provenance and claim coverage.",
     "max_depth": 3,
     "timeout": 120,
-    "max_seconds": 25,
+    "max_seconds": 120,
     "required_checks": [
       "ok_status",
       "has_report",
@@ -575,6 +992,23 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 4,
+        "label": "at_least_4_claims"
+      },
+      {
+        "type": "min_sources",
+        "value": 2,
+        "label": "at_least_2_sources"
+      },
+      {
+        "type": "min_report_length",
+        "value": 600,
+        "label": "research_grade_length"
+      }
     ]
   },
   {
@@ -583,7 +1017,7 @@
     "question": "Return a structured Estero groundwater analysis with cited claims and management implications.",
     "max_depth": 3,
     "timeout": 120,
-    "max_seconds": 25,
+    "max_seconds": 120,
     "required_checks": [
       "ok_status",
       "has_report",
@@ -597,6 +1031,22 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 4,
+        "label": "at_least_4_claims"
+      },
+      {
+        "type": "min_report_length",
+        "value": 600,
+        "label": "research_grade_length"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      }
     ]
   },
   {
@@ -619,6 +1069,27 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 4,
+        "label": "at_least_4_claims"
+      },
+      {
+        "type": "min_sources",
+        "value": 2,
+        "label": "at_least_2_sources"
+      },
+      {
+        "type": "min_report_length",
+        "value": 600,
+        "label": "research_grade_length"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      }
     ]
   },
   {
@@ -641,6 +1112,27 @@
       "has_aquifer_language",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_claims",
+        "value": 4,
+        "label": "at_least_4_claims"
+      },
+      {
+        "type": "min_sources",
+        "value": 2,
+        "label": "at_least_2_sources"
+      },
+      {
+        "type": "min_report_length",
+        "value": 600,
+        "label": "research_grade_length"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      }
     ]
   },
   {
@@ -658,6 +1150,22 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "aquifer_fallback",
+        "label": "routes_to_aquifer_path"
+      },
+      {
+        "type": "contains",
+        "value": "tamiami",
+        "label": "mentions_tamiami"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change_ft"
+      }
     ]
   },
   {
@@ -675,6 +1183,23 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "aquifer_fallback",
+        "label": "routes_to_aquifer_path"
+      },
+      {
+        "type": "contains",
+        "value": "biscayne",
+        "label": "mentions_biscayne"
+      },
+      {
+        "type": "min_wells",
+        "value": 4,
+        "label": "returns_biscayne_cohort"
+      }
     ]
   },
   {
@@ -691,6 +1216,23 @@
       "has_well_id",
       "has_well_depth",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "site_fallback",
+        "label": "routes_to_site_path"
+      },
+      {
+        "type": "contains",
+        "value": "G-3764",
+        "label": "names_correct_well"
+      },
+      {
+        "type": "contains",
+        "value": "251241080385301",
+        "label": "includes_site_id"
+      }
     ]
   },
   {
@@ -708,6 +1250,13 @@
       "has_aquifer_language",
       "has_well_depth",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_wells",
+        "value": 4,
+        "label": "returns_multiple_wells"
+      }
     ]
   },
   {
@@ -724,6 +1273,13 @@
       "has_well_id",
       "has_coordinates",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "lee",
+        "label": "references_lee_county"
+      }
     ]
   },
   {
@@ -741,6 +1297,18 @@
       "has_well_depth",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "network_fallback",
+        "label": "routes_to_network_path"
+      },
+      {
+        "type": "min_wells",
+        "value": 10,
+        "label": "returns_many_wells"
+      }
     ]
   },
   {
@@ -757,6 +1325,13 @@
       "has_aquifer_language",
       "has_confined_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "unconfined",
+        "label": "correctly_identifies_unconfined"
+      }
     ]
   },
   {
@@ -773,6 +1348,13 @@
       "has_aquifer_language",
       "has_well_depth",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "tamiami",
+        "label": "names_tamiami"
+      }
     ]
   },
   {
@@ -789,6 +1371,18 @@
       "has_aquifer_language",
       "has_confined_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "network_fallback",
+        "label": "routes_to_network_path"
+      },
+      {
+        "type": "contains",
+        "value": "confined",
+        "label": "discusses_confinement"
+      }
     ]
   },
   {
@@ -805,6 +1399,18 @@
       "has_aquifer_language",
       "has_well_depth",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "aquifer_fallback",
+        "label": "routes_to_aquifer_path"
+      },
+      {
+        "type": "contains",
+        "value": "floridan",
+        "label": "names_floridan"
+      }
     ]
   },
   {
@@ -822,6 +1428,18 @@
       "has_well_id",
       "has_trend_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "lee",
+        "label": "mentions_lee_county"
+      },
+      {
+        "type": "min_wells",
+        "value": 2,
+        "label": "returns_comparison_wells"
+      }
     ]
   },
   {
@@ -839,6 +1457,22 @@
       "has_trend_language",
       "has_confined_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "network_fallback",
+        "label": "routes_to_network_path"
+      },
+      {
+        "type": "min_wells",
+        "value": 15,
+        "label": "loads_full_network"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      }
     ]
   },
   {
@@ -856,6 +1490,18 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "surficial",
+        "label": "mentions_surficial"
+      },
+      {
+        "type": "min_wells",
+        "value": 2,
+        "label": "returns_multiple_wells"
+      }
     ]
   },
   {
@@ -874,6 +1520,26 @@
       "has_well_id",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "network_fallback",
+        "label": "routes_to_network_path"
+      },
+      {
+        "type": "min_wells",
+        "value": 15,
+        "label": "loads_full_network"
+      },
+      {
+        "type": "has_cross_well",
+        "label": "has_cross_well_analysis"
+      },
+      {
+        "type": "has_annual_rate",
+        "label": "reports_annual_rates"
+      }
     ]
   },
   {
@@ -890,12 +1556,29 @@
       "has_well_id",
       "has_trend_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "site_fallback",
+        "label": "routes_to_site_path"
+      },
+      {
+        "type": "contains",
+        "value": "G-3764",
+        "label": "names_correct_well"
+      },
+      {
+        "type": "min_wells",
+        "value": 1,
+        "label": "returns_well_data"
+      }
     ]
   },
   {
     "id": "L1_named_well_pair",
     "level": "L1",
-    "question": "Compare G-3336 and G-5004 — differences and notable trends?",
+    "question": "Compare G-3336 and G-5004 \u2014 differences and notable trends?",
     "max_depth": 1,
     "timeout": 60,
     "max_seconds": 20,
@@ -907,6 +1590,33 @@
       "has_trend_language",
       "has_aquifer_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "site_fallback",
+        "label": "routes_to_site_path"
+      },
+      {
+        "type": "contains",
+        "value": "G-3336",
+        "label": "names_first_well"
+      },
+      {
+        "type": "contains",
+        "value": "G-5004",
+        "label": "names_second_well"
+      },
+      {
+        "type": "min_wells",
+        "value": 2,
+        "label": "returns_both_wells"
+      },
+      {
+        "type": "has_divergent_pairs",
+        "value": 1,
+        "label": "detects_divergence"
+      }
     ]
   },
   {
@@ -923,6 +1633,23 @@
       "has_well_id",
       "has_trend_language",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "site_fallback",
+        "label": "routes_to_site_path"
+      },
+      {
+        "type": "contains",
+        "value": "C-1224",
+        "label": "names_correct_well"
+      },
+      {
+        "type": "contains",
+        "value": "collier",
+        "label": "identifies_county"
+      }
     ]
   },
   {
@@ -942,6 +1669,507 @@
       "has_well_depth",
       "has_implications",
       "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_wells",
+        "value": 2,
+        "label": "returns_both_wells"
+      },
+      {
+        "type": "has_annual_rate",
+        "label": "reports_annual_rates"
+      },
+      {
+        "type": "contains",
+        "value": "38 ft",
+        "label": "reports_shallow_depth"
+      },
+      {
+        "type": "contains",
+        "value": "95 ft",
+        "label": "reports_deep_depth"
+      }
+    ]
+  },
+  {
+    "id": "EDGE_nonexistent_well",
+    "level": "L1",
+    "question": "What is the trend at well Z-9999?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "not_contains",
+        "value": "net change",
+        "label": "no_fake_trend_data"
+      },
+      {
+        "type": "not_contains",
+        "value": "ft/yr",
+        "label": "no_fake_annual_rate"
+      }
+    ]
+  },
+  {
+    "id": "EDGE_typo_aquifer",
+    "level": "L1",
+    "question": "Tell me about the Biscanye aquifer trends",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "biscayne",
+        "label": "fuzzy_matches_biscayne"
+      }
+    ]
+  },
+  {
+    "id": "EDGE_vague_query",
+    "level": "L1",
+    "question": "water",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_report_length",
+        "value": 50,
+        "label": "returns_some_response"
+      },
+      {
+        "type": "not_contains",
+        "value": "error",
+        "label": "no_error_in_response"
+      }
+    ]
+  },
+  {
+    "id": "EDGE_biscayne_confined_misconception",
+    "level": "L1",
+    "question": "Is the Biscayne aquifer a confined aquifer?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_aquifer_language",
+      "has_confined_language",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "unconfined",
+        "label": "correctly_says_unconfined"
+      }
+    ]
+  },
+  {
+    "id": "EDGE_multi_county_compare",
+    "level": "L2",
+    "question": "Compare Miami-Dade wells to Sarasota wells \u2014 which area has more decline?",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_well_id",
+      "has_trend_language",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "min_wells",
+        "value": 2,
+        "label": "returns_wells_from_query"
+      }
+    ]
+  },
+  {
+    "id": "EDGE_empty_result_handling",
+    "level": "L1",
+    "question": "What are groundwater levels in Antarctica?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "not_contains",
+        "value": "net change",
+        "label": "no_fake_data"
+      },
+      {
+        "type": "min_report_length",
+        "value": 20,
+        "label": "returns_some_text"
+      }
+    ]
+  },
+  {
+    "id": "EDGE_site_id_format",
+    "level": "L1",
+    "question": "Show data for site 252007080335701",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_well_id",
+      "has_trend_language",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "site_fallback",
+        "label": "routes_to_site_path"
+      },
+      {
+        "type": "contains",
+        "value": "G-3336",
+        "label": "resolves_to_well_name"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_real_data"
+      }
+    ]
+  },
+  {
+    "id": "EDGE_well_no_hyphen",
+    "level": "L1",
+    "question": "What is the status of well G3764?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_well_id",
+      "has_trend_language",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "site_fallback",
+        "label": "routes_to_site_path"
+      },
+      {
+        "type": "contains",
+        "value": "G-3764",
+        "label": "normalises_well_name"
+      }
+    ]
+  },
+  {
+    "id": "EDGE_seasonal_with_data",
+    "level": "L1",
+    "question": "What seasonal patterns exist at Estero wells?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_well_id",
+      "has_trend_language",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "seasonal",
+        "label": "discusses_seasonality"
+      },
+      {
+        "type": "contains",
+        "value": "wet",
+        "label": "mentions_wet_season"
+      },
+      {
+        "type": "has_net_change",
+        "label": "includes_quantitative_data"
+      }
+    ]
+  },
+  {
+    "id": "L2_estero_aquifer_grouped",
+    "level": "L2",
+    "question": "Compare groundwater trends in Estero across different aquifer systems over the last 30 years.",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "fallback",
+        "label": "routes_to_fallback"
+      },
+      {
+        "type": "has_aquifer_grouping",
+        "value": 3,
+        "label": "has_3plus_aquifer_sections"
+      },
+      {
+        "type": "has_cross_aquifer",
+        "label": "has_cross_aquifer_comparison"
+      },
+      {
+        "type": "has_period_transparency",
+        "label": "states_data_period"
+      },
+      {
+        "type": "has_proxy_justification",
+        "label": "has_proxy_distance"
+      },
+      {
+        "type": "min_wells",
+        "value": 6,
+        "label": "returns_6plus_wells"
+      },
+      {
+        "type": "min_report_length",
+        "value": 3000,
+        "label": "report_substantial"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change"
+      },
+      {
+        "type": "has_annual_rate",
+        "label": "reports_annual_rate"
+      },
+      {
+        "type": "contains",
+        "value": "surficial",
+        "label": "mentions_surficial"
+      },
+      {
+        "type": "contains",
+        "value": "hawthorn",
+        "label": "mentions_hawthorn"
+      }
+    ]
+  },
+  {
+    "id": "L2_estero_shallow_vs_deep",
+    "level": "L2",
+    "question": "How do shallow and deep aquifer trends differ near Estero, Florida?",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_aquifer_grouping",
+        "value": 2,
+        "label": "has_aquifer_sections"
+      },
+      {
+        "type": "has_cross_aquifer",
+        "label": "has_shallow_deep_comparison"
+      },
+      {
+        "type": "has_proxy_justification",
+        "label": "has_proxy_distance"
+      },
+      {
+        "type": "min_wells",
+        "value": 4,
+        "label": "returns_4plus_wells"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change"
+      },
+      {
+        "type": "has_implications",
+        "label": "discusses_implications"
+      }
+    ]
+  },
+  {
+    "id": "L3_estero_supply_sources",
+    "level": "L3",
+    "question": "What are the groundwater sources the Village of Estero uses for water supply and what have been changes in groundwater levels there over the last 30 years?",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 120,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_supply_context",
+        "label": "identifies_supply_aquifers"
+      },
+      {
+        "type": "contains",
+        "value": "lee county utilities",
+        "label": "names_utility"
+      },
+      {
+        "type": "contains",
+        "value": "sand and shell",
+        "label": "names_primary_supply_zone"
+      },
+      {
+        "type": "has_aquifer_grouping",
+        "value": 3,
+        "label": "has_3plus_aquifer_sections"
+      },
+      {
+        "type": "has_cross_aquifer",
+        "label": "has_cross_aquifer_comparison"
+      },
+      {
+        "type": "has_proxy_justification",
+        "label": "has_proxy_distance"
+      },
+      {
+        "type": "has_period_transparency",
+        "label": "states_data_period"
+      },
+      {
+        "type": "has_implications",
+        "label": "discusses_sustainability"
+      },
+      {
+        "type": "min_wells",
+        "value": 6,
+        "label": "returns_6plus_wells"
+      },
+      {
+        "type": "min_report_length",
+        "value": 5000,
+        "label": "report_comprehensive"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change"
+      },
+      {
+        "type": "has_annual_rate",
+        "label": "reports_annual_rate"
+      },
+      {
+        "type": "contains",
+        "value": "hawthorn",
+        "label": "mentions_supplemental_supply"
+      },
+      {
+        "type": "contains",
+        "value": "floridan",
+        "label": "mentions_brackish_supply"
+      }
+    ]
+  },
+  {
+    "id": "L3_estero_sustainability",
+    "level": "L3",
+    "question": "Assess the sustainability of Estero's groundwater supply based on long-term monitoring data.",
+    "max_depth": 3,
+    "timeout": 90,
+    "max_seconds": 120,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "has_aquifer_grouping",
+        "value": 2,
+        "label": "has_aquifer_sections"
+      },
+      {
+        "type": "has_cross_aquifer",
+        "label": "has_cross_aquifer_comparison"
+      },
+      {
+        "type": "has_implications",
+        "label": "discusses_sustainability"
+      },
+      {
+        "type": "has_proxy_justification",
+        "label": "has_proxy_distance"
+      },
+      {
+        "type": "min_wells",
+        "value": 6,
+        "label": "returns_6plus_wells"
+      },
+      {
+        "type": "min_report_length",
+        "value": 3000,
+        "label": "report_substantial"
+      },
+      {
+        "type": "has_net_change",
+        "label": "reports_net_change"
+      },
+      {
+        "type": "contains",
+        "value": "risk",
+        "label": "assesses_risk"
+      }
     ]
   }
 ]

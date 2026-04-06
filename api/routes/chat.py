@@ -84,6 +84,33 @@ _AQUIFER_ZONES_REFERENCE: dict[str, list[dict]] = _load_aquifer_zones()
 
 
 # ---------------------------------------------------------------------------
+# Water supply sources — municipality → supply aquifer mappings
+# ---------------------------------------------------------------------------
+
+
+def _load_water_supply_sources() -> dict:
+    json_path = _CONFIG_DIR / "water_supply_sources.json"
+    if not json_path.exists():
+        return {}
+    try:
+        with open(json_path) as fh:
+            raw = json.load(fh)
+        return raw.get("municipalities", {})
+    except Exception:
+        return {}
+
+
+_WATER_SUPPLY_SOURCES: dict = _load_water_supply_sources()
+
+_SUPPLY_QUERY_RE = re.compile(
+    r"\b(water\s*supply|drinking\s*water|supply\s*source|municipal\s*supply"
+    r"|water\s*source|supply\s*aquifer|where\s+does.*get.*water"
+    r"|what\s+aquifer.*supply|what\s+are\s+the\s+groundwater\s+sources)\b",
+    re.IGNORECASE,
+)
+
+
+# ---------------------------------------------------------------------------
 # Rule-based fallback KB (used when LLM agent cannot be initialised)
 # ---------------------------------------------------------------------------
 
@@ -417,6 +444,50 @@ def _detect_aquifer(question: str) -> Optional[tuple[str, str]]:
 def _distance_between(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """Approximate distance using lat/lng deltas (no projection needed for proximity ranking)."""
     return ((lat1 - lat2) ** 2 + (lng1 - lng2) ** 2) ** 0.5
+
+
+def _distance_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Approximate distance in miles using Haversine formula."""
+    import math
+
+    R = 3958.8  # Earth radius in miles
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    )
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _bearing_label(lat1: float, lng1: float, lat2: float, lng2: float) -> str:
+    """Cardinal direction from point 1 to point 2."""
+    import math
+
+    dlng = math.radians(lng2 - lng1)
+    lat1r, lat2r = math.radians(lat1), math.radians(lat2)
+    x = math.sin(dlng) * math.cos(lat2r)
+    y = math.cos(lat1r) * math.sin(lat2r) - math.sin(lat1r) * math.cos(lat2r) * math.cos(dlng)
+    bearing = (math.degrees(math.atan2(x, y)) + 360) % 360
+    dirs = [
+        "N",
+        "NNE",
+        "NE",
+        "ENE",
+        "E",
+        "ESE",
+        "SE",
+        "SSE",
+        "S",
+        "SSW",
+        "SW",
+        "WSW",
+        "W",
+        "WNW",
+        "NW",
+        "NNW",
+    ]
+    return dirs[int((bearing + 11.25) / 22.5) % 16]
 
 
 # Module-level cache: avoids re-reading the same CSV on every request.
@@ -1024,7 +1095,13 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
     }
 
 
-def _site_research_fallback(question: str, sites: list[dict], location_name: str) -> dict:
+def _site_research_fallback(
+    question: str,
+    sites: list[dict],
+    location_name: str,
+    ref_lat: Optional[float] = None,
+    ref_lng: Optional[float] = None,
+) -> dict:
     """Generate a deterministic, cited response for any USGS site/location query."""
     if not sites:
         fallback = _fallback_response(question)
@@ -1060,6 +1137,7 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
         }
 
     site_blocks: list[str] = []
+    site_computed: list[dict] = []  # Per-site computed data for grouping
     insights: list[dict] = []
     claim_citations: list[dict] = []
     source_urls: list[str] = []
@@ -1164,7 +1242,19 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
                 f" dry-season trend: {dry_trend}."
             )
 
-        site_blocks.append(
+        # Proxy justification — distance and bearing from query location
+        proxy_line = ""
+        if ref_lat is not None and ref_lng is not None:
+            dist_mi = _distance_miles(ref_lat, ref_lng, site["lat"], site["lng"])
+            bearing = _bearing_label(ref_lat, ref_lng, site["lat"], site["lng"])
+            proxy_line = (
+                f"\n  Proxy: {dist_mi:.1f} mi {bearing} of {location_name}, "
+                f"monitoring {aq_zone} at {well_depth:.0f} ft."
+                if well_depth
+                else f"\n  Proxy: {dist_mi:.1f} mi {bearing} of {location_name}."
+            )
+
+        block = (
             f"- {site['name']} [site {site['site_id']}] — "
             f"{aq_label} ({aq_zone}, {confinement}){meta_str}:\n"
             f"  {start_date} to {end_date}; "
@@ -1183,6 +1273,28 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
             + head_margin_line
             + artesian_line
             + seasonal_line
+            + proxy_line
+        )
+        site_blocks.append(block)
+
+        # Store computed data for aquifer grouping
+        site_computed.append(
+            {
+                "block": block,
+                "aq_zone": aq_zone,
+                "aq_label": aq_label,
+                "confinement": confinement,
+                "well_depth_ft": well_depth,
+                "zone_range": zone_range,
+                "trend": trend,
+                "annual_change": annual_change,
+                "net_change": net_change,
+                "years": years,
+                "start_date": start_date,
+                "end_date": end_date,
+                "seasonal": seasonal,
+                "confined": site.get("confined", False),
+            }
         )
 
         # Insight/claim text — include critical flags
@@ -1339,16 +1451,312 @@ def _site_research_fallback(question: str, sites: list[dict], location_name: str
                 f"- Divergence: {sa['name']} ({sa['trend']}) " f"vs {sb['name']} ({sb['trend']})\n"
             )
 
-    # Summarise aquifer types present for the interpretation section
-    aquifer_summary = ", ".join(
-        sorted({s.get("aquifer_zone") or s.get("aquifer", "Unknown") for s in sites})
+    # --- Aquifer-grouped report ---
+    # Group sites by aquifer zone for structured output
+    from collections import defaultdict as _defaultdict
+
+    by_aquifer: dict[str, list[dict]] = _defaultdict(list)
+    for sc in site_computed:
+        by_aquifer[sc["aq_zone"]].append(sc)
+
+    # Depth-sorted aquifer order: shallowest first
+    def _aq_sort_key(aq_name: str) -> float:
+        entries = by_aquifer[aq_name]
+        depths = [e["well_depth_ft"] for e in entries if e["well_depth_ft"]]
+        return min(depths) if depths else 999
+
+    sorted_aquifers = sorted(by_aquifer.keys(), key=_aq_sort_key)
+
+    # Build aquifer-grouped sections
+    aquifer_sections: list[str] = []
+    aquifer_summaries: list[dict] = []  # For cross-aquifer synthesis
+    for aq_name in sorted_aquifers:
+        entries = by_aquifer[aq_name]
+        confinement = entries[0]["confinement"]
+        zone_range = entries[0].get("zone_range")
+        range_label = (
+            f", {zone_range[0]}–{zone_range[1]} ft" if zone_range and len(zone_range) == 2 else ""
+        )
+        aq_label = entries[0]["aq_label"]
+        n_wells = len(entries)
+
+        # Section header
+        plural = "s" if n_wells > 1 else ""
+        section_header = (
+            f"\n## {aq_label} ({confinement}{range_label})" f" — {n_wells} well{plural}\n"
+        )
+
+        # Well blocks
+        well_lines = [e["block"] for e in entries]
+
+        # Per-aquifer sub-cohort stats
+        annual_changes = [e["annual_change"] for e in entries]
+        mean_rate = sum(annual_changes) / len(annual_changes) if annual_changes else 0
+        trends = [e["trend"] for e in entries]
+        n_falling = sum(1 for t in trends if t == "falling")
+        n_stable = sum(1 for t in trends if t == "stable")
+        n_rising = sum(1 for t in trends if t == "rising")
+
+        sub_cohort = ""
+        if n_wells >= 2:
+            sub_cohort = (
+                f"\n  Sub-cohort ({n_wells} wells): "
+                f"{n_falling} falling, {n_stable} stable, {n_rising} rising; "
+                f"mean {mean_rate:+.3f} ft/yr"
+            )
+
+        aquifer_sections.append(section_header + chr(10).join(well_lines) + sub_cohort)
+        aquifer_summaries.append(
+            {
+                "aquifer": aq_label,
+                "zone": aq_name,
+                "confinement": confinement,
+                "n_wells": n_wells,
+                "mean_annual_change": mean_rate,
+                "n_falling": n_falling,
+                "n_stable": n_stable,
+                "n_rising": n_rising,
+                "depth_label": range_label.strip(", ") if range_label else "unknown depth",
+            }
+        )
+
+    # Cross-aquifer synthesis section
+    cross_aq_section = ""
+    if len(sorted_aquifers) >= 2:
+        cross_aq_section = "\n## Cross-Aquifer Comparison\n"
+        for aq_s in aquifer_summaries:
+            trend_word = (
+                "declining"
+                if aq_s["mean_annual_change"] < -0.05
+                else ("rising" if aq_s["mean_annual_change"] > 0.05 else "stable")
+            )
+            cross_aq_section += (
+                f"- {aq_s['aquifer']} ({aq_s['confinement']}, {aq_s['depth_label']}, "
+                f"{aq_s['n_wells']} wells): mean {aq_s['mean_annual_change']:+.3f} ft/yr, "
+                f"{trend_word}\n"
+            )
+
+        # Shallow vs deep comparison
+        shallow = [a for a in aquifer_summaries if a["confinement"] == "unconfined"]
+        deep = [a for a in aquifer_summaries if a["confinement"] == "confined"]
+        if shallow and deep:
+            shallow_rate = sum(a["mean_annual_change"] for a in shallow) / len(shallow)
+            deep_rate = sum(a["mean_annual_change"] for a in deep) / len(deep)
+            # Check seasonal variability
+            shallow_seasonal = any(
+                sc["seasonal"].get("has_seasonal") for sc in site_computed if not sc["confined"]
+            )
+            deep_seasonal = any(
+                sc["seasonal"].get("has_seasonal") for sc in site_computed if sc["confined"]
+            )
+            pattern_parts = []
+            if shallow_seasonal and not deep_seasonal:
+                pattern_parts.append("Shallow aquifers show higher seasonal variability")
+            if abs(deep_rate) > abs(shallow_rate):
+                pattern_parts.append("deeper confined systems show stronger long-term decline")
+            elif abs(shallow_rate) > abs(deep_rate):
+                pattern_parts.append("shallow unconfined systems show stronger long-term change")
+            if pattern_parts:
+                cross_aq_section += f"- Pattern: {'; '.join(pattern_parts)}.\n"
+
+    # Period transparency — detect requested time span in user query
+    import re as _re
+
+    period_note = ""
+    yr_match = _re.search(r"\b(\d+)\s*years?\b", question, _re.IGNORECASE)
+    if yr_match:
+        requested_years = int(yr_match.group(1))
+        actual_years = [sc["years"] for sc in site_computed]
+        if actual_years:
+            min_yr = min(actual_years)
+            max_yr = max(actual_years)
+            if min_yr < requested_years - 1:
+                period_note = (
+                    f"\nNote: Requested period is {requested_years} years. "
+                    f"Available USGS records span {min_yr:.0f}–{max_yr:.0f} years "
+                    f"depending on when each well was instrumented.\n"
+                )
+
+    # Water supply context — inject when query matches supply-related keywords
+    supply_section = ""
+    is_supply_query = bool(_SUPPLY_QUERY_RE.search(question))
+    if is_supply_query:
+        # Find matching municipality from location_name
+        loc_key = location_name.lower().replace(" ", "_").replace("-", "_")
+        # Try direct match, then substring match
+        supply_info = _WATER_SUPPLY_SOURCES.get(loc_key)
+        if not supply_info:
+            for key, info in _WATER_SUPPLY_SOURCES.items():
+                if key in loc_key or loc_key in key:
+                    supply_info = info
+                    break
+        if supply_info:
+            supply_section = f"\n## Water Supply Sources — {supply_info['municipality']}\n"
+            supply_section += f"Utility: {supply_info['utility']}\n"
+            supply_section += (
+                f"Regulatory authority: {supply_info.get('regulatory_authority', 'N/A')}\n\n"
+            )
+            for sa in supply_info.get("supply_aquifers", []):
+                supply_section += (
+                    f"- {sa['usage'].title()} supply: {sa['aquifer']} / {sa['zone']} "
+                    f"({sa['depth_range_ft'][0]}–{sa['depth_range_ft'][1]} ft)\n"
+                )
+                if sa.get("notes"):
+                    supply_section += f"  {sa['notes']}\n"
+            for nsa in supply_info.get("non_supply_aquifers", []):
+                supply_section += f"- {nsa['aquifer']}: {nsa['role']}\n"
+
+            # Map supply aquifers to monitoring wells
+            supply_section += "\nMonitoring wells representing supply aquifers:\n"
+            for sa in supply_info.get("supply_aquifers", []):
+                zone_name = sa["zone"]
+                matching_wells = [
+                    s
+                    for s in sites
+                    if (s.get("aquifer_zone") or "").lower() == zone_name.lower()
+                    or zone_name.lower() in (s.get("aquifer_zone") or "").lower()
+                    or zone_name.lower() in (s.get("aquifer", "")).lower()
+                ]
+                for mw in matching_wells:
+                    dist_str = ""
+                    if ref_lat is not None and ref_lng is not None:
+                        dist_mi = _distance_miles(ref_lat, ref_lng, mw["lat"], mw["lng"])
+                        bearing = _bearing_label(ref_lat, ref_lng, mw["lat"], mw["lng"])
+                        dist_str = f", {dist_mi:.1f} mi {bearing}"
+                    depth = mw.get("well_depth_ft")
+                    depth_str = f", {depth:.0f} ft" if depth else ""
+                    supply_section += (
+                        f"  - {mw['name']} ({zone_name}{depth_str}{dist_str}) "
+                        f"— {sa['usage']} supply zone proxy\n"
+                    )
+
+            # Known risks
+            risks = supply_info.get("known_risks", [])
+            if risks:
+                supply_section += "\nKnown risks:\n"
+                for risk in risks:
+                    supply_section += f"  - {risk}\n"
+
+            confidence = supply_info.get(
+                "data_confidence",
+                _WATER_SUPPLY_SOURCES.get("data_confidence", "moderate"),
+            )
+            supply_section += f"\nData confidence: {confidence}\n"
+
+            # Add supply claim
+            pri = supply_info["supply_aquifers"][0]
+            supply_claim = (
+                f"{supply_info['municipality']} water supply is "
+                f"served by {supply_info['utility']}, "
+                f"drawing primarily from the {pri['aquifer']} "
+                f"({pri['zone']}, "
+                f"{pri['depth_range_ft'][0]}–"
+                f"{pri['depth_range_ft'][1]} ft)."
+            )
+            claim_citations.append(
+                {
+                    "claim_id": f"claim_{len(claim_citations) + 1:03d}",
+                    "claim": supply_claim,
+                    "confidence": 0.70,
+                    "citations": [
+                        {"url": source_urls[0], "verified": True, "trust_level": "moderate"}
+                    ],
+                }
+            )
+
+    # --- LLM synthesis (hybrid mode) ---
+    # When Ollama is available, generate a narrative synthesis paragraph
+    # from the structured data. Falls back to deterministic template if unavailable.
+    synthesis_section = ""
+    _SYNTHESIS_TRIGGER_RE = re.compile(
+        r"\b(sustainab|implication|risk|interpret|analys[ei]s|synthesis"
+        r"|outlook|forecast|assessment|recommend)\w*\b",
+        re.IGNORECASE,
     )
+    needs_synthesis = is_supply_query or bool(_SYNTHESIS_TRIGGER_RE.search(question))
+    if needs_synthesis:
+        # Build structured data for LLM
+        synthesis_data = {
+            "location": location_name,
+            "aquifer_summaries": aquifer_summaries,
+            "supply_info": supply_info if is_supply_query and supply_info else None,
+            "cohort_trend": cross_well.get("cohort_trend", "unknown"),
+            "risk_level": cross_well.get("risk_level", "unknown"),
+            "n_wells": len(sites),
+        }
+        try:
+            import httpx
+
+            supply_context = ""
+            if synthesis_data.get("supply_info"):
+                si = synthesis_data["supply_info"]
+                supply_names = ", ".join(
+                    f"{sa['aquifer']} ({sa['usage']})" for sa in si.get("supply_aquifers", [])
+                )
+                supply_context = (
+                    f"\nWater supply context: {si['municipality']} is served by "
+                    f"{si['utility']}. Supply aquifers: {supply_names}. "
+                    f"Known risks: {'; '.join(si.get('known_risks', []))}."
+                )
+
+            aq_data_lines = []
+            for aq_s in synthesis_data["aquifer_summaries"]:
+                nf = aq_s["n_falling"]
+                ns = aq_s["n_stable"]
+                nr = aq_s["n_rising"]
+                aq_data_lines.append(
+                    f"- {aq_s['aquifer']} "
+                    f"({aq_s['confinement']}, {aq_s['depth_label']}): "
+                    f"mean {aq_s['mean_annual_change']:+.3f} ft/yr, "
+                    f"{nf} falling / {ns} stable / {nr} rising"
+                )
+
+            prompt = (
+                f"Hydrogeologist: synthesize USGS data for {location_name}, FL in 2 paragraphs.\n\n"
+                + "\n".join(aq_data_lines)
+                + f"\n\nCohort: {synthesis_data['n_wells']} wells, "
+                f"{synthesis_data['cohort_trend']}, risk: {synthesis_data['risk_level']}."
+                f"{supply_context}\n\n"
+                "Cover: 1) most concerning aquifer trends, "
+                "2) shallow vs deep comparison, "
+                "3) sustainability/saltwater intrusion implications. "
+                "Under 150 words. Use only data above."
+            )
+            # Call Ollama API directly with thinking disabled for speed.
+            # Use llama3.2 (3.2B) for synthesis — faster than qwen3:8b on CPU.
+            synthesis_model = os.environ.get("SYNTHESIS_MODEL", "llama3.2")
+            ollama_resp = httpx.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": synthesis_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "think": False,
+                    "options": {"num_predict": 300},
+                    "keep_alive": "10m",
+                },
+                timeout=60.0,
+            )
+            ollama_resp.raise_for_status()
+            llm_text = ollama_resp.json().get("response", "").strip()
+            # Strip any residual <think> blocks
+            llm_text = re.sub(r"<think>.*?</think>", "", llm_text, flags=re.DOTALL).strip()
+            if llm_text and len(llm_text) > 50:
+                synthesis_section = f"\n## Synthesis (LLM-assisted)\n{llm_text}\n"
+        except Exception as exc:
+            logger.debug("LLM synthesis unavailable, using deterministic fallback: %s", exc)
+
+    # Build full report
+    aquifer_summary = ", ".join(sorted_aquifers)
     report = (
         f"{location_name} groundwater analysis (USGS-backed):\n\n"
-        f"Aquifer systems monitored: {aquifer_summary}\n\n"
-        "Data period used (available local record):\n"
-        f"{chr(10).join(site_blocks)}\n"
-        f"{cohort_section}\n"
+        f"Aquifer systems monitored: {aquifer_summary}\n"
+        f"{period_note}"
+        f"{supply_section}"
+        f"{''.join(aquifer_sections)}\n"
+        f"{cohort_section}"
+        f"{cross_aq_section}"
+        f"{synthesis_section}\n"
         "Interpretation:\n"
         "- The available record may not span the full requested period; "
         "results reflect the actual observed period listed above.\n"
@@ -1564,8 +1972,10 @@ def chat_endpoint(query: dict):
     loc = _detect_location(user_query)
     if loc is not None:
         ref_lat, ref_lng, loc_name, county_hint = loc
-        sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=3)
-        result = _site_research_fallback(user_query, sites, loc_name)
+        sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=10)
+        result = _site_research_fallback(
+            user_query, sites, loc_name, ref_lat=ref_lat, ref_lng=ref_lng
+        )
         wells_payload = _build_wells_payload(sites)
         response_dict: dict[str, Any] = {
             "response": result["report"],
@@ -1798,8 +2208,10 @@ def research_endpoint(query: dict):
     loc = _detect_location(question)
     if loc is not None:
         ref_lat, ref_lng, loc_name, county_hint = loc
-        loc_sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=2)
-        site_result = _site_research_fallback(question, loc_sites, loc_name)
+        loc_sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=10)
+        site_result = _site_research_fallback(
+            question, loc_sites, loc_name, ref_lat=ref_lat, ref_lng=ref_lng
+        )
         site_claim_verdicts = site_result.get(
             "claim_verdicts",
             _build_claim_verdicts(site_result["claim_citations"]),

@@ -31,6 +31,8 @@ IMPLICATIONS_RE = re.compile(
 WELL_DEPTH_RE = re.compile(r"\b\d+(\.\d+)?\s*(ft|feet)\b", re.I)
 COORDINATES_RE = re.compile(r"\b\d{2}\.\d+°?[NS]?\b", re.I)
 CONFINED_RE = re.compile(r"\b(confined|unconfined|artesian|water.table)\b", re.I)
+NET_CHANGE_RE = re.compile(r"[+-]?\d+\.\d+\s*ft", re.I)
+FT_YR_RE = re.compile(r"[+-]?\d+\.\d+\s*ft/yr", re.I)
 
 
 def load_json_file(path: Path) -> dict[str, Any] | list[dict[str, Any]]:
@@ -49,6 +51,112 @@ def response_text_blob(response: dict[str, Any]) -> str:
     sources = response.get("sources", [])
     source_text = "\n".join(str(source) for source in sources)
     return f"{report}\n{insight_text}\n{source_text}"
+
+
+def _eval_assertions(
+    text: str,
+    response: dict[str, Any],
+    assertions: list[dict[str, Any]],
+) -> list[tuple[str, bool]]:
+    """Evaluate case-specific content assertions.
+
+    Each assertion dict has:
+      - ``type``: "contains", "not_contains", "matches_re",
+                  "min_wells", "min_claims", "min_sources",
+                  "expected_mode", "min_report_length"
+      - ``value``: the string / pattern / int to check
+      - ``label``: human-readable name for the check
+
+    Returns list of (label, passed) tuples.
+    """
+    results: list[tuple[str, bool]] = []
+    text_lower = text.lower()
+    wells = response.get("wells") or []
+    claims = response.get("claim_citations") or []
+    sources = response.get("sources") or []
+
+    for a in assertions:
+        atype = a.get("type", "")
+        value = a.get("value", "")
+        label = a.get("label", atype)
+
+        if atype == "contains":
+            results.append((label, str(value).lower() in text_lower))
+        elif atype == "not_contains":
+            results.append((label, str(value).lower() not in text_lower))
+        elif atype == "matches_re":
+            results.append((label, bool(re.search(str(value), text, re.I))))
+        elif atype == "min_wells":
+            results.append((label, len(wells) >= int(value)))
+        elif atype == "min_claims":
+            results.append((label, len(claims) >= int(value)))
+        elif atype == "min_sources":
+            results.append((label, len(sources) >= int(value)))
+        elif atype == "expected_mode":
+            results.append((label, response.get("mode") == str(value)))
+        elif atype == "min_report_length":
+            report = str(response.get("report", ""))
+            results.append((label, len(report) >= int(value)))
+        elif atype == "has_net_change":
+            results.append((label, bool(NET_CHANGE_RE.search(text))))
+        elif atype == "has_annual_rate":
+            results.append((label, bool(FT_YR_RE.search(text))))
+        elif atype == "has_cross_well":
+            results.append(
+                (
+                    label,
+                    "cross-well" in text_lower or "cohort" in text_lower,
+                )
+            )
+        elif atype == "has_divergent_pairs":
+            dp = response.get("divergent_pairs") or []
+            results.append((label, len(dp) >= int(value or 1)))
+        elif atype == "has_aquifer_grouping":
+            # Response contains aquifer section headers (## Aquifer Name)
+            n_headers = len(re.findall(r"##\s+\w.*(?:Aquifer|Hawthorn|Floridan|Surficial)", text))
+            results.append((label, n_headers >= int(value or 2)))
+        elif atype == "has_cross_aquifer":
+            results.append(
+                (
+                    label,
+                    "cross-aquifer" in text_lower
+                    or ("shallow" in text_lower and "deep" in text_lower),
+                )
+            )
+        elif atype == "has_period_transparency":
+            results.append(
+                (
+                    label,
+                    "requested period" in text_lower
+                    or "available usgs record" in text_lower
+                    or re.search(r"\d+.{0,5}years?\b.*\brecord", text_lower) is not None,
+                )
+            )
+        elif atype == "has_supply_context":
+            results.append(
+                (
+                    label,
+                    "water supply" in text_lower
+                    and "utility" in text_lower.replace("utilities", "utility"),
+                )
+            )
+        elif atype == "has_implications":
+            results.append(
+                (
+                    label,
+                    bool(IMPLICATIONS_RE.search(text)),
+                )
+            )
+        elif atype == "has_proxy_justification":
+            # Contains distance/direction proxy text like "X.X mi NNE"
+            results.append(
+                (
+                    label,
+                    bool(re.search(r"\d+\.\d+\s*mi\s+[NSEW]{1,3}", text)),
+                )
+            )
+
+    return results
 
 
 def evaluate_case_response(
@@ -88,6 +196,12 @@ def evaluate_case_response(
         "within_time_budget": elapsed_seconds <= float(case.get("max_seconds", 120)),
     }
 
+    # --- Case-specific content assertions ---
+    assertions = case.get("assertions") or []
+    assertion_results = _eval_assertions(text, response, assertions)
+    for label, passed in assertion_results:
+        check_catalog[label] = passed
+
     required_checks = case.get("required_checks") or [
         "ok_status",
         "has_report",
@@ -95,6 +209,9 @@ def evaluate_case_response(
         "has_claim_citations",
         "has_trend_language",
     ]
+    # Assertion labels are auto-required when present
+    required_checks = list(required_checks) + [label for label, _ in assertion_results]
+
     passed = [name for name in required_checks if check_catalog.get(name)]
     failed = [name for name in required_checks if not check_catalog.get(name)]
 

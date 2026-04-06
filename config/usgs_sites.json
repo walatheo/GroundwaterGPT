@@ -2,7 +2,7 @@
   "description": "USGS Groundwater Monitoring Sites - Florida (36 sites, aquifer-grouped)",
   "source": "U.S. Geological Survey National Water Information System (NWIS)",
   "last_verified": "2026-03-24",
-  "total_sites": 36,
+  "total_sites": 40,
   "note": "Site metadata (aqfr_cd, depths, coordinates) sourced from NWIS siteOutput=expanded. Aquifer groupings reflect actual USGS local aquifer codes for each monitored well.",
   "aquifers": {
     "biscayne": {
@@ -63,7 +63,8 @@
         {"site_id": "261957081432202", "name": "Lee L-2195",      "county": "Lee",     "lat": 26.33286, "lng": -81.72258, "well_depth_ft": 15.0,  "aquifer_zone": "Surficial Sand", "confined": false},
         {"site_id": "262214081113001", "name": "Hendry HE-1042",  "county": "Hendry",  "lat": 26.37147, "lng": -81.19202, "well_depth_ft": 80.0,  "aquifer_zone": "Surficial Sand", "confined": false},
         {"site_id": "262735081044601", "name": "Hendry HE-860",   "county": "Hendry",  "lat": 26.46063, "lng": -81.07646, "well_depth_ft": 16.0,  "aquifer_zone": "Surficial Sand", "confined": false},
-        {"site_id": "263041081433103", "name": "Lee L-1999",      "county": "Lee",     "lat": 26.51202, "lng": -81.72536, "well_depth_ft": 26.0,  "aquifer_zone": "Surficial Sand", "confined": false}
+        {"site_id": "263041081433103", "name": "Lee L-1999",      "county": "Lee",     "lat": 26.51202, "lng": -81.72536, "well_depth_ft": 26.0,  "aquifer_zone": "Surficial Sand", "confined": false},
+        {"site_id": "262513081432601", "name": "Lee L-5667",      "county": "Lee",     "lat": 26.42175, "lng": -81.72369, "well_depth_ft": 32.0,  "aquifer_zone": "Surficial Sand", "confined": false}
       ]
     },
     "tamiami": {
@@ -111,7 +112,8 @@
       "sites": [
         {"site_id": "261957081432201", "name": "Lee L-2194",   "county": "Lee", "lat": 26.33286, "lng": -81.72258, "well_depth_ft": 137.0, "aquifer_zone": "Sand and Shell", "confined": true},
         {"site_id": "262711081413701", "name": "Lee L-2550",   "county": "Lee", "lat": 26.45369, "lng": -81.69342, "well_depth_ft": 134.0, "aquifer_zone": "Sand and Shell", "confined": false},
-        {"site_id": "263335081394301", "name": "Lee L-729",    "county": "Lee", "lat": 26.56063, "lng": -81.66174, "well_depth_ft": 103.0, "aquifer_zone": "Sand and Shell", "confined": true}
+        {"site_id": "263335081394301", "name": "Lee L-729",    "county": "Lee", "lat": 26.56063, "lng": -81.66174, "well_depth_ft": 103.0, "aquifer_zone": "Sand and Shell", "confined": true},
+        {"site_id": "263041081433102", "name": "Lee L-1998",   "county": "Lee", "lat": 26.51202, "lng": -81.72536, "well_depth_ft": 160.0, "aquifer_zone": "Sand and Shell", "confined": true}
       ]
     },
     "hawthorn": {
@@ -141,8 +143,8 @@
       "name": "Floridan Aquifer System",
       "usgs_aqfr_cd": "120FLRD",
       "nat_aqfr_cd": "S400FLORDN",
-      "description": "Deep confined Floridan Aquifer System in Sarasota County. Includes Suwannee-Tampa and undivided Floridan zones at 446-591 ft depth. Primary municipal supply for Sarasota and Charlotte region; strong artesian pressure.",
-      "counties": ["Sarasota"],
+      "description": "Deep confined Floridan Aquifer System in SW Florida. Includes Suwannee-Tampa and undivided Floridan zones at 446-700 ft depth. Primary municipal supply for Sarasota and Charlotte region; used for brackish supply and ASR in Lee County; strong artesian pressure.",
+      "counties": ["Sarasota", "Lee"],
       "aquifer_type": "confined",
       "confined": true,
       "depth_range_ft": [446, 591],
@@ -170,7 +172,9 @@
         {"site_id": "271619082240201", "name": "Sarasota FLA-Cities-1",   "county": "Sarasota", "lat": 27.27111, "lng": -82.40100, "well_depth_ft": 446.0, "aquifer_zone": "Upper Floridan", "confined": true},
         {"site_id": "272020082194801", "name": "Sarasota Verna-Test-0-4", "county": "Sarasota", "lat": 27.33900, "lng": -82.33011, "well_depth_ft": 499.5, "aquifer_zone": "Tampa Limestone", "confined": false},
         {"site_id": "272127082323801", "name": "Sarasota City-23rd-Coco", "county": "Sarasota", "lat": 27.35750, "lng": -82.54428, "well_depth_ft": 570.0, "aquifer_zone": "Floridan",       "confined": true},
-        {"site_id": "272129082330202", "name": "Sarasota City-Hickory",   "county": "Sarasota", "lat": 27.35883, "lng": -82.55069, "well_depth_ft": 591.0, "aquifer_zone": "Floridan",       "confined": false}
+        {"site_id": "272129082330202", "name": "Sarasota City-Hickory",   "county": "Sarasota", "lat": 27.35883, "lng": -82.55069, "well_depth_ft": 591.0, "aquifer_zone": "Floridan",       "confined": false},
+        {"site_id": "262538082045701", "name": "Lee L-588",              "county": "Lee",      "lat": 26.42795, "lng": -82.08174, "well_depth_ft": 557.0, "aquifer_zone": "Upper Floridan", "confined": true},
+        {"site_id": "263117082051001", "name": "Lee L-2525",             "county": "Lee",      "lat": 26.52167, "lng": -82.08589, "well_depth_ft": 645.0, "aquifer_zone": "Floridan",       "confined": true}
       ]
     }
   },

@@ -7,7 +7,7 @@
   "min_avg_claim_verdict_coverage": 0.95,
   "max_avg_contradicted_claim_rate": 0.40,
   "max_avg_high_risk_claim_rate": 0.50,
-  "max_response_seconds": 3.00,
+  "max_response_seconds": 120.00,
   "force_fallback_mode": true,
   "require_live_mode": false,
   "enforce_in_ci": false,

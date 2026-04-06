@@ -97,7 +97,7 @@ else:
     USGS_CONFIG = {"aquifers": {}}
 
 # USGS API Configuration
-USGS_NWIS_URL = "https://waterservices.usgs.gov/nwis/gwlevels/"
+USGS_NWIS_URL = "https://waterservices.usgs.gov/nwis/dv/"
 USGS_PARAMETER_CODES = ["72019", "62610", "62611", "72020"]
 USGS_API_TIMEOUT = 60  # seconds
 USGS_API_RETRY_MAX = 3
