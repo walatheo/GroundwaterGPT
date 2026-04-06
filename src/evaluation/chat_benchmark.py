@@ -28,6 +28,9 @@ IMPLICATIONS_RE = re.compile(
     r"\b(risk|sustainab\w*|intrusion|drawdown|stress\w*|management|implication\w*)\b",
     re.I,
 )
+WELL_DEPTH_RE = re.compile(r"\b\d+(\.\d+)?\s*(ft|feet)\b", re.I)
+COORDINATES_RE = re.compile(r"\b\d{2}\.\d+°?[NS]?\b", re.I)
+CONFINED_RE = re.compile(r"\b(confined|unconfined|artesian|water.table)\b", re.I)
 
 
 def load_json_file(path: Path) -> dict[str, Any] | list[dict[str, Any]]:
@@ -79,6 +82,9 @@ def evaluate_case_response(
         "has_trend_language": bool(TREND_RE.search(text)),
         "has_aquifer_language": bool(AQUIFER_RE.search(text)),
         "has_implications": bool(IMPLICATIONS_RE.search(text)),
+        "has_well_depth": bool(WELL_DEPTH_RE.search(text)),
+        "has_coordinates": bool(COORDINATES_RE.search(text)),
+        "has_confined_language": bool(CONFINED_RE.search(text)),
         "within_time_budget": elapsed_seconds <= float(case.get("max_seconds", 120)),
     }
 

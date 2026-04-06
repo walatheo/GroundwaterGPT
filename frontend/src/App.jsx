@@ -111,6 +111,7 @@ function App() {
           loading={loading}
           error={error}
           activeTab={activeTab}
+          setActiveTab={setActiveTab}
           setSelectedSite={setSelectedSite}
         />
       </main>

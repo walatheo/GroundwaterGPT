@@ -676,5 +676,272 @@
       "has_aquifer_language",
       "within_time_budget"
     ]
+  },
+  {
+    "id": "L1_well_metadata_01",
+    "level": "L1",
+    "question": "What is the depth of well G-3764 in Miami-Dade?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_well_id",
+      "has_well_depth",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_well_metadata_02",
+    "level": "L1",
+    "question": "Which wells monitor the Biscayne aquifer and how deep are they?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_well_id",
+      "has_aquifer_language",
+      "has_well_depth",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_well_metadata_03",
+    "level": "L1",
+    "question": "What are the coordinates of monitoring wells in Lee County?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_well_id",
+      "has_coordinates",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_well_metadata_04",
+    "level": "L1",
+    "question": "List all wells deeper than 100 feet with their aquifer assignments.",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_well_id",
+      "has_well_depth",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_aquifer_desc_01",
+    "level": "L1",
+    "question": "Is the Biscayne aquifer confined or unconfined?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_aquifer_language",
+      "has_confined_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_aquifer_desc_02",
+    "level": "L1",
+    "question": "Describe the Tamiami aquifer system and its typical depth range.",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_aquifer_language",
+      "has_well_depth",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_aquifer_desc_03",
+    "level": "L1",
+    "question": "Which aquifers in the monitoring network are confined?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_aquifer_language",
+      "has_confined_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_aquifer_desc_04",
+    "level": "L1",
+    "question": "What is the Floridan Aquifer System and at what depths is it monitored?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_aquifer_language",
+      "has_well_depth",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_multi_site_01",
+    "level": "L2",
+    "question": "Compare groundwater trends between Miami-Dade and Lee County wells.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_well_id",
+      "has_trend_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_multi_site_02",
+    "level": "L2",
+    "question": "How do confined vs unconfined aquifer water level trends differ across the monitoring network?",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_trend_language",
+      "has_confined_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_multi_site_03",
+    "level": "L2",
+    "question": "Compare shallow Surficial aquifer wells to deep Floridan aquifer wells in terms of water level stability.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_multi_site_04",
+    "level": "L2",
+    "question": "Which county shows the greatest groundwater decline when comparing all available monitoring data?",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_trend_language",
+      "has_well_id",
+      "has_implications",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_named_well_single",
+    "level": "L1",
+    "question": "What is the trend and depth info for well G-3764?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_well_id",
+      "has_trend_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_named_well_pair",
+    "level": "L1",
+    "question": "Compare G-3336 and G-5004 — differences and notable trends?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_well_id",
+      "has_trend_language",
+      "has_aquifer_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L1_named_well_collier",
+    "level": "L1",
+    "question": "Show me the latest data and trend for C-1224.",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_well_id",
+      "has_trend_language",
+      "within_time_budget"
+    ]
+  },
+  {
+    "id": "L2_named_well_depth_compare",
+    "level": "L2",
+    "question": "How do shallow versus deep monitoring wells in Miami-Dade differ in trend behaviour? Use G-3336 and G-5004 as examples.",
+    "max_depth": 3,
+    "timeout": 120,
+    "max_seconds": 25,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_well_id",
+      "has_trend_language",
+      "has_well_depth",
+      "has_implications",
+      "within_time_budget"
+    ]
   }
 ]

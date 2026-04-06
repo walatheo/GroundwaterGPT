@@ -560,6 +560,147 @@ def _is_aquifer_query(question: str) -> bool:
     return any(kw in q for kw in _AQUIFER_QUERY_KEYWORDS)
 
 
+# ---------------------------------------------------------------------------
+# Site-name detection — matches well names like "G-3336", "G 3336", "G3336",
+# "C-1224", or raw 15-digit USGS site IDs from the query text.
+# ---------------------------------------------------------------------------
+_WELL_NAME_RE = re.compile(r"\b([A-Za-z]{1,3})[\s\-]?(\d{3,5})\b")
+_RAW_SITE_ID_RE = re.compile(r"\b(\d{15})\b")
+
+
+def _detect_site_names(question: str) -> list[dict]:
+    """Extract well names / site IDs from query and return matching site dicts.
+
+    Handles formats: G-3336, G 3336, G3336, C-1224, 252007080335701.
+    Returns site dicts in the same shape as ``_best_sites_near()`` output.
+    """
+    matched_ids: list[str] = []
+
+    # Build a quick lookup: normalised well-name → site_id
+    name_to_id: dict[str, str] = {}
+    for site_id, meta in SITE_METADATA.items():
+        name = meta.get("name", "")
+        # Extract the well code portion, e.g. "Miami-Dade G-3336" → "g3336"
+        parts = name.split()
+        for part in parts:
+            normalised = part.lower().replace("-", "")
+            if normalised and any(c.isdigit() for c in normalised):
+                name_to_id[normalised] = site_id
+
+    # Match well-name patterns in the query
+    for m in _WELL_NAME_RE.finditer(question):
+        prefix = m.group(1).lower()
+        digits = m.group(2)
+        normalised = prefix + digits  # e.g. "g3336"
+        if normalised in name_to_id:
+            sid = name_to_id[normalised]
+            if sid not in matched_ids:
+                matched_ids.append(sid)
+
+    # Match raw 15-digit site IDs
+    for m in _RAW_SITE_ID_RE.finditer(question):
+        sid = m.group(1)
+        if sid in SITE_METADATA and sid not in matched_ids:
+            matched_ids.append(sid)
+
+    # Build site dicts with timeseries
+    results: list[dict] = []
+    for sid in matched_ids:
+        series = _load_site_timeseries(sid)
+        if series is None:
+            continue
+        meta = SITE_METADATA[sid]
+        results.append(
+            {
+                "site_id": sid,
+                "name": meta.get("name", sid),
+                "county": meta.get("county", "Florida"),
+                "aquifer": meta.get("aquifer", "Unknown Aquifer"),
+                "aquifer_type": meta.get("aquifer_type", "unconfined"),
+                "confined": meta.get("confined", False),
+                "aquifer_zone": meta.get("aquifer_zone", ""),
+                "aquifer_zone_depth_range_ft": meta.get("aquifer_zone_depth_range_ft", [0, 100]),
+                "aquifer_description": meta.get("aquifer_description", ""),
+                "well_depth_ft": meta.get("well_depth_ft"),
+                "lat": meta.get("lat"),
+                "lng": meta.get("lng"),
+                "series": series,
+            }
+        )
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Network-wide query detection — triggers when no specific location/aquifer
+# is mentioned but the user asks about all wells, all counties, the whole
+# monitoring network, confined vs unconfined comparison, or depth filtering.
+# ---------------------------------------------------------------------------
+_NETWORK_WIDE_KEYWORDS = [
+    "all wells",
+    "all monitoring",
+    "all available",
+    "all sites",
+    "monitoring network",
+    "entire network",
+    "across the network",
+    "every well",
+    "every site",
+    "every county",
+    "which county",
+    "compare counties",
+    "comparing counties",
+    "county comparison",
+    "confined vs unconfined",
+    "confined versus unconfined",
+    "unconfined vs confined",
+    "deeper than",
+    "wells deeper",
+    "deepest well",
+    "shallowest well",
+    "all county",
+    "all counties",
+    "network-wide",
+]
+
+
+def _is_network_wide_query(question: str) -> bool:
+    """Return True when the query asks about the full monitoring network."""
+    q = question.lower()
+    return any(kw in q for kw in _NETWORK_WIDE_KEYWORDS)
+
+
+def _all_sites_with_data(max_sites: int = 36) -> list[dict]:
+    """Load all sites that have available timeseries data.
+
+    Returns the same dict shape as ``_best_sites_near()`` so the result
+    can be passed directly to ``_site_research_fallback()``.
+    """
+    candidates = []
+    for site_id, meta in SITE_METADATA.items():
+        series = _load_site_timeseries(site_id)
+        if series is None:
+            continue
+        candidates.append(
+            {
+                "site_id": site_id,
+                "name": meta.get("name", site_id),
+                "county": meta.get("county", "Florida"),
+                "aquifer": meta.get("aquifer", "Unknown Aquifer"),
+                "aquifer_type": meta.get("aquifer_type", "unconfined"),
+                "confined": meta.get("confined", False),
+                "aquifer_zone": meta.get("aquifer_zone", ""),
+                "aquifer_zone_depth_range_ft": meta.get("aquifer_zone_depth_range_ft", [0, 100]),
+                "aquifer_description": meta.get("aquifer_description", ""),
+                "well_depth_ft": meta.get("well_depth_ft"),
+                "lat": meta.get("lat"),
+                "lng": meta.get("lng"),
+                "series": series,
+            }
+        )
+    candidates.sort(key=lambda s: (s["county"], s["name"]))
+    return candidates[:max_sites]
+
+
 def _build_wells_payload(sites: list[dict]) -> list[dict]:
     """Convert _best_sites_near() results to the structured wells wire format."""
     wells = []
@@ -1344,6 +1485,20 @@ def chat_endpoint(query: dict):
     if not user_query:
         raise HTTPException(status_code=400, detail="Message is required")
 
+    # --- Site-name fast path: explicit well names / site IDs (most specific) ---
+    named_sites = _detect_site_names(user_query)
+    if named_sites:
+        label = " vs ".join(s["name"] for s in named_sites)
+        ns_result = _site_research_fallback(user_query, named_sites, label)
+        return {
+            "response": ns_result["report"],
+            "context": _get_site_context(named_sites[0].get("county")),
+            "sources": ns_result["sources"],
+            "mode": "site_fallback",
+            "status": "ok",
+            "wells": _build_wells_payload(named_sites),
+        }
+
     # --- Aquifer fast path: named aquifer → all cohort sites (runs before location) ---
     aq_hit = _detect_aquifer(user_query)
     if aq_hit is not None:
@@ -1378,6 +1533,20 @@ def chat_endpoint(query: dict):
         if _is_aquifer_query(user_query) and wells_payload:
             response_dict["aquifer_info"] = _build_aquifer_info(wells_payload[0]["aquifer"])
         return response_dict
+
+    # --- Network-wide fast path: all-wells / all-county / confined-vs-unconfined queries ---
+    if _is_network_wide_query(user_query):
+        nw_sites = _all_sites_with_data(max_sites=36)
+        if nw_sites:
+            nw_result = _site_research_fallback(user_query, nw_sites, "Florida monitoring network")
+            return {
+                "response": nw_result["report"],
+                "context": _get_site_context(),
+                "sources": nw_result["sources"],
+                "mode": "network_fallback",
+                "status": "ok",
+                "wells": _build_wells_payload(nw_sites),
+            }
 
     # --- Try real agent first ---
     if _chat_agent is not None:
@@ -1489,6 +1658,48 @@ def research_endpoint(query: dict):
             _set_runtime_error("research", exc)
             # Fall through to fallback
 
+    # --- Site-name fast path: explicit well names / site IDs (most specific) ---
+    named_sites = _detect_site_names(question)
+    if named_sites:
+        label = " vs ".join(s["name"] for s in named_sites)
+        ns_result = _site_research_fallback(question, named_sites, label)
+        ns_claim_verdicts = ns_result.get(
+            "claim_verdicts",
+            _build_claim_verdicts(ns_result["claim_citations"]),
+        )
+        return {
+            "status": "ok",
+            "mode": "site_fallback",
+            "report": ns_result["report"],
+            "insights": ns_result["insights"],
+            "sources": ns_result["sources"],
+            "search_history": ns_result["search_history"],
+            "depth_reached": ns_result["depth_reached"],
+            "elapsed_seconds": ns_result["elapsed_seconds"],
+            "claim_citations": ns_result["claim_citations"],
+            "claim_verdicts": ns_claim_verdicts,
+            "claim_verdict_summary": ns_result.get(
+                "claim_verdict_summary",
+                _build_claim_verdict_summary(ns_claim_verdicts),
+            ),
+            "citation_summary": ns_result["citation_summary"],
+            "section_confidence": ns_result.get("section_confidence", {}),
+            "hallucination_guardrail": ns_result.get(
+                "hallucination_guardrail",
+                {
+                    "strategy": "deterministic_site_fallback",
+                    "removed_uncited_factual_sentences": 0,
+                    "all_factual_claims_cited": True,
+                },
+            ),
+            "citation_integrity": _build_citation_integrity(
+                ns_result["claim_citations"], ns_result.get("section_confidence", {})
+            ),
+            "wells": _build_wells_payload(named_sites),
+            "divergent_pairs": ns_result.get("divergent_pairs", []),
+            "cohort_risk_level": ns_result.get("cohort_risk_level"),
+        }
+
     # --- Aquifer fast path: named aquifer → all cohort sites (runs before location) ---
     aq_hit = _detect_aquifer(question)
     if aq_hit is not None:
@@ -1576,6 +1787,48 @@ def research_endpoint(query: dict):
             "divergent_pairs": site_result.get("divergent_pairs", []),
             "cohort_risk_level": site_result.get("cohort_risk_level"),
         }
+
+    # --- Network-wide fallback: queries about all wells / all counties / confined vs unconfined ---
+    if _is_network_wide_query(question):
+        nw_sites = _all_sites_with_data(max_sites=36)
+        if nw_sites:
+            nw_result = _site_research_fallback(question, nw_sites, "Florida monitoring network")
+            nw_claim_verdicts = nw_result.get(
+                "claim_verdicts",
+                _build_claim_verdicts(nw_result["claim_citations"]),
+            )
+            return {
+                "status": "ok",
+                "mode": "network_fallback",
+                "report": nw_result["report"],
+                "insights": nw_result["insights"],
+                "sources": nw_result["sources"],
+                "search_history": nw_result["search_history"],
+                "depth_reached": nw_result["depth_reached"],
+                "elapsed_seconds": nw_result["elapsed_seconds"],
+                "claim_citations": nw_result["claim_citations"],
+                "claim_verdicts": nw_claim_verdicts,
+                "claim_verdict_summary": nw_result.get(
+                    "claim_verdict_summary",
+                    _build_claim_verdict_summary(nw_claim_verdicts),
+                ),
+                "citation_summary": nw_result["citation_summary"],
+                "section_confidence": nw_result.get("section_confidence", {}),
+                "hallucination_guardrail": nw_result.get(
+                    "hallucination_guardrail",
+                    {
+                        "strategy": "deterministic_site_fallback",
+                        "removed_uncited_factual_sentences": 0,
+                        "all_factual_claims_cited": True,
+                    },
+                ),
+                "citation_integrity": _build_citation_integrity(
+                    nw_result["claim_citations"], nw_result.get("section_confidence", {})
+                ),
+                "wells": _build_wells_payload(nw_sites),
+                "divergent_pairs": nw_result.get("divergent_pairs", []),
+                "cohort_risk_level": nw_result.get("cohort_risk_level"),
+            }
 
     fb = _fallback_response(question)
     fallback_claims = [

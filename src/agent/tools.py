@@ -672,14 +672,28 @@ def _load_site_metadata() -> Dict[str, Dict[str, Any]]:
     flat: Dict[str, Dict[str, Any]] = {}
     for _aq_key, aq_info in raw.get("aquifers", {}).items():
         aquifer_name = aq_info.get("name", _aq_key)
+        aquifer_type = aq_info.get("aquifer_type", "unconfined")
+        aq_confined = aquifer_type == "confined"
+        aq_depth_range = aq_info.get("depth_range_ft", [0, 100])
+        aq_description = aq_info.get("description", "")
+        zones_by_name = {z["zone_name"]: z for z in aq_info.get("zones", [])}
+
         for site in aq_info.get("sites", []):
             sid = site["site_id"]
+            site_zone = site.get("aquifer_zone", "")
+            zone_detail = zones_by_name.get(site_zone, {})
             flat[sid] = {
                 "name": site.get("name", sid),
                 "aquifer": aquifer_name,
+                "aquifer_type": aquifer_type,
                 "county": site.get("county", "Unknown"),
                 "lat": site.get("lat"),
                 "lng": site.get("lng"),
+                "well_depth_ft": site.get("well_depth_ft"),
+                "aquifer_zone": site_zone,
+                "confined": site.get("confined", aq_confined),
+                "aquifer_description": zone_detail.get("description", aq_description),
+                "depth_range_ft": zone_detail.get("depth_range_ft", aq_depth_range),
             }
     _SITE_METADATA_CACHE = flat
     return flat
@@ -700,7 +714,8 @@ def list_available_sites(
         aquifer: Optional filter by aquifer (e.g. "Biscayne", "Floridan").
 
     Returns:
-        Formatted list of sites with name, county, and aquifer.
+        Formatted list of sites with name, county, aquifer, zone,
+        confined/unconfined status, well depth, and coordinates.
     """
     meta = _load_site_metadata()
     if not meta:
@@ -722,7 +737,17 @@ def list_available_sites(
     for sid, m in sites:
         has_data = (DATA_DIR / f"usgs_{sid}.csv").exists()
         status = "✅" if has_data else "⬜"
-        lines.append(f"  {status} **{m['name']}** ({sid})" f" — {m['county']}, {m['aquifer']}")
+        confined_label = "confined" if m.get("confined") else "unconfined"
+        depth_str = f", depth {m['well_depth_ft']} ft" if m.get("well_depth_ft") else ""
+        zone_str = f" [{m['aquifer_zone']}]" if m.get("aquifer_zone") else ""
+        coords = ""
+        if m.get("lat") and m.get("lng"):
+            coords = f" ({m['lat']:.3f}°N, {abs(m['lng']):.3f}°W)"
+        lines.append(
+            f"  {status} **{m['name']}** ({sid})"
+            f" — {m['county']}, {m['aquifer']}{zone_str}"
+            f" ({confined_label}{depth_str}){coords}"
+        )
     return "\n".join(lines)
 
 
@@ -745,7 +770,9 @@ def query_site_data(
         stat_type: 'summary', 'monthly', 'yearly', or 'raw'.
 
     Returns:
-        Formatted string with site-specific groundwater analysis.
+        Formatted string with full well card (aquifer, zone, confined
+        status, well depth, depth range, coordinates, description)
+        plus site-specific groundwater analysis.
     """
     try:
         df = _load_site_csv(site_id)
@@ -768,10 +795,20 @@ def query_site_data(
     if stat_type == "summary":
         tail30 = df.tail(30)
         recent_chg = tail30.iloc[-1][col] - tail30.iloc[0][col] if len(tail30) > 1 else 0.0
-        return (
+        confined_label = "Confined" if meta.get("confined") else "Unconfined"
+        well_card = (
             f"📊 **{site_name}** (site {site_id})\n"
-            f"   Aquifer: {meta.get('aquifer', 'N/A')}, "
-            f"County: {meta.get('county', 'N/A')}\n"
+            f"   Aquifer: {meta.get('aquifer', 'N/A')} ({confined_label})\n"
+            f"   Zone: {meta.get('aquifer_zone') or 'N/A'}\n"
+            f"   County: {meta.get('county', 'N/A')}\n"
+            f"   Well Depth: {meta.get('well_depth_ft', 'N/A')} ft\n"
+            f"   Aquifer Depth Range: {meta.get('depth_range_ft', 'N/A')} ft\n"
+        )
+        if meta.get("lat") and meta.get("lng"):
+            well_card += f"   Coordinates: {meta['lat']:.5f}°N, {abs(meta['lng']):.5f}°W\n"
+        if meta.get("aquifer_description"):
+            well_card += f"   Description: {meta['aquifer_description']}\n"
+        well_card += (
             f"   Date range: "
             f"{df['date'].min():%Y-%m-%d} → {df['date'].max():%Y-%m-%d}\n"
             f"   Records: {len(df):,}\n"
@@ -781,6 +818,7 @@ def query_site_data(
             f"   Std Dev: {df[col].std():.2f} ft\n"
             f"   Recent 30-day change: {recent_chg:+.2f} ft"
         )
+        return well_card
 
     if stat_type == "monthly":
         df["month"] = df["date"].dt.to_period("M")

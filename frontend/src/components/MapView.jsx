@@ -25,7 +25,7 @@ const COUNTY_COLORS = {
   'Hendry': '#ef4444',      // Red
 }
 
-export default function MapView({ sites = [], selectedSite, setSelectedSite }) {
+export default function MapView({ sites = [], selectedSite, setSelectedSite, setActiveTab }) {
   const getColor = (site) => {
     return COUNTY_COLORS[site.county] || '#64748b'  // Default slate
   }
@@ -112,7 +112,7 @@ export default function MapView({ sites = [], selectedSite, setSelectedSite }) {
                   </div>
 
                   <button
-                    onClick={() => setSelectedSite(site)}
+                    onClick={() => { setSelectedSite(site); setActiveTab('timeseries'); }}
                     className="mt-3 w-full bg-blue-500 text-white text-sm py-2 rounded-lg hover:bg-blue-600 transition-colors"
                   >
                     View Time Series →

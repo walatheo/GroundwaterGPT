@@ -7,7 +7,7 @@ import ResearchWorkflowView from './ResearchWorkflowView'
 import StatsCard from './StatsCard'
 import { TrendingUp, TrendingDown, Minus, Droplet, Database, Activity } from 'lucide-react'
 
-export default function Dashboard({ site, data, heatmapData, stats, sites, loading, error, activeTab, setSelectedSite }) {
+export default function Dashboard({ site, data, heatmapData, stats, sites, loading, error, activeTab, setActiveTab, setSelectedSite }) {
   const getTrendIcon = (trend) => {
     if (trend > 0.1) return <TrendingUp className="w-4 h-4 text-red-500" />
     if (trend < -0.1) return <TrendingDown className="w-4 h-4 text-green-500" />
@@ -111,7 +111,7 @@ export default function Dashboard({ site, data, heatmapData, stats, sites, loadi
       {/* Main Content */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         {activeTab === 'map' && (
-          <MapView sites={sites} selectedSite={site} setSelectedSite={setSelectedSite} />
+          <MapView sites={sites} selectedSite={site} setSelectedSite={setSelectedSite} setActiveTab={setActiveTab} />
         )}
         {activeTab === 'timeseries' && (
           <TimeSeriesChart data={data} site={site} />
