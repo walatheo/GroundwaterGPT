@@ -1,6 +1,6 @@
 # GroundwaterGPT Demo Runbook
 
-**Last Updated:** February 28, 2026
+**Last Updated:** April 6, 2026
 
 ## 1. Demo Goals
 
@@ -47,12 +47,24 @@ curl -s http://127.0.0.1:8000/api/research \
 ```
 
 Expected highlights:
-- `report`
+- `report` — markdown with aquifer-grouped sections, per-well data, proxy justification
 - `claim_citations[]`
 - `claim_verdicts[]` (`supported|contradicted|insufficient_evidence`)
 - `claim_verdict_summary` (counts + contradiction/high-risk rates)
 - `citation_summary.citation_coverage`
+- `hallucination_guardrail` — flags uncited claims and LLM synthesis presence
+- `llm_synthesis` — separate interpretive text (only for supply/sustainability queries)
 - `sources` includes USGS monitoring-location URLs
+
+#### 3.2b Water supply context query
+
+```bash
+curl -s http://127.0.0.1:8000/api/research \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"What is the sustainability outlook for Estero water supply?"}' | jq '{llm_synthesis, hallucination_guardrail, mode}'
+```
+
+This triggers LLM synthesis (requires Ollama running with llama3.2). If Ollama is offline, the response still works — `llm_synthesis` will be `null`.
 
 #### 3.3 Create plan
 
@@ -124,7 +136,7 @@ npm run dev
 Open: `http://127.0.0.1:3000`
 
 Demo tabs:
-- `AI Assistant`
+- `AI Assistant` — markdown rendering, LLM synthesis callout (purple box), wells grouped by aquifer, guardrail badge
 - `Research Lab` (plan/run/draft flow)
 
 ## 5. Benchmark Demo
@@ -135,4 +147,4 @@ python3 scripts/run_chat_benchmark.py --output /tmp/chat_benchmark_report.json
 cat /tmp/chat_benchmark_report.json | jq '.summary'
 ```
 
-This demonstrates objective scoring and threshold checks.
+This runs all 63 benchmark cases across 40 USGS sites and demonstrates objective scoring and threshold checks.

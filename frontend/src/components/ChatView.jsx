@@ -1,7 +1,25 @@
 import { useState, useEffect, useRef } from 'react'
 import { Send, Bot, User, AlertCircle, Sparkles, Search, MessageCircle } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
 import { sendChatMessage, sendResearchQueryStreaming, fetchChatStatus } from '../api/client'
 import AgentChart from './AgentChart'
+
+/** Custom component overrides for ReactMarkdown (no @tailwindcss/typography). */
+const markdownComponents = {
+  h1: ({ children }) => <h1 className="text-base font-bold mt-3 mb-1">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-sm font-bold mt-3 mb-1">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-0.5">{children}</h3>,
+  p: ({ children }) => <p className="mb-1.5 leading-relaxed">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5">{children}</ol>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+      {children}
+    </a>
+  ),
+}
 
 /**
  * Try to extract a Recharts-ready chart payload from a text response.
@@ -136,6 +154,8 @@ export default function ChatView({ selectedSite }) {
             aquiferInfo: data.aquifer_info || null,
             divergentPairs: data.divergent_pairs || [],
             cohortRisk: data.cohort_risk_level || null,
+            llmSynthesis: data.llm_synthesis || null,
+            hallucinationGuardrail: data.hallucination_guardrail || null,
             mode: data.mode,
           }]
         })
@@ -154,6 +174,8 @@ export default function ChatView({ selectedSite }) {
           aquiferInfo: data.aquifer_info || null,
           divergentPairs: data.divergent_pairs || [],
           cohortRisk: data.cohort_risk_level || null,
+          llmSynthesis: data.llm_synthesis || null,
+          hallucinationGuardrail: data.hallucination_guardrail || null,
           mode: data.mode,
           status: data.status,
         }])
@@ -249,7 +271,9 @@ export default function ChatView({ selectedSite }) {
                   : 'bg-white border border-slate-200 text-slate-800'
               }`}
             >
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+              <div className="text-sm leading-relaxed">
+                <ReactMarkdown components={markdownComponents}>{msg.content}</ReactMarkdown>
+              </div>
 
               {/* Progress bar — only shown on the live research status bubble */}
               {msg.isProgress && msg.progressValue > 0 && (
@@ -265,6 +289,24 @@ export default function ChatView({ selectedSite }) {
               {msg.chart && (
                 <div className="mt-3 -mx-1">
                   <AgentChart chartData={msg.chart} />
+                </div>
+              )}
+
+              {msg.llmSynthesis && (
+                <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg p-3">
+                  <div className="text-xs text-purple-600 font-medium mb-1">
+                    LLM Synthesis (interpretive — uncited)
+                  </div>
+                  <div className="text-sm text-purple-900">
+                    <ReactMarkdown components={markdownComponents}>{msg.llmSynthesis}</ReactMarkdown>
+                  </div>
+                </div>
+              )}
+
+              {msg.hallucinationGuardrail && !msg.hallucinationGuardrail.all_factual_claims_cited && (
+                <div className="text-[10px] text-amber-500 mt-1">
+                  ⚠ Some claims uncited
+                  {msg.hallucinationGuardrail.has_llm_synthesis && ' · includes LLM synthesis'}
                 </div>
               )}
 
@@ -378,74 +420,96 @@ export default function ChatView({ selectedSite }) {
                 </details>
               )}
 
-              {msg.wells && msg.wells.length > 0 && (
-                <details className="mt-2 pt-2 border-t border-slate-200">
-                  <summary className="text-xs text-slate-500 cursor-pointer">
-                    Well details — {msg.wells.length} monitoring site{msg.wells.length > 1 ? 's' : ''}
-                    {msg.aquiferInfo && (
-                      <span className="ml-2 text-slate-400">
-                        | {msg.aquiferInfo.name}
-                        {msg.aquiferInfo.monitored_wells != null && ` (${msg.aquiferInfo.monitored_wells} wells monitored)`}
-                      </span>
-                    )}
-                  </summary>
-                  <ul className="mt-2 space-y-2">
-                    {msg.wells.map((w) => {
-                      const confined = w.confined
-                      const badgeColor = confined ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
-                      const zoneRange = Array.isArray(w.aquifer_zone_depth_range_ft)
-                        ? `${w.aquifer_zone_depth_range_ft[0]}–${w.aquifer_zone_depth_range_ft[1]} ft`
-                        : null
-                      const marginFt = w.saturation_margin_ft
-                      const marginLabel = marginFt != null
-                        ? marginFt >= 0
-                          ? `${marginFt} ft above zone top`
-                          : `${Math.abs(marginFt)} ft below zone top ⚠️`
-                        : null
-                      return (
-                        <li key={w.site_id} className="text-xs bg-slate-50 rounded p-2 space-y-0.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <a
-                              href={`https://waterdata.usgs.gov/monitoring-location/${w.site_id}/`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-medium text-blue-600 hover:underline"
-                            >
-                              {w.name}
-                            </a>
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeColor}`}>
-                              {confined ? 'confined' : 'unconfined'}
-                            </span>
-                            {w.is_artesian && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-100 text-cyan-700">
-                                artesian
-                              </span>
-                            )}
-                            <span className="text-slate-400">{w.county}</span>
+              {msg.wells && msg.wells.length > 0 && (() => {
+                // Group wells by aquifer for structured display
+                const grouped = {}
+                msg.wells.forEach(w => {
+                  const key = w.aquifer || 'Unknown'
+                  if (!grouped[key]) grouped[key] = []
+                  grouped[key].push(w)
+                })
+                const aquiferNames = Object.keys(grouped)
+                const hasMultipleAquifers = aquiferNames.length > 1
+
+                return (
+                  <details className="mt-2 pt-2 border-t border-slate-200">
+                    <summary className="text-xs text-slate-500 cursor-pointer">
+                      Well details — {msg.wells.length} monitoring site{msg.wells.length > 1 ? 's' : ''}
+                      {hasMultipleAquifers && ` across ${aquiferNames.length} aquifer systems`}
+                      {!hasMultipleAquifers && msg.aquiferInfo && (
+                        <span className="ml-2 text-slate-400">
+                          | {msg.aquiferInfo.name}
+                          {msg.aquiferInfo.monitored_wells != null && ` (${msg.aquiferInfo.monitored_wells} wells monitored)`}
+                        </span>
+                      )}
+                    </summary>
+                    {aquiferNames.map(aqName => (
+                      <div key={aqName} className="mt-2">
+                        {hasMultipleAquifers && (
+                          <div className="text-xs font-semibold text-slate-600 mb-1 px-1">
+                            {aqName} ({grouped[aqName].length} well{grouped[aqName].length > 1 ? 's' : ''})
                           </div>
-                          <div className="text-slate-600">
-                            {w.aquifer_zone || w.aquifer}
-                            {w.well_depth_ft != null && ` · well depth ${w.well_depth_ft} ft`}
-                            {zoneRange && ` · zone ${zoneRange}`}
-                          </div>
-                          {marginLabel && (
-                            <div className={`text-[10px] font-medium ${marginFt < 0 ? 'text-red-600' : 'text-slate-500'}`}>
-                              Head margin: {marginLabel}
-                            </div>
-                          )}
-                          {w.aquifer_description && (
-                            <div className="text-slate-400 italic leading-snug">
-                              {w.aquifer_description.length > 120
-                                ? w.aquifer_description.slice(0, 120) + '…'
-                                : w.aquifer_description}
-                            </div>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </details>
-              )}
+                        )}
+                        <ul className="space-y-2">
+                          {grouped[aqName].map((w) => {
+                            const confined = w.confined
+                            const badgeColor = confined ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                            const zoneRange = Array.isArray(w.aquifer_zone_depth_range_ft)
+                              ? `${w.aquifer_zone_depth_range_ft[0]}–${w.aquifer_zone_depth_range_ft[1]} ft`
+                              : null
+                            const marginFt = w.saturation_margin_ft
+                            const marginLabel = marginFt != null
+                              ? marginFt >= 0
+                                ? `${marginFt} ft above zone top`
+                                : `${Math.abs(marginFt)} ft below zone top`
+                              : null
+                            return (
+                              <li key={w.site_id} className="text-xs bg-slate-50 rounded p-2 space-y-0.5">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <a
+                                    href={`https://waterdata.usgs.gov/monitoring-location/${w.site_id}/`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-medium text-blue-600 hover:underline"
+                                  >
+                                    {w.name}
+                                  </a>
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeColor}`}>
+                                    {confined ? 'confined' : 'unconfined'}
+                                  </span>
+                                  {w.is_artesian && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-100 text-cyan-700">
+                                      artesian
+                                    </span>
+                                  )}
+                                  <span className="text-slate-400">{w.county}</span>
+                                </div>
+                                <div className="text-slate-600">
+                                  {w.aquifer_zone || w.aquifer}
+                                  {w.well_depth_ft != null && ` · well depth ${w.well_depth_ft} ft`}
+                                  {zoneRange && ` · zone ${zoneRange}`}
+                                </div>
+                                {marginLabel && (
+                                  <div className={`text-[10px] font-medium ${marginFt < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                                    Head margin: {marginLabel}
+                                  </div>
+                                )}
+                                {w.aquifer_description && (
+                                  <div className="text-slate-400 italic leading-snug">
+                                    {w.aquifer_description.length > 120
+                                      ? w.aquifer_description.slice(0, 120) + '…'
+                                      : w.aquifer_description}
+                                  </div>
+                                )}
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+                    ))}
+                  </details>
+                )
+              })()}
 
               {msg.divergentPairs && msg.divergentPairs.length > 0 && (
                 <details className="mt-2 pt-2 border-t border-slate-200">

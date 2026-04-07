@@ -1971,6 +1971,7 @@ def chat_endpoint(query: dict):
             "wells": _build_wells_payload(named_sites),
             "divergent_pairs": ns_result.get("divergent_pairs", []),
             "cohort_risk_level": ns_result.get("cohort_risk_level"),
+            "llm_synthesis": ns_result.get("llm_synthesis"),
         }
 
     # --- Aquifer fast path: named aquifer → all cohort sites (runs before location) ---
@@ -1989,6 +1990,7 @@ def chat_endpoint(query: dict):
             "aquifer_info": _build_aquifer_info(aq_display_name),
             "divergent_pairs": aq_result.get("divergent_pairs", []),
             "cohort_risk_level": aq_result.get("cohort_risk_level"),
+            "llm_synthesis": aq_result.get("llm_synthesis"),
         }
 
     # --- Location fast path: return deterministic USGS-backed answer immediately ---
@@ -2009,6 +2011,7 @@ def chat_endpoint(query: dict):
             "wells": wells_payload,
             "divergent_pairs": result.get("divergent_pairs", []),
             "cohort_risk_level": result.get("cohort_risk_level"),
+            "llm_synthesis": result.get("llm_synthesis"),
         }
         if _is_aquifer_query(user_query) and wells_payload:
             response_dict["aquifer_info"] = _build_aquifer_info(wells_payload[0]["aquifer"])
@@ -2028,6 +2031,7 @@ def chat_endpoint(query: dict):
                 "wells": _build_wells_payload(nw_sites),
                 "divergent_pairs": nw_result.get("divergent_pairs", []),
                 "cohort_risk_level": nw_result.get("cohort_risk_level"),
+                "llm_synthesis": nw_result.get("llm_synthesis"),
             }
 
     # --- Try real agent first ---
@@ -2181,6 +2185,7 @@ def research_endpoint(query: dict):
             "wells": _build_wells_payload(named_sites),
             "divergent_pairs": ns_result.get("divergent_pairs", []),
             "cohort_risk_level": ns_result.get("cohort_risk_level"),
+            "llm_synthesis": ns_result.get("llm_synthesis"),
         }
 
     # --- Aquifer fast path: named aquifer → all cohort sites (runs before location) ---
@@ -2225,6 +2230,7 @@ def research_endpoint(query: dict):
             "aquifer_info": _build_aquifer_info(aq_display_name),
             "divergent_pairs": aq_result.get("divergent_pairs", []),
             "cohort_risk_level": aq_result.get("cohort_risk_level"),
+            "llm_synthesis": aq_result.get("llm_synthesis"),
         }
 
     # --- Fallback: location-aware deterministic USGS response ---
@@ -2271,6 +2277,7 @@ def research_endpoint(query: dict):
             "aquifer_info": (_build_aquifer_info(loc_sites[0]["aquifer"]) if loc_sites else None),
             "divergent_pairs": site_result.get("divergent_pairs", []),
             "cohort_risk_level": site_result.get("cohort_risk_level"),
+            "llm_synthesis": site_result.get("llm_synthesis"),
         }
 
     # --- Network-wide fallback: queries about all wells / all counties / confined vs unconfined ---
@@ -2313,6 +2320,7 @@ def research_endpoint(query: dict):
                 "wells": _build_wells_payload(nw_sites),
                 "divergent_pairs": nw_result.get("divergent_pairs", []),
                 "cohort_risk_level": nw_result.get("cohort_risk_level"),
+                "llm_synthesis": nw_result.get("llm_synthesis"),
             }
 
     fb = _fallback_response(question)
@@ -2400,6 +2408,18 @@ def _stream_fallback_result(question: str) -> dict:
             ),
             "citation_summary": site_result["citation_summary"],
             "section_confidence": site_result.get("section_confidence", {}),
+            "hallucination_guardrail": site_result.get(
+                "hallucination_guardrail",
+                {
+                    "strategy": "deterministic_site_fallback",
+                    "removed_uncited_factual_sentences": 0,
+                    "all_factual_claims_cited": True,
+                },
+            ),
+            "citation_integrity": _build_citation_integrity(
+                site_result["claim_citations"], site_result.get("section_confidence", {})
+            ),
+            "llm_synthesis": site_result.get("llm_synthesis"),
             "wells": _build_wells_payload(sites),
             "divergent_pairs": site_result.get("divergent_pairs", []),
             "cohort_risk_level": site_result.get("cohort_risk_level"),
@@ -2419,25 +2439,36 @@ def _stream_fallback_result(question: str) -> dict:
     aq_hit = _detect_aquifer(question)
     if aq_hit is not None:
         aq_key, aq_name = aq_hit
-        aq_sites = _sites_for_aquifer(aq_key, max_sites=6)
+        aq_sites = _sites_for_aquifer(aq_key, max_sites=8)
         if aq_sites:
-            return _wrap(
+            result = _wrap(
                 _site_research_fallback(question, aq_sites, aq_name),
                 "aquifer_fallback",
                 aq_sites,
             )
+            result["aquifer_info"] = _build_aquifer_info(aq_name)
+            return result
 
     # 3. Location detection
     loc = _detect_location(question)
     if loc is not None:
         ref_lat, ref_lng, loc_name, county_hint = loc
-        loc_sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=2)
+        loc_sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=10)
         if loc_sites:
-            return _wrap(
-                _site_research_fallback(question, loc_sites, loc_name),
+            result = _wrap(
+                _site_research_fallback(
+                    question,
+                    loc_sites,
+                    loc_name,
+                    ref_lat=ref_lat,
+                    ref_lng=ref_lng,
+                ),
                 "fallback",
                 loc_sites,
             )
+            if loc_sites:
+                result["aquifer_info"] = _build_aquifer_info(loc_sites[0]["aquifer"])
+            return result
 
     # 4. Network-wide detection
     if _is_network_wide_query(question):
