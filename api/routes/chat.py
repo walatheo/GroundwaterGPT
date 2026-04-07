@@ -1755,7 +1755,7 @@ def _site_research_fallback(
             # Strip any residual <think> blocks
             llm_text = re.sub(r"<think>.*?</think>", "", llm_text, flags=re.DOTALL).strip()
             if llm_text and len(llm_text) > 50:
-                synthesis_section = f"\n## Synthesis (LLM-assisted)\n{llm_text}\n"
+                synthesis_section = llm_text
                 claim_citations.append(
                     {
                         "claim_id": f"claim_{len(claim_citations) + 1:03d}",
@@ -1972,6 +1972,7 @@ def chat_endpoint(query: dict):
             "divergent_pairs": ns_result.get("divergent_pairs", []),
             "cohort_risk_level": ns_result.get("cohort_risk_level"),
             "llm_synthesis": ns_result.get("llm_synthesis"),
+            "hallucination_guardrail": ns_result.get("hallucination_guardrail"),
         }
 
     # --- Aquifer fast path: named aquifer → all cohort sites (runs before location) ---
@@ -1991,6 +1992,7 @@ def chat_endpoint(query: dict):
             "divergent_pairs": aq_result.get("divergent_pairs", []),
             "cohort_risk_level": aq_result.get("cohort_risk_level"),
             "llm_synthesis": aq_result.get("llm_synthesis"),
+            "hallucination_guardrail": aq_result.get("hallucination_guardrail"),
         }
 
     # --- Location fast path: return deterministic USGS-backed answer immediately ---
@@ -2012,6 +2014,7 @@ def chat_endpoint(query: dict):
             "divergent_pairs": result.get("divergent_pairs", []),
             "cohort_risk_level": result.get("cohort_risk_level"),
             "llm_synthesis": result.get("llm_synthesis"),
+            "hallucination_guardrail": result.get("hallucination_guardrail"),
         }
         if _is_aquifer_query(user_query) and wells_payload:
             response_dict["aquifer_info"] = _build_aquifer_info(wells_payload[0]["aquifer"])
@@ -2032,6 +2035,7 @@ def chat_endpoint(query: dict):
                 "divergent_pairs": nw_result.get("divergent_pairs", []),
                 "cohort_risk_level": nw_result.get("cohort_risk_level"),
                 "llm_synthesis": nw_result.get("llm_synthesis"),
+                "hallucination_guardrail": nw_result.get("hallucination_guardrail"),
             }
 
     # --- Try real agent first ---
@@ -2493,6 +2497,8 @@ def _stream_fallback_result(question: str) -> dict:
             ],
         }
     ]
+    claim_verdicts = _build_claim_verdicts(fallback_claims)
+    section_confidence = _build_section_confidence_from_claims(fallback_claims)
     return {
         "type": "result",
         "status": "ok",
@@ -2504,7 +2510,16 @@ def _stream_fallback_result(question: str) -> dict:
         "depth_reached": 0,
         "elapsed_seconds": 0,
         "claim_citations": fallback_claims,
+        "claim_verdicts": claim_verdicts,
+        "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),
         "citation_summary": _build_citation_summary(fallback_claims),
+        "section_confidence": section_confidence,
+        "hallucination_guardrail": {
+            "strategy": "deterministic_fallback",
+            "removed_uncited_factual_sentences": 0,
+            "all_factual_claims_cited": True,
+        },
+        "citation_integrity": _build_citation_integrity(fallback_claims, section_confidence),
     }
 
 
