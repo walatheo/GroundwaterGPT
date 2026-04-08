@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Download } from 'lucide-react'
 import {
   LineChart,
   Line,
@@ -64,12 +65,56 @@ export default function AgentChart({ chartData }) {
     return null
   }
 
+  const handleDownload = () => {
+    const headers = ['date', ...series.map(s => s.name || s.key)]
+    const escapeCsv = (value) => {
+      if (value == null) return ''
+      const text = String(value)
+      if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+        return `"${text.replaceAll('"', '""')}"`
+      }
+      return text
+    }
+
+    const rows = data.map((row) => [
+      row.date,
+      ...series.map((s) => row[s.key] ?? ''),
+    ])
+    const csv = [headers, ...rows]
+      .map((row) => row.map(escapeCsv).join(','))
+      .join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const baseName = (title || 'groundwater-chart')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+    link.href = url
+    link.download = `${baseName || 'groundwater-chart'}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="w-full">
       {title && (
-        <h4 className="text-sm font-semibold text-slate-700 mb-2 text-center">
-          📊 {title}
-        </h4>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h4 className="text-sm font-semibold text-slate-700">
+            📊 {title}
+          </h4>
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            CSV
+          </button>
+        </div>
       )}
 
       <div className="h-[320px]">
@@ -104,6 +149,7 @@ export default function AgentChart({ chartData }) {
                 dataKey={s.key}
                 stroke={s.color || '#3b82f6'}
                 strokeWidth={s.key === 'rollingAvg' ? 2 : 1.5}
+                strokeDasharray={s.strokeDasharray}
                 dot={false}
                 name={s.name || s.key}
                 connectNulls

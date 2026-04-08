@@ -37,6 +37,8 @@ from api.routes._detection import (
 
 logger = logging.getLogger(__name__)
 
+CHART_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6"]
+
 
 # ---------------------------------------------------------------------------
 # LLM synthesis trigger pattern
@@ -220,6 +222,83 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _build_chart_payload(
+    sites: list[dict],
+    location_name: str,
+    max_wells: int = 10,
+) -> Optional[dict]:
+    """Build a Recharts-ready monthly comparison payload from loaded site series."""
+    if not sites:
+        return None
+
+    chart_sites = sites[:max_wells]
+    all_dates: set[str] = set()
+    site_series: dict[str, dict[str, float]] = {}
+    chart_series: list[dict] = []
+
+    for idx, site in enumerate(chart_sites):
+        df = site.get("series")
+        if df is None or df.empty:
+            continue
+
+        monthly = df.set_index("datetime")["value"].resample("MS").mean().dropna().round(2)
+        if monthly.empty:
+            continue
+
+        sid = str(site["site_id"])
+        mapping = {dt.strftime("%Y-%m-%d"): float(value) for dt, value in monthly.items()}
+        site_series[sid] = mapping
+        all_dates.update(mapping.keys())
+        chart_series.append(
+            {
+                "key": sid,
+                "name": site.get("name", sid),
+                "color": CHART_COLORS[idx % len(CHART_COLORS)],
+            }
+        )
+
+    if not site_series:
+        return None
+
+    sorted_dates = sorted(all_dates)
+    records: list[dict] = []
+    include_avg = len(chart_series) >= 2
+
+    for date_str in sorted_dates:
+        entry: dict[str, float | str] = {"date": date_str}
+        values: list[float] = []
+        for sid in site_series:
+            value = site_series[sid].get(date_str)
+            if value is not None:
+                entry[sid] = value
+                values.append(value)
+        if include_avg and values:
+            entry["avg"] = round(sum(values) / len(values), 2)
+        records.append(entry)
+
+    if include_avg:
+        chart_series.append(
+            {
+                "key": "avg",
+                "name": "Cohort Average",
+                "color": "#6b7280",
+                "strokeDasharray": "5 5",
+            }
+        )
+
+    chart_type = "comparison" if len(chart_series) > 1 else "time_series"
+    well_count = len(site_series)
+    title_suffix = f"{well_count} Wells" if well_count != 1 else "1 Well"
+    return {
+        "chart_type": chart_type,
+        "title": f"{location_name} Monthly Groundwater Levels — {title_suffix}",
+        "x_label": "Month",
+        "y_label": "Water Level (ft, monthly mean)",
+        "series": chart_series,
+        "data": records,
+    }
+
+
 def _site_research_fallback(
     question: str,
     sites: list[dict],
@@ -249,6 +328,7 @@ def _site_research_fallback(
             "report": fallback["response"],
             "insights": [],
             "sources": fallback["sources"],
+            "chart": None,
             "claim_citations": claim_citations,
             "claim_verdicts": claim_verdicts,
             "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),
@@ -902,6 +982,7 @@ def _site_research_fallback(
         "report": report,
         "insights": insights,
         "sources": source_urls,
+        "chart": _build_chart_payload(sites, location_name),
         "claim_citations": claim_citations,
         "claim_verdicts": claim_verdicts,
         "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),

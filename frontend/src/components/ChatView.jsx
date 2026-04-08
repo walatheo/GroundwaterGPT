@@ -128,9 +128,9 @@ export default function ChatView({ selectedSite }) {
         }
 
         const data = await sendResearchQueryStreaming(text, { onProgress: handleProgress })
-        const { text: reportText, chart } = extractChart(
-          data.report || data.response || 'Research complete — no report generated.'
-        )
+        const reportRaw = data.report || data.response || 'Research complete — no report generated.'
+        const { text: reportText, chart: extractedChart } = extractChart(reportRaw)
+        const chart = data.chart || extractedChart
 
         // Swap out the progress bubble for the finished report.
         setMessages(prev => {
@@ -163,7 +163,8 @@ export default function ChatView({ selectedSite }) {
       } else {
         // Quick chat mode
         const data = await sendChatMessage(text)
-        const { text: replyText, chart } = extractChart(data.response)
+        const { text: replyText, chart: extractedChart } = extractChart(data.response)
+        const chart = data.chart || extractedChart
 
         setMessages(prev => [...prev, {
           role: 'assistant',
