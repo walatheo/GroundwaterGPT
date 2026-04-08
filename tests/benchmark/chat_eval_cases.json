@@ -57,6 +57,14 @@
       {
         "type": "has_proxy_justification",
         "label": "has_proxy_distance"
+      },
+      {
+        "type": "has_guardrail",
+        "label": "response_has_hallucination_guardrail"
+      },
+      {
+        "type": "has_citation_integrity",
+        "label": "response_has_citation_integrity"
       }
     ]
   },
@@ -854,6 +862,14 @@
       {
         "type": "has_cross_well",
         "label": "has_cross_well_analysis"
+      },
+      {
+        "type": "has_guardrail",
+        "label": "response_has_hallucination_guardrail"
+      },
+      {
+        "type": "has_citation_integrity",
+        "label": "response_has_citation_integrity"
       }
     ]
   },
@@ -1165,6 +1181,14 @@
       {
         "type": "has_net_change",
         "label": "reports_net_change_ft"
+      },
+      {
+        "type": "has_guardrail",
+        "label": "response_has_hallucination_guardrail"
+      },
+      {
+        "type": "has_citation_integrity",
+        "label": "response_has_citation_integrity"
       }
     ]
   },
@@ -1199,6 +1223,14 @@
         "type": "min_wells",
         "value": 4,
         "label": "returns_biscayne_cohort"
+      },
+      {
+        "type": "has_guardrail",
+        "label": "response_has_hallucination_guardrail"
+      },
+      {
+        "type": "has_citation_integrity",
+        "label": "response_has_citation_integrity"
       }
     ]
   },
@@ -1439,6 +1471,14 @@
         "type": "min_wells",
         "value": 2,
         "label": "returns_comparison_wells"
+      },
+      {
+        "type": "has_guardrail",
+        "label": "response_has_hallucination_guardrail"
+      },
+      {
+        "type": "has_citation_integrity",
+        "label": "response_has_citation_integrity"
       }
     ]
   },
@@ -1572,13 +1612,21 @@
         "type": "min_wells",
         "value": 1,
         "label": "returns_well_data"
+      },
+      {
+        "type": "has_guardrail",
+        "label": "response_has_hallucination_guardrail"
+      },
+      {
+        "type": "has_citation_integrity",
+        "label": "response_has_citation_integrity"
       }
     ]
   },
   {
     "id": "L1_named_well_pair",
     "level": "L1",
-    "question": "Compare G-3336 and G-5004 \u2014 differences and notable trends?",
+    "question": "Compare G-3336 and G-5004 — differences and notable trends?",
     "max_depth": 1,
     "timeout": 60,
     "max_seconds": 20,
@@ -1616,6 +1664,14 @@
         "type": "has_divergent_pairs",
         "value": 1,
         "label": "detects_divergence"
+      },
+      {
+        "type": "has_guardrail",
+        "label": "response_has_hallucination_guardrail"
+      },
+      {
+        "type": "has_citation_integrity",
+        "label": "response_has_citation_integrity"
       }
     ]
   },
@@ -1784,7 +1840,7 @@
   {
     "id": "EDGE_multi_county_compare",
     "level": "L2",
-    "question": "Compare Miami-Dade wells to Sarasota wells \u2014 which area has more decline?",
+    "question": "Compare Miami-Dade wells to Sarasota wells — which area has more decline?",
     "max_depth": 3,
     "timeout": 120,
     "max_seconds": 25,
@@ -1855,6 +1911,14 @@
       {
         "type": "has_net_change",
         "label": "reports_real_data"
+      },
+      {
+        "type": "has_guardrail",
+        "label": "response_has_hallucination_guardrail"
+      },
+      {
+        "type": "has_citation_integrity",
+        "label": "response_has_citation_integrity"
       }
     ]
   },
@@ -1984,6 +2048,14 @@
         "type": "contains",
         "value": "hawthorn",
         "label": "mentions_hawthorn"
+      },
+      {
+        "type": "has_guardrail",
+        "label": "response_has_hallucination_guardrail"
+      },
+      {
+        "type": "has_citation_integrity",
+        "label": "response_has_citation_integrity"
       }
     ]
   },
@@ -2113,6 +2185,14 @@
         "type": "contains",
         "value": "floridan",
         "label": "mentions_brackish_supply"
+      },
+      {
+        "type": "has_guardrail",
+        "label": "response_has_hallucination_guardrail"
+      },
+      {
+        "type": "has_citation_integrity",
+        "label": "response_has_citation_integrity"
       }
     ]
   },

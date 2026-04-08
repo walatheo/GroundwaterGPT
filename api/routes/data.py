@@ -64,7 +64,7 @@ def get_site_data(
             {
                 "date": row["datetime"].isoformat(),
                 "level": round(float(row["value"]), 2),
-                "year": int(row["year"]),
+                "year": row["datetime"].year,
                 "month": row["datetime"].month,
             }
         )

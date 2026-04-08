@@ -156,6 +156,7 @@ export default function ChatView({ selectedSite }) {
             cohortRisk: data.cohort_risk_level || null,
             llmSynthesis: data.llm_synthesis || null,
             hallucinationGuardrail: data.hallucination_guardrail || null,
+            citationIntegrity: data.citation_integrity || null,
             mode: data.mode,
           }]
         })
@@ -176,6 +177,7 @@ export default function ChatView({ selectedSite }) {
           cohortRisk: data.cohort_risk_level || null,
           llmSynthesis: data.llm_synthesis || null,
           hallucinationGuardrail: data.hallucination_guardrail || null,
+          citationIntegrity: data.citation_integrity || null,
           mode: data.mode,
           status: data.status,
         }])
@@ -307,6 +309,21 @@ export default function ChatView({ selectedSite }) {
                 <div className="text-[10px] text-amber-500 mt-1">
                   ⚠ Some claims uncited
                   {msg.hallucinationGuardrail.has_llm_synthesis && ' · includes LLM synthesis'}
+                </div>
+              )}
+
+              {msg.citationIntegrity && (
+                <div className="mt-1 flex items-center gap-2 text-[10px]">
+                  <span className={`px-1.5 py-0.5 rounded font-medium ${
+                    msg.citationIntegrity.passed
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    Integrity: {msg.citationIntegrity.passed ? 'passed' : 'below threshold'}
+                  </span>
+                  <span className="text-slate-400">
+                    {Math.round((msg.citationIntegrity.claim_citation_coverage || 0) * 100)}% claim · {Math.round((msg.citationIntegrity.section_citation_coverage || 0) * 100)}% section
+                  </span>
                 </div>
               )}
 

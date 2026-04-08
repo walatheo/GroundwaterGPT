@@ -155,6 +155,20 @@ def _eval_assertions(
                     bool(re.search(r"\d+\.\d+\s*mi\s+[NSEW]{1,3}", text)),
                 )
             )
+        elif atype == "has_guardrail":
+            guardrail = response.get("hallucination_guardrail") or {}
+            results.append(
+                (
+                    label,
+                    isinstance(guardrail, dict) and "all_factual_claims_cited" in guardrail,
+                )
+            )
+        elif atype == "has_citation_integrity":
+            ci = response.get("citation_integrity") or {}
+            results.append((label, isinstance(ci, dict) and "passed" in ci))
+        elif atype == "guardrail_all_cited":
+            guardrail = response.get("hallucination_guardrail") or {}
+            results.append((label, guardrail.get("all_factual_claims_cited") is True))
 
     return results
 

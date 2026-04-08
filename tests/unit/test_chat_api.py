@@ -190,6 +190,17 @@ class TestChatEndpoint:
         body = resp.json()
         assert isinstance(body["sources"], list)
 
+    def test_chat_site_fallback_has_citation_integrity(self):
+        """Deterministic chat responses should forward citation integrity."""
+        resp = client.post("/api/chat", json={"message": "Estero trends"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body.get("mode") == "site_fallback"
+        assert "hallucination_guardrail" in body
+        assert "citation_integrity" in body
+        assert isinstance(body["citation_integrity"], dict)
+        assert "passed" in body["citation_integrity"]
+
 
 # ===================================================================
 # POST /api/research  endpoint integration tests
@@ -318,6 +329,48 @@ class TestResearchEndpoint:
         assert "usgs" in combined.lower()
         assert body.get("citation_summary", {}).get("citation_coverage", 0) >= 0.9
         assert body.get("citation_integrity", {}).get("passed", False) is True
+
+    def test_research_invalid_max_depth_returns_400(self):
+        """Non-numeric max_depth should return 400."""
+        resp = client.post(
+            "/api/research",
+            json={"question": "Estero trends", "max_depth": "abc"},
+        )
+        assert resp.status_code == 400
+
+    def test_research_invalid_timeout_returns_400(self):
+        """Non-numeric timeout should return 400."""
+        resp = client.post(
+            "/api/research",
+            json={"question": "Estero trends", "timeout": "not_a_number"},
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.parametrize("timeout_value", ["nan", "inf", "-inf", True, False])
+    def test_research_nonfinite_or_bool_timeout_returns_400(self, timeout_value):
+        """Non-finite or boolean timeout values should be rejected."""
+        resp = client.post(
+            "/api/research",
+            json={"question": "Estero trends", "timeout": timeout_value},
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.parametrize("timeout_value", ["nan", "inf", "-inf", True, False])
+    def test_research_stream_nonfinite_or_bool_timeout_returns_400(self, timeout_value):
+        """Streaming research should use the same timeout validation."""
+        resp = client.post(
+            "/api/research/stream",
+            json={"question": "Estero trends", "timeout": timeout_value},
+        )
+        assert resp.status_code == 400
+
+    def test_research_clamps_extreme_params(self):
+        """Extreme max_depth and timeout should be clamped, not rejected."""
+        resp = client.post(
+            "/api/research",
+            json={"question": "Estero trends", "max_depth": 999, "timeout": 9999},
+        )
+        assert resp.status_code == 200
 
 
 # ===================================================================
