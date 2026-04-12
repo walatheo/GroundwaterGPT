@@ -10,7 +10,11 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from api.main import app  # noqa: E402
-from api.routes._site_analysis import _build_chart_payload, _site_research_fallback  # noqa: E402
+from api.routes._site_analysis import (  # noqa: E402
+    _build_chart_payload,
+    _cross_well_analysis,
+    _site_research_fallback,
+)
 from api.site_metadata import SITE_METADATA  # noqa: E402
 
 client = TestClient(app)
@@ -75,10 +79,37 @@ class TestBuildChartPayload:
 
         assert chart is not None
         assert chart["chart_type"] == "comparison"
-        assert chart["series"][-1]["key"] == "avg"
-        assert chart["series"][-1]["strokeDasharray"] == "5 5"
+        avg_series = next(series for series in chart["series"] if series["key"] == "avg")
+        assert avg_series["strokeDasharray"] == "5 5"
         assert chart["data"][0]["avg"] == 20.0
         assert chart["data"][1]["avg"] == 30.0
+
+    def test_build_chart_payload_adds_trend_and_insights(self):
+        sites = [
+            _make_site(
+                "site_001", "Well A", ["2024-01-01", "2024-02-01", "2024-03-01"], [10.0, 11.0, 12.0]
+            ),
+            _make_site(
+                "site_002", "Well B", ["2024-01-01", "2024-02-01", "2024-03-01"], [30.0, 28.0, 26.0]
+            ),
+            _make_site(
+                "site_003", "Well C", ["2024-01-01", "2024-02-01", "2024-03-01"], [20.0, 20.5, 21.0]
+            ),
+        ]
+
+        cross_well = _cross_well_analysis(sites)
+        chart = _build_chart_payload(sites, "Test Area", cross_well=cross_well)
+
+        assert chart is not None
+        series_keys = {series["key"] for series in chart["series"]}
+        assert "avg_trend" in series_keys
+        assert "site_001_trend" in series_keys or "site_002_trend" in series_keys
+        assert chart["cohort_risk_level"] in {"low", "moderate", "high"}
+        assert chart["insights"]
+        assert any(
+            series.get("highlight") for series in chart["series"] if not series.get("isTrend")
+        )
+        assert any("avg_trend" in row for row in chart["data"])
 
     def test_build_chart_payload_monthly_resampling(self):
         dates = pd.date_range("2025-01-01", "2025-12-31", freq="D")
@@ -111,7 +142,8 @@ class TestInlineChartIntegration:
 
         assert "chart" in result
         assert result["chart"] is not None
-        assert result["chart"]["series"][-1]["key"] == "avg"
+        assert any(series["key"] == "avg" for series in result["chart"]["series"])
+        assert result["chart"]["insights"]
 
     def test_chat_endpoint_returns_chart(self):
         _first_site_id()
@@ -121,6 +153,7 @@ class TestInlineChartIntegration:
         assert "chart" in body
         assert body["chart"] is not None
         assert "series" in body["chart"]
+        assert "insights" in body["chart"]
         assert len(body["chart"]["data"]) > 0
 
     def test_research_endpoint_returns_chart(self):
@@ -131,4 +164,5 @@ class TestInlineChartIntegration:
         assert "chart" in body
         assert body["chart"] is not None
         assert "series" in body["chart"]
+        assert "insights" in body["chart"]
         assert len(body["chart"]["data"]) > 0

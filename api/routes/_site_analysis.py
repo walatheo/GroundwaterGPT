@@ -222,9 +222,89 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _linear_trend_values(
+    ordered_dates: list[str],
+    values_by_date: dict[str, float],
+) -> dict[str, float]:
+    """Return regression trend values bounded to the observed period."""
+    points = [
+        (idx, values_by_date[date_str])
+        for idx, date_str in enumerate(ordered_dates)
+        if date_str in values_by_date
+    ]
+    if len(points) < 2:
+        return {}
+
+    xs = [x for x, _ in points]
+    ys = [y for _, y in points]
+    mean_x = sum(xs) / len(xs)
+    mean_y = sum(ys) / len(ys)
+    denom = sum((x - mean_x) ** 2 for x in xs)
+    slope = 0.0 if denom == 0 else sum((x - mean_x) * (y - mean_y) for x, y in points) / denom
+    intercept = mean_y - slope * mean_x
+
+    start_idx = xs[0]
+    end_idx = xs[-1]
+    return {
+        ordered_dates[idx]: round(intercept + slope * idx, 2)
+        for idx in range(start_idx, end_idx + 1)
+    }
+
+
+def _build_chart_insights(
+    cross_well: dict,
+    highlighted_keys: set[str],
+) -> list[str]:
+    """Build a compact analyst-friendly summary for the chart callout."""
+    if cross_well.get("n_total", 0) < 2:
+        return []
+
+    insights: list[str] = []
+    per_site = cross_well.get("per_site_metrics", [])
+    if not per_site:
+        return insights
+
+    strongest_decline = min(per_site, key=lambda item: item.get("annual_change_ft_yr", 0.0))
+    strongest_rise = max(per_site, key=lambda item: item.get("annual_change_ft_yr", 0.0))
+    risk_level = str(cross_well.get("risk_level", "unknown")).upper()
+
+    insights.append(
+        "Cohort trend is "
+        f"{cross_well.get('cohort_trend', 'unknown').upper()} with {risk_level} risk."
+    )
+    insights.append(
+        "Fastest decline: "
+        f"{strongest_decline['name']} "
+        f"({strongest_decline['annual_change_ft_yr']:+.3f} ft/yr)."
+    )
+    if strongest_rise.get("annual_change_ft_yr", 0.0) > 0:
+        insights.append(
+            "Strongest rise: "
+            f"{strongest_rise['name']} "
+            f"({strongest_rise['annual_change_ft_yr']:+.3f} ft/yr)."
+        )
+
+    divergent_pairs = cross_well.get("divergent_pairs", [])
+    if divergent_pairs:
+        top_pair = divergent_pairs[0]
+        insights.append(
+            f"Largest divergence: {top_pair['site_a']['name']} vs {top_pair['site_b']['name']}."
+        )
+
+    if highlighted_keys:
+        highlighted_count = len(highlighted_keys)
+        insights.append(
+            "Highlighted wells mark the most divergent or fastest-changing "
+            f"series ({highlighted_count} total)."
+        )
+
+    return insights[:4]
+
+
 def _build_chart_payload(
     sites: list[dict],
     location_name: str,
+    cross_well: Optional[dict] = None,
     max_wells: int = 10,
 ) -> Optional[dict]:
     """Build a Recharts-ready monthly comparison payload from loaded site series."""
@@ -234,7 +314,34 @@ def _build_chart_payload(
     chart_sites = sites[:max_wells]
     all_dates: set[str] = set()
     site_series: dict[str, dict[str, float]] = {}
+    site_names: dict[str, str] = {}
     chart_series: list[dict] = []
+    highlighted_reasons: dict[str, str] = {}
+
+    per_site_metrics = (cross_well or {}).get("per_site_metrics", [])
+    divergent_pairs = (cross_well or {}).get("divergent_pairs", [])
+    highlighted_keys: set[str] = set()
+    if divergent_pairs:
+        highlighted_keys.update(
+            {
+                str(divergent_pairs[0]["site_a"]["site_id"]),
+                str(divergent_pairs[0]["site_b"]["site_id"]),
+            }
+        )
+        highlighted_reasons[str(divergent_pairs[0]["site_a"]["site_id"])] = "divergent pair"
+        highlighted_reasons[str(divergent_pairs[0]["site_b"]["site_id"])] = "divergent pair"
+    if per_site_metrics:
+        strongest_decline = min(
+            per_site_metrics, key=lambda item: item.get("annual_change_ft_yr", 0.0)
+        )
+        highlighted_keys.add(str(strongest_decline["site_id"]))
+        highlighted_reasons[str(strongest_decline["site_id"])] = "fastest decline"
+        strongest_rise = max(
+            per_site_metrics, key=lambda item: item.get("annual_change_ft_yr", 0.0)
+        )
+        if strongest_rise.get("annual_change_ft_yr", 0.0) > 0:
+            highlighted_keys.add(str(strongest_rise["site_id"]))
+            highlighted_reasons[str(strongest_rise["site_id"])] = "strongest rise"
 
     for idx, site in enumerate(chart_sites):
         df = site.get("series")
@@ -246,6 +353,7 @@ def _build_chart_payload(
             continue
 
         sid = str(site["site_id"])
+        site_names[sid] = site.get("name", sid)
         mapping = {dt.strftime("%Y-%m-%d"): float(value) for dt, value in monthly.items()}
         site_series[sid] = mapping
         all_dates.update(mapping.keys())
@@ -254,6 +362,10 @@ def _build_chart_payload(
                 "key": sid,
                 "name": site.get("name", sid),
                 "color": CHART_COLORS[idx % len(CHART_COLORS)],
+                "strokeWidth": 2.5 if sid in highlighted_keys else 1.5,
+                "opacity": 1.0 if sid in highlighted_keys else 0.72,
+                "highlight": sid in highlighted_keys,
+                "highlightReason": highlighted_reasons.get(sid),
             }
         )
 
@@ -283,6 +395,54 @@ def _build_chart_payload(
                 "name": "Cohort Average",
                 "color": "#6b7280",
                 "strokeDasharray": "5 5",
+                "strokeWidth": 2.5,
+                "opacity": 1.0,
+                "highlight": True,
+                "highlightReason": "cohort average",
+            }
+        )
+
+    trend_targets: list[tuple[str, str, str]] = []
+    if include_avg:
+        avg_series = {row["date"]: row["avg"] for row in records if row.get("avg") is not None}
+        avg_trend = _linear_trend_values(sorted_dates, avg_series)
+        if avg_trend:
+            for row in records:
+                value = avg_trend.get(row["date"])
+                if value is not None:
+                    row["avg_trend"] = value
+            trend_targets.append(("avg_trend", "Cohort Trend", "#6b7280"))
+
+    for sid in sorted(highlighted_keys):
+        if sid not in site_series:
+            continue
+        trend_values = _linear_trend_values(sorted_dates, site_series[sid])
+        if not trend_values:
+            continue
+        trend_key = f"{sid}_trend"
+        for row in records:
+            value = trend_values.get(row["date"])
+            if value is not None:
+                row[trend_key] = value
+        base_series = next((series for series in chart_series if series["key"] == sid), None)
+        trend_targets.append(
+            (
+                trend_key,
+                f"{site_names.get(sid, sid)} Trend",
+                base_series.get("color", "#64748b") if base_series else "#64748b",
+            )
+        )
+
+    for trend_key, trend_name, trend_color in trend_targets:
+        chart_series.append(
+            {
+                "key": trend_key,
+                "name": trend_name,
+                "color": trend_color,
+                "strokeDasharray": "2 4",
+                "strokeWidth": 1.5,
+                "opacity": 0.9,
+                "isTrend": True,
             }
         )
 
@@ -296,6 +456,8 @@ def _build_chart_payload(
         "y_label": "Water Level (ft, monthly mean)",
         "series": chart_series,
         "data": records,
+        "insights": _build_chart_insights(cross_well or {}, highlighted_keys),
+        "cohort_risk_level": (cross_well or {}).get("risk_level"),
     }
 
 
@@ -982,7 +1144,7 @@ def _site_research_fallback(
         "report": report,
         "insights": insights,
         "sources": source_urls,
-        "chart": _build_chart_payload(sites, location_name),
+        "chart": _build_chart_payload(sites, location_name, cross_well=cross_well),
         "claim_citations": claim_citations,
         "claim_verdicts": claim_verdicts,
         "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),

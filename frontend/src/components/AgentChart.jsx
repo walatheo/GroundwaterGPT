@@ -30,7 +30,15 @@ export default function AgentChart({ chartData }) {
     )
   }
 
-  const { title, x_label, y_label, series = [], data } = chartData
+  const {
+    title,
+    x_label,
+    y_label,
+    series = [],
+    data,
+    insights = [],
+    cohort_risk_level: cohortRiskLevel,
+  } = chartData
 
   // Determine Y-axis domain from data
   const yDomain = useMemo(() => {
@@ -66,7 +74,8 @@ export default function AgentChart({ chartData }) {
   }
 
   const handleDownload = () => {
-    const headers = ['date', ...series.map(s => s.name || s.key)]
+    const exportSeries = series.filter((s) => !s.isTrend)
+    const headers = ['date', ...exportSeries.map(s => s.name || s.key)]
     const escapeCsv = (value) => {
       if (value == null) return ''
       const text = String(value)
@@ -78,7 +87,7 @@ export default function AgentChart({ chartData }) {
 
     const rows = data.map((row) => [
       row.date,
-      ...series.map((s) => row[s.key] ?? ''),
+      ...exportSeries.map((s) => row[s.key] ?? ''),
     ])
     const csv = [headers, ...rows]
       .map((row) => row.map(escapeCsv).join(','))
@@ -103,9 +112,22 @@ export default function AgentChart({ chartData }) {
     <div className="w-full">
       {title && (
         <div className="mb-2 flex items-center justify-between gap-3">
-          <h4 className="text-sm font-semibold text-slate-700">
-            📊 {title}
-          </h4>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold text-slate-700">
+              📊 {title}
+            </h4>
+            {cohortRiskLevel && (
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                cohortRiskLevel === 'high'
+                  ? 'bg-red-100 text-red-700'
+                  : cohortRiskLevel === 'moderate'
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-green-100 text-green-700'
+              }`}>
+                {cohortRiskLevel} risk
+              </span>
+            )}
+          </div>
           <button
             type="button"
             onClick={handleDownload}
@@ -148,8 +170,9 @@ export default function AgentChart({ chartData }) {
                 type="monotone"
                 dataKey={s.key}
                 stroke={s.color || '#3b82f6'}
-                strokeWidth={s.key === 'rollingAvg' ? 2 : 1.5}
+                strokeWidth={s.strokeWidth || (s.key === 'rollingAvg' ? 2 : 1.5)}
                 strokeDasharray={s.strokeDasharray}
+                strokeOpacity={s.opacity ?? 1}
                 dot={false}
                 name={s.name || s.key}
                 connectNulls
@@ -170,6 +193,19 @@ export default function AgentChart({ chartData }) {
 
       {x_label && (
         <p className="text-center text-xs text-slate-400 mt-1">{x_label}</p>
+      )}
+
+      {insights.length > 0 && (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Chart Insights
+          </p>
+          <ul className="space-y-1 text-xs text-slate-600">
+            {insights.map((insight, idx) => (
+              <li key={idx}>{insight}</li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   )

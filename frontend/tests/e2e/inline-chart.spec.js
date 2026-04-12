@@ -14,6 +14,7 @@ test('renders inline comparison chart and downloads chart CSV', async ({ page })
 
   await expect(page.getByText(/Monthly Groundwater Levels/i)).toBeVisible()
   await expect(page.locator('.recharts-responsive-container')).toBeVisible()
+  await expect(page.getByText(/Chart Insights/i)).toBeVisible()
 
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: /^CSV$/ }).click()
