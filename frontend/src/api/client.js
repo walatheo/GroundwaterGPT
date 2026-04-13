@@ -134,7 +134,7 @@ export async function fetchChatStatus() {
  *
  * @param {string} question — the research question
  * @param {{
- *   onProgress?: (message: string, progress: number) => void,
+ *   onProgress?: (message: string, progress: number, snapshot?: object) => void,
  *   maxDepth?: number,
  *   timeout?: number
  * }} options
@@ -195,7 +195,7 @@ export async function sendResearchQueryStreaming(
 
       if (event.type === 'progress') {
         // Forward progress updates to the caller's callback.
-        onProgress?.(event.message, event.progress)
+        onProgress?.(event.message, event.progress, event.snapshot || null)
       } else if (event.type === 'result') {
         // Store the final payload; don't resolve yet — wait for stream close.
         finalResult = event

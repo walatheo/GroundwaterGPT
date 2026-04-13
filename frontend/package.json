@@ -11,6 +11,8 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@visactor/react-vchart": "^2.0.22",
+    "@visactor/vchart": "^2.0.22",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.294.0",
     "react": "^18.2.0",

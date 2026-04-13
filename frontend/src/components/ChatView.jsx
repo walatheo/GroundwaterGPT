@@ -3,6 +3,8 @@ import { Send, Bot, User, AlertCircle, Sparkles, Search, MessageCircle } from 'l
 import ReactMarkdown from 'react-markdown'
 import { sendChatMessage, sendResearchQueryStreaming, fetchChatStatus } from '../api/client'
 import AgentChart from './AgentChart'
+import ResearchChartsPanel from './ResearchChartsPanel'
+import ResearchSessionPanel from './ResearchSessionPanel'
 
 /** Custom component overrides for ReactMarkdown (no @tailwindcss/typography). */
 const markdownComponents = {
@@ -115,14 +117,30 @@ export default function ChatView({ selectedSite }) {
           isProgress: true,
           progressId: PROGRESS_ID,
           progressValue: 0,
+          sessionId: '',
+          researchPlan: null,
+          budgetStatus: null,
+          checkpoints: [],
+          toolTrace: [],
         }])
 
         // onProgress updates the existing progress bubble in-place rather
         // than appending new messages, keeping the thread tidy.
-        const handleProgress = (message, progress) => {
+        const handleProgress = (message, progress, snapshot) => {
           setMessages(prev => prev.map(m =>
             m.progressId === PROGRESS_ID
               ? { ...m, content: `🔍 ${message}`, progressValue: progress }
+              : m
+          ).map(m =>
+            m.progressId === PROGRESS_ID
+              ? {
+                  ...m,
+                  sessionId: snapshot?.session_id || m.sessionId,
+                  researchPlan: snapshot?.research_plan || m.researchPlan,
+                  budgetStatus: snapshot?.budget_status || m.budgetStatus,
+                  checkpoints: snapshot?.checkpoints || m.checkpoints,
+                  toolTrace: snapshot?.tool_trace || m.toolTrace,
+                }
               : m
           ))
         }
@@ -144,6 +162,13 @@ export default function ChatView({ selectedSite }) {
             chart,
             context: `Depth reached: ${data.depth_reached ?? 0} | Elapsed: ${elapsedSeconds}s`,
             sources: data.sources || [],
+            sessionId: data.session_id || '',
+            researchPlan: data.research_plan || null,
+            budgetStatus: data.budget_status || null,
+            checkpoints: data.checkpoints || [],
+            toolTrace: data.tool_trace || [],
+            recommendedViews: data.recommended_views || [],
+            chartSpecs: data.chart_specs || [],
             insights: data.insights || [],
             claimCitations: data.claim_citations || [],
             citationSummary: data.citation_summary || null,
@@ -172,6 +197,13 @@ export default function ChatView({ selectedSite }) {
           chart,
           context: data.context,
           sources: data.sources || [],
+          sessionId: data.session_id || '',
+          researchPlan: data.research_plan || null,
+          budgetStatus: data.budget_status || null,
+          checkpoints: data.checkpoints || [],
+          toolTrace: data.tool_trace || [],
+          recommendedViews: data.recommended_views || [],
+          chartSpecs: data.chart_specs || [],
           wells: data.wells || [],
           aquiferInfo: data.aquifer_info || null,
           divergentPairs: data.divergent_pairs || [],
@@ -278,14 +310,17 @@ export default function ChatView({ selectedSite }) {
                 <ReactMarkdown components={markdownComponents}>{msg.content}</ReactMarkdown>
               </div>
 
-              {/* Progress bar — only shown on the live research status bubble */}
-              {msg.isProgress && msg.progressValue > 0 && (
-                <div className="mt-2 h-1.5 bg-amber-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-amber-500 rounded-full transition-all duration-500"
-                    style={{ width: `${Math.round(msg.progressValue * 100)}%` }}
-                  />
-                </div>
+              {(msg.isProgress || msg.researchPlan || msg.budgetStatus) && (
+                <ResearchSessionPanel
+                  sessionId={msg.sessionId}
+                  progressValue={msg.progressValue}
+                  live={Boolean(msg.isProgress)}
+                  message={msg.content}
+                  researchPlan={msg.researchPlan}
+                  budgetStatus={msg.budgetStatus}
+                  checkpoints={msg.checkpoints}
+                  toolTrace={msg.toolTrace}
+                />
               )}
 
               {/* Inline chart from agent visualization tools */}
@@ -293,6 +328,13 @@ export default function ChatView({ selectedSite }) {
                 <div className="mt-3 -mx-1">
                   <AgentChart chartData={msg.chart} />
                 </div>
+              )}
+
+              {msg.chartSpecs && msg.chartSpecs.length > 0 && (
+                <ResearchChartsPanel
+                  chartSpecs={msg.chartSpecs}
+                  recommendedViews={msg.recommendedViews || []}
+                />
               )}
 
               {msg.llmSynthesis && (

@@ -17,9 +17,11 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from api.helpers import calculate_stats, load_site_data
 from api.routes._citation import (  # noqa: E402
     MIN_CLAIM_CITATION_COVERAGE,
     MIN_SECTION_CITATION_COVERAGE,
@@ -87,6 +89,7 @@ __all__ = [
 
 
 logger = logging.getLogger(__name__)
+_MONTHLY_SITE_CACHE: dict[str, pd.DataFrame | None] = {}
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -326,6 +329,12 @@ else:
                 timeout_seconds=120,
                 use_web_search=research_web_search_enabled,
             )
+            if getattr(_research_agent, "llm", None) is None:
+                _agent_boot_errors.append(
+                    "Research agent initialized without an available LLM; "
+                    "using deterministic fallback."
+                )
+                _research_agent = None
         except Exception as exc:
             _agent_boot_errors.append(f"Research agent initialization failed: {exc}")
             logger.warning("Research agent initialization failed: %s", exc)
@@ -418,6 +427,372 @@ def _parse_research_limits(query: dict[str, Any]) -> tuple[int, float]:
         )
 
     return max(1, min(max_depth, 10)), max(10.0, min(timeout, 300.0))
+
+
+def _heuristic_research_plan(question: str, max_depth: int) -> dict[str, Any]:
+    """Create a lightweight fallback research plan."""
+    query_lower = question.lower()
+    recommended_tools = ["knowledge_base_search"]
+    if research_web_search_enabled:
+        recommended_tools.append("web_search")
+    if any(term in query_lower for term in ["trend", "compare", "change", "long-term"]):
+        recommended_tools.append("trend_analysis")
+    if any(term in query_lower for term in ["season", "wet", "dry"]):
+        recommended_tools.append("seasonal_analysis")
+    if any(term in query_lower for term in ["anomal", "outlier", "extreme"]):
+        recommended_tools.append("anomaly_scan")
+    if any(term in query_lower for term in ["aquifer", "well", "site", "county"]):
+        recommended_tools.append("cohort_summary")
+    return {
+        "original_query": question,
+        "main_question": question,
+        "sub_questions": [
+            f"What is the direct answer to: {question}?",
+            "Which sites, aquifers, or counties are most relevant?",
+            "What evidence best supports the answer?",
+        ],
+        "research_areas": ["groundwater conditions", "site evidence", "trend analysis"],
+        "expected_sections": ["Direct Answer", "Evidence", "Caveats"],
+        "search_priority": [question, f"{question} groundwater trends", f"{question} USGS"],
+        "estimated_depth": max_depth,
+        "recommended_tools": list(dict.fromkeys(recommended_tools)),
+        "expected_outputs": [
+            "report",
+            "claim citations",
+            "budget trace",
+            "chart specs",
+        ],
+        "effort_level": "deep" if max_depth >= 4 else "moderate" if max_depth >= 2 else "quick",
+    }
+
+
+def _build_budget_status(
+    *,
+    max_depth: int,
+    depth_reached: int,
+    elapsed_seconds: float,
+    status: str,
+    insights_count: int,
+    timed_out: bool = False,
+    partial_completion_available: bool = False,
+) -> dict[str, Any]:
+    """Build a stable research budget payload."""
+    return {
+        "max_depth": max_depth,
+        "depth_reached": depth_reached,
+        "elapsed_seconds": round(float(elapsed_seconds), 2),
+        "remaining_seconds": 0.0,
+        "insights_gathered": insights_count,
+        "web_searches_used": 0,
+        "web_searches_max": max(3, max_depth * 2 + 2),
+        "kb_searches_used": 0,
+        "kb_searches_max": max(6, max_depth * 4),
+        "api_calls_used": 0,
+        "api_calls_max": max(10, max_depth * 6),
+        "total_cost": 0.0,
+        "remaining_budget": 10.0,
+        "status": status,
+        "continuing": False,
+        "timed_out": timed_out,
+        "partial_completion_available": partial_completion_available,
+    }
+
+
+def _infer_research_sites(question: str, max_sites: int = 6) -> tuple[list[dict], dict | None]:
+    """Infer the most relevant sites for research charts."""
+    named_sites = _detect_site_names(question)
+    if named_sites:
+        return named_sites[:max_sites], None
+
+    aq_hit = _detect_aquifer(question)
+    if aq_hit is not None:
+        aq_key, aq_name = aq_hit
+        aq_sites = _sites_for_aquifer(aq_key, max_sites=max_sites)
+        return aq_sites, _build_aquifer_info(aq_name)
+
+    loc = _detect_location(question)
+    if loc is not None:
+        ref_lat, ref_lng, _, county_hint = loc
+        loc_sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=max_sites)
+        aquifer_info = _build_aquifer_info(loc_sites[0]["aquifer"]) if loc_sites else None
+        return loc_sites, aquifer_info
+
+    if _is_network_wide_query(question):
+        return _all_sites_with_data(max_sites=max_sites), None
+
+    return [], None
+
+
+def _site_monthly_dataframe(site_id: str) -> pd.DataFrame | None:
+    """Load a site's data and normalize it to monthly averages."""
+    if site_id in _MONTHLY_SITE_CACHE:
+        cached = _MONTHLY_SITE_CACHE[site_id]
+        return None if cached is None else cached.copy()
+
+    try:
+        df = load_site_data(site_id)
+    except HTTPException:
+        _MONTHLY_SITE_CACHE[site_id] = None
+        return None
+    if df.empty:
+        _MONTHLY_SITE_CACHE[site_id] = None
+        return None
+    monthly = df.copy()
+    monthly["month_start"] = monthly["datetime"].dt.to_period("M").dt.to_timestamp()
+    monthly = monthly.groupby("month_start", as_index=False)["value"].mean()
+    monthly = monthly.rename(columns={"month_start": "datetime", "value": "level"})
+    monthly = monthly.tail(60)
+    _MONTHLY_SITE_CACHE[site_id] = monthly
+    return monthly.copy()
+
+
+def _build_research_visual_bundle(question: str) -> dict[str, Any]:
+    """Build deterministic VChart-ready research visuals from site data."""
+    sites, aquifer_info = _infer_research_sites(question, max_sites=6)
+    if not sites:
+        return {"recommended_views": ["report", "citations", "tool_trace"], "chart_specs": []}
+
+    trend_rows: list[dict[str, Any]] = []
+    seasonal_rows: list[dict[str, Any]] = []
+    anomaly_rows: list[dict[str, Any]] = []
+    summary_rows: list[dict[str, Any]] = []
+
+    for site in sites:
+        site_id = site["site_id"]
+        monthly = _site_monthly_dataframe(site_id)
+        if monthly is None or monthly.empty:
+            continue
+
+        meta = SITE_METADATA.get(site_id, {})
+        site_name = meta.get("name", site.get("name", site_id))
+
+        monthly["rolling_mean"] = monthly["level"].rolling(window=6, min_periods=3).mean()
+        monthly["delta_from_rolling"] = (monthly["level"] - monthly["rolling_mean"]).round(2)
+        monthly["month_label"] = monthly["datetime"].dt.strftime("%Y-%m")
+        monthly["month_name"] = monthly["datetime"].dt.strftime("%b")
+
+        for row in monthly.tail(36).itertuples():
+            trend_rows.append(
+                {
+                    "date": row.month_label,
+                    "level": round(float(row.level), 2),
+                    "site": site_name,
+                }
+            )
+            if pd.notna(row.delta_from_rolling):
+                anomaly_rows.append(
+                    {
+                        "date_index": row.datetime.to_pydatetime().timestamp(),
+                        "delta": round(float(row.delta_from_rolling), 2),
+                        "magnitude": round(abs(float(row.delta_from_rolling)), 2),
+                        "site": site_name,
+                        "label": row.month_label,
+                    }
+                )
+
+        seasonal = (
+            monthly.groupby("month_name", as_index=False)["level"]
+            .mean()
+            .rename(columns={"level": "average_level"})
+        )
+        month_order = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+        ]
+        seasonal["month_name"] = pd.Categorical(seasonal["month_name"], month_order, ordered=True)
+        seasonal = seasonal.sort_values("month_name")
+        for row in seasonal.itertuples():
+            seasonal_rows.append(
+                {
+                    "month": str(row.month_name),
+                    "average_level": round(float(row.average_level), 2),
+                    "site": site_name,
+                }
+            )
+
+        stats = calculate_stats(monthly.rename(columns={"datetime": "datetime", "level": "value"}))
+        summary_rows.append(
+            {
+                "site": site_name,
+                "annual_change": stats.get("annualChange", 0.0),
+                "mean_level": stats.get("mean", 0.0),
+                "record_count": stats.get("count", 0),
+            }
+        )
+
+    chart_specs: list[dict[str, Any]] = []
+
+    if trend_rows:
+        chart_specs.append(
+            {
+                "id": "trend-comparison",
+                "kind": "trend_comparison",
+                "title": "Trend Comparison",
+                "description": (
+                    "Monthly groundwater level comparison across the inferred " "research sites."
+                ),
+                "spec": {
+                    "type": "line",
+                    "data": [{"id": "trendData", "values": trend_rows}],
+                    "xField": "date",
+                    "yField": "level",
+                    "seriesField": "site",
+                    "legends": {"visible": True, "orient": "top"},
+                    "axes": [
+                        {"orient": "bottom", "type": "band", "label": {"visible": True}},
+                        {"orient": "left", "type": "linear", "nice": True},
+                    ],
+                },
+            }
+        )
+
+    if anomaly_rows:
+        chart_specs.append(
+            {
+                "id": "anomaly-scatter",
+                "kind": "anomaly_scatter",
+                "title": "Rolling Anomaly Scan",
+                "description": "Deviation from the 6-month rolling mean for each research site.",
+                "spec": {
+                    "type": "scatter",
+                    "data": [{"id": "anomalyData", "values": anomaly_rows}],
+                    "xField": "date_index",
+                    "yField": "delta",
+                    "seriesField": "site",
+                    "sizeField": "magnitude",
+                    "axes": [
+                        {"orient": "bottom", "type": "linear"},
+                        {"orient": "left", "type": "linear", "nice": True},
+                    ],
+                },
+            }
+        )
+
+    if seasonal_rows:
+        chart_specs.append(
+            {
+                "id": "seasonal-profile",
+                "kind": "seasonal_profile",
+                "title": "Seasonal Profile",
+                "description": "Average monthly groundwater level by site.",
+                "spec": {
+                    "type": "bar",
+                    "data": [{"id": "seasonalData", "values": seasonal_rows}],
+                    "xField": "month",
+                    "yField": "average_level",
+                    "seriesField": "site",
+                    "legends": {"visible": True, "orient": "top"},
+                    "axes": [
+                        {"orient": "bottom", "type": "band"},
+                        {"orient": "left", "type": "linear", "nice": True},
+                    ],
+                },
+            }
+        )
+
+    if summary_rows:
+        chart_specs.append(
+            {
+                "id": "cohort-summary",
+                "kind": "cohort_summary",
+                "title": "Cohort Summary",
+                "description": "Annualized change and mean level across the selected wells.",
+                "spec": {
+                    "type": "bar",
+                    "data": [{"id": "summaryData", "values": summary_rows}],
+                    "xField": "site",
+                    "yField": "annual_change",
+                    "seriesField": "site",
+                    "axes": [
+                        {"orient": "bottom", "type": "band", "label": {"visible": True}},
+                        {"orient": "left", "type": "linear", "nice": True},
+                    ],
+                },
+                "metrics": summary_rows,
+            }
+        )
+
+    recommended_views = ["report", "citations", "tool_trace"]
+    recommended_views.extend(spec["id"] for spec in chart_specs)
+    if aquifer_info:
+        recommended_views.append("aquifer-context")
+
+    return {
+        "recommended_views": recommended_views,
+        "chart_specs": chart_specs,
+        "aquifer_info": aquifer_info,
+    }
+
+
+def _augment_research_payload(
+    payload: dict[str, Any],
+    *,
+    question: str,
+    max_depth: int,
+    default_mode: str,
+    trace_summary: str,
+) -> dict[str, Any]:
+    """Ensure every research response exposes the new typed session contract."""
+    if not payload.get("session_id"):
+        payload["session_id"] = f"{default_mode}_{abs(hash((question, default_mode))) % 10**10}"
+    if not payload.get("research_plan"):
+        payload["research_plan"] = _heuristic_research_plan(question, max_depth)
+    if not payload.get("budget_status"):
+        payload["budget_status"] = _build_budget_status(
+            max_depth=max_depth,
+            depth_reached=payload.get("depth_reached", 0),
+            elapsed_seconds=payload.get("elapsed_seconds", 0),
+            status=payload.get("mode", default_mode),
+            insights_count=len(payload.get("insights", [])),
+            timed_out=bool(payload.get("timed_out", False)),
+            partial_completion_available=bool(payload.get("insights")),
+        )
+    if not payload.get("checkpoints"):
+        payload["checkpoints"] = [
+            {
+                "checkpoint_id": "cp_001",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "stage": "response_ready",
+                "summary": trace_summary,
+                "depth": payload.get("depth_reached", 0),
+                "phase": default_mode,
+                "status": "complete",
+                "insights_gathered": len(payload.get("insights", [])),
+                "budget_status": payload.get("budget_status"),
+                "details": {},
+            }
+        ]
+    if not payload.get("tool_trace"):
+        payload["tool_trace"] = [
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "phase": default_mode,
+                "depth": payload.get("depth_reached", 0),
+                "tool": "research_router",
+                "status": "completed",
+                "details": {"summary": trace_summary},
+            }
+        ]
+
+    visual_bundle = _build_research_visual_bundle(question)
+    if not payload.get("recommended_views"):
+        payload["recommended_views"] = visual_bundle["recommended_views"]
+    if not payload.get("chart_specs"):
+        payload["chart_specs"] = visual_bundle["chart_specs"]
+    if payload.get("aquifer_info") is None and visual_bundle.get("aquifer_info") is not None:
+        payload["aquifer_info"] = visual_bundle["aquifer_info"]
+
+    return payload
 
 
 @router.post("/chat")
@@ -608,31 +983,44 @@ def research_endpoint(query: dict):
                 _build_section_confidence_from_claims(claim_citations),
             )
             citation_integrity = _build_citation_integrity(claim_citations, section_confidence)
-            return {
-                "status": "ok",
-                "mode": "deep_research",
-                "report": report,
-                "chart": result.get("chart"),
-                "insights": result.get("insights", []),
-                "sources": result.get("sources", []),
-                "search_history": result.get("search_history", []),
-                "depth_reached": result.get("depth_reached", 0),
-                "elapsed_seconds": result.get("elapsed_seconds", 0),
-                "claim_citations": claim_citations,
-                "claim_verdicts": claim_verdicts,
-                "claim_verdict_summary": claim_verdict_summary,
-                "citation_summary": citation_summary,
-                "section_confidence": section_confidence,
-                "hallucination_guardrail": result.get(
-                    "hallucination_guardrail",
-                    {
-                        "strategy": "claim_reference_filter",
-                        "removed_uncited_factual_sentences": 0,
-                        "all_factual_claims_cited": True,
-                    },
-                ),
-                "citation_integrity": citation_integrity,
-            }
+            return _augment_research_payload(
+                {
+                    "status": "ok",
+                    "mode": "deep_research",
+                    "report": report,
+                    "chart": result.get("chart"),
+                    "insights": result.get("insights", []),
+                    "sources": result.get("sources", []),
+                    "session_id": result.get("session_id"),
+                    "research_plan": result.get("research_plan"),
+                    "budget_status": result.get("budget_status"),
+                    "checkpoints": result.get("checkpoints"),
+                    "tool_trace": result.get("tool_trace"),
+                    "recommended_views": result.get("recommended_views"),
+                    "chart_specs": result.get("chart_specs"),
+                    "search_history": result.get("search_history", []),
+                    "depth_reached": result.get("depth_reached", 0),
+                    "elapsed_seconds": result.get("elapsed_seconds", 0),
+                    "claim_citations": claim_citations,
+                    "claim_verdicts": claim_verdicts,
+                    "claim_verdict_summary": claim_verdict_summary,
+                    "citation_summary": citation_summary,
+                    "section_confidence": section_confidence,
+                    "hallucination_guardrail": result.get(
+                        "hallucination_guardrail",
+                        {
+                            "strategy": "claim_reference_filter",
+                            "removed_uncited_factual_sentences": 0,
+                            "all_factual_claims_cited": True,
+                        },
+                    ),
+                    "citation_integrity": citation_integrity,
+                },
+                question=question,
+                max_depth=max_depth,
+                default_mode="deep_research",
+                trace_summary="LLM-backed research completed.",
+            )
         except Exception as exc:
             logger.error(
                 "Research agent error: %s\n%s",
@@ -651,40 +1039,46 @@ def research_endpoint(query: dict):
             "claim_verdicts",
             _build_claim_verdicts(ns_result["claim_citations"]),
         )
-        return {
-            "status": "ok",
-            "mode": "site_fallback",
-            "report": ns_result["report"],
-            "chart": ns_result.get("chart"),
-            "insights": ns_result["insights"],
-            "sources": ns_result["sources"],
-            "search_history": ns_result["search_history"],
-            "depth_reached": ns_result["depth_reached"],
-            "elapsed_seconds": ns_result["elapsed_seconds"],
-            "claim_citations": ns_result["claim_citations"],
-            "claim_verdicts": ns_claim_verdicts,
-            "claim_verdict_summary": ns_result.get(
-                "claim_verdict_summary",
-                _build_claim_verdict_summary(ns_claim_verdicts),
-            ),
-            "citation_summary": ns_result["citation_summary"],
-            "section_confidence": ns_result.get("section_confidence", {}),
-            "hallucination_guardrail": ns_result.get(
-                "hallucination_guardrail",
-                {
-                    "strategy": "deterministic_site_fallback",
-                    "removed_uncited_factual_sentences": 0,
-                    "all_factual_claims_cited": True,
-                },
-            ),
-            "citation_integrity": _build_citation_integrity(
-                ns_result["claim_citations"], ns_result.get("section_confidence", {})
-            ),
-            "wells": _build_wells_payload(named_sites),
-            "divergent_pairs": ns_result.get("divergent_pairs", []),
-            "cohort_risk_level": ns_result.get("cohort_risk_level"),
-            "llm_synthesis": ns_result.get("llm_synthesis"),
-        }
+        return _augment_research_payload(
+            {
+                "status": "ok",
+                "mode": "site_fallback",
+                "report": ns_result["report"],
+                "chart": ns_result.get("chart"),
+                "insights": ns_result["insights"],
+                "sources": ns_result["sources"],
+                "search_history": ns_result["search_history"],
+                "depth_reached": ns_result["depth_reached"],
+                "elapsed_seconds": ns_result["elapsed_seconds"],
+                "claim_citations": ns_result["claim_citations"],
+                "claim_verdicts": ns_claim_verdicts,
+                "claim_verdict_summary": ns_result.get(
+                    "claim_verdict_summary",
+                    _build_claim_verdict_summary(ns_claim_verdicts),
+                ),
+                "citation_summary": ns_result["citation_summary"],
+                "section_confidence": ns_result.get("section_confidence", {}),
+                "hallucination_guardrail": ns_result.get(
+                    "hallucination_guardrail",
+                    {
+                        "strategy": "deterministic_site_fallback",
+                        "removed_uncited_factual_sentences": 0,
+                        "all_factual_claims_cited": True,
+                    },
+                ),
+                "citation_integrity": _build_citation_integrity(
+                    ns_result["claim_citations"], ns_result.get("section_confidence", {})
+                ),
+                "wells": _build_wells_payload(named_sites),
+                "divergent_pairs": ns_result.get("divergent_pairs", []),
+                "cohort_risk_level": ns_result.get("cohort_risk_level"),
+                "llm_synthesis": ns_result.get("llm_synthesis"),
+            },
+            question=question,
+            max_depth=max_depth,
+            default_mode="site_fallback",
+            trace_summary="Deterministic site research fallback completed.",
+        )
 
     # --- Aquifer fast path: named aquifer -> all cohort sites (runs before location) ---
     aq_hit = _detect_aquifer(question)
@@ -696,41 +1090,47 @@ def research_endpoint(query: dict):
             "claim_verdicts",
             _build_claim_verdicts(aq_result["claim_citations"]),
         )
-        return {
-            "status": "ok",
-            "mode": "aquifer_fallback",
-            "report": aq_result["report"],
-            "chart": aq_result.get("chart"),
-            "insights": aq_result["insights"],
-            "sources": aq_result["sources"],
-            "search_history": aq_result["search_history"],
-            "depth_reached": aq_result["depth_reached"],
-            "elapsed_seconds": aq_result["elapsed_seconds"],
-            "claim_citations": aq_result["claim_citations"],
-            "claim_verdicts": aq_claim_verdicts,
-            "claim_verdict_summary": aq_result.get(
-                "claim_verdict_summary",
-                _build_claim_verdict_summary(aq_claim_verdicts),
-            ),
-            "citation_summary": aq_result["citation_summary"],
-            "section_confidence": aq_result.get("section_confidence", {}),
-            "hallucination_guardrail": aq_result.get(
-                "hallucination_guardrail",
-                {
-                    "strategy": "deterministic_site_fallback",
-                    "removed_uncited_factual_sentences": 0,
-                    "all_factual_claims_cited": True,
-                },
-            ),
-            "citation_integrity": _build_citation_integrity(
-                aq_result["claim_citations"], aq_result.get("section_confidence", {})
-            ),
-            "wells": _build_wells_payload(aq_sites),
-            "aquifer_info": _build_aquifer_info(aq_display_name),
-            "divergent_pairs": aq_result.get("divergent_pairs", []),
-            "cohort_risk_level": aq_result.get("cohort_risk_level"),
-            "llm_synthesis": aq_result.get("llm_synthesis"),
-        }
+        return _augment_research_payload(
+            {
+                "status": "ok",
+                "mode": "aquifer_fallback",
+                "report": aq_result["report"],
+                "chart": aq_result.get("chart"),
+                "insights": aq_result["insights"],
+                "sources": aq_result["sources"],
+                "search_history": aq_result["search_history"],
+                "depth_reached": aq_result["depth_reached"],
+                "elapsed_seconds": aq_result["elapsed_seconds"],
+                "claim_citations": aq_result["claim_citations"],
+                "claim_verdicts": aq_claim_verdicts,
+                "claim_verdict_summary": aq_result.get(
+                    "claim_verdict_summary",
+                    _build_claim_verdict_summary(aq_claim_verdicts),
+                ),
+                "citation_summary": aq_result["citation_summary"],
+                "section_confidence": aq_result.get("section_confidence", {}),
+                "hallucination_guardrail": aq_result.get(
+                    "hallucination_guardrail",
+                    {
+                        "strategy": "deterministic_site_fallback",
+                        "removed_uncited_factual_sentences": 0,
+                        "all_factual_claims_cited": True,
+                    },
+                ),
+                "citation_integrity": _build_citation_integrity(
+                    aq_result["claim_citations"], aq_result.get("section_confidence", {})
+                ),
+                "wells": _build_wells_payload(aq_sites),
+                "aquifer_info": _build_aquifer_info(aq_display_name),
+                "divergent_pairs": aq_result.get("divergent_pairs", []),
+                "cohort_risk_level": aq_result.get("cohort_risk_level"),
+                "llm_synthesis": aq_result.get("llm_synthesis"),
+            },
+            question=question,
+            max_depth=max_depth,
+            default_mode="aquifer_fallback",
+            trace_summary="Deterministic aquifer research fallback completed.",
+        )
 
     # --- Fallback: location-aware deterministic USGS response ---
     loc = _detect_location(question)
@@ -744,41 +1144,49 @@ def research_endpoint(query: dict):
             "claim_verdicts",
             _build_claim_verdicts(site_result["claim_citations"]),
         )
-        return {
-            "status": "ok",
-            "mode": "fallback",
-            "report": site_result["report"],
-            "chart": site_result.get("chart"),
-            "insights": site_result["insights"],
-            "sources": site_result["sources"],
-            "search_history": site_result["search_history"],
-            "depth_reached": site_result["depth_reached"],
-            "elapsed_seconds": site_result["elapsed_seconds"],
-            "claim_citations": site_result["claim_citations"],
-            "claim_verdicts": site_claim_verdicts,
-            "claim_verdict_summary": site_result.get(
-                "claim_verdict_summary",
-                _build_claim_verdict_summary(site_claim_verdicts),
-            ),
-            "citation_summary": site_result["citation_summary"],
-            "section_confidence": site_result.get("section_confidence", {}),
-            "hallucination_guardrail": site_result.get(
-                "hallucination_guardrail",
-                {
-                    "strategy": "deterministic_site_fallback",
-                    "removed_uncited_factual_sentences": 0,
-                    "all_factual_claims_cited": True,
-                },
-            ),
-            "citation_integrity": _build_citation_integrity(
-                site_result["claim_citations"], site_result.get("section_confidence", {})
-            ),
-            "wells": _build_wells_payload(loc_sites),
-            "aquifer_info": (_build_aquifer_info(loc_sites[0]["aquifer"]) if loc_sites else None),
-            "divergent_pairs": site_result.get("divergent_pairs", []),
-            "cohort_risk_level": site_result.get("cohort_risk_level"),
-            "llm_synthesis": site_result.get("llm_synthesis"),
-        }
+        return _augment_research_payload(
+            {
+                "status": "ok",
+                "mode": "fallback",
+                "report": site_result["report"],
+                "chart": site_result.get("chart"),
+                "insights": site_result["insights"],
+                "sources": site_result["sources"],
+                "search_history": site_result["search_history"],
+                "depth_reached": site_result["depth_reached"],
+                "elapsed_seconds": site_result["elapsed_seconds"],
+                "claim_citations": site_result["claim_citations"],
+                "claim_verdicts": site_claim_verdicts,
+                "claim_verdict_summary": site_result.get(
+                    "claim_verdict_summary",
+                    _build_claim_verdict_summary(site_claim_verdicts),
+                ),
+                "citation_summary": site_result["citation_summary"],
+                "section_confidence": site_result.get("section_confidence", {}),
+                "hallucination_guardrail": site_result.get(
+                    "hallucination_guardrail",
+                    {
+                        "strategy": "deterministic_site_fallback",
+                        "removed_uncited_factual_sentences": 0,
+                        "all_factual_claims_cited": True,
+                    },
+                ),
+                "citation_integrity": _build_citation_integrity(
+                    site_result["claim_citations"], site_result.get("section_confidence", {})
+                ),
+                "wells": _build_wells_payload(loc_sites),
+                "aquifer_info": (
+                    _build_aquifer_info(loc_sites[0]["aquifer"]) if loc_sites else None
+                ),
+                "divergent_pairs": site_result.get("divergent_pairs", []),
+                "cohort_risk_level": site_result.get("cohort_risk_level"),
+                "llm_synthesis": site_result.get("llm_synthesis"),
+            },
+            question=question,
+            max_depth=max_depth,
+            default_mode="fallback",
+            trace_summary="Location-aware deterministic fallback completed.",
+        )
 
     # --- Network-wide fallback: queries about all wells / all counties / confined vs unconfined ---
     if _is_network_wide_query(question):
@@ -789,40 +1197,46 @@ def research_endpoint(query: dict):
                 "claim_verdicts",
                 _build_claim_verdicts(nw_result["claim_citations"]),
             )
-            return {
-                "status": "ok",
-                "mode": "network_fallback",
-                "report": nw_result["report"],
-                "chart": nw_result.get("chart"),
-                "insights": nw_result["insights"],
-                "sources": nw_result["sources"],
-                "search_history": nw_result["search_history"],
-                "depth_reached": nw_result["depth_reached"],
-                "elapsed_seconds": nw_result["elapsed_seconds"],
-                "claim_citations": nw_result["claim_citations"],
-                "claim_verdicts": nw_claim_verdicts,
-                "claim_verdict_summary": nw_result.get(
-                    "claim_verdict_summary",
-                    _build_claim_verdict_summary(nw_claim_verdicts),
-                ),
-                "citation_summary": nw_result["citation_summary"],
-                "section_confidence": nw_result.get("section_confidence", {}),
-                "hallucination_guardrail": nw_result.get(
-                    "hallucination_guardrail",
-                    {
-                        "strategy": "deterministic_site_fallback",
-                        "removed_uncited_factual_sentences": 0,
-                        "all_factual_claims_cited": True,
-                    },
-                ),
-                "citation_integrity": _build_citation_integrity(
-                    nw_result["claim_citations"], nw_result.get("section_confidence", {})
-                ),
-                "wells": _build_wells_payload(nw_sites),
-                "divergent_pairs": nw_result.get("divergent_pairs", []),
-                "cohort_risk_level": nw_result.get("cohort_risk_level"),
-                "llm_synthesis": nw_result.get("llm_synthesis"),
-            }
+            return _augment_research_payload(
+                {
+                    "status": "ok",
+                    "mode": "network_fallback",
+                    "report": nw_result["report"],
+                    "chart": nw_result.get("chart"),
+                    "insights": nw_result["insights"],
+                    "sources": nw_result["sources"],
+                    "search_history": nw_result["search_history"],
+                    "depth_reached": nw_result["depth_reached"],
+                    "elapsed_seconds": nw_result["elapsed_seconds"],
+                    "claim_citations": nw_result["claim_citations"],
+                    "claim_verdicts": nw_claim_verdicts,
+                    "claim_verdict_summary": nw_result.get(
+                        "claim_verdict_summary",
+                        _build_claim_verdict_summary(nw_claim_verdicts),
+                    ),
+                    "citation_summary": nw_result["citation_summary"],
+                    "section_confidence": nw_result.get("section_confidence", {}),
+                    "hallucination_guardrail": nw_result.get(
+                        "hallucination_guardrail",
+                        {
+                            "strategy": "deterministic_site_fallback",
+                            "removed_uncited_factual_sentences": 0,
+                            "all_factual_claims_cited": True,
+                        },
+                    ),
+                    "citation_integrity": _build_citation_integrity(
+                        nw_result["claim_citations"], nw_result.get("section_confidence", {})
+                    ),
+                    "wells": _build_wells_payload(nw_sites),
+                    "divergent_pairs": nw_result.get("divergent_pairs", []),
+                    "cohort_risk_level": nw_result.get("cohort_risk_level"),
+                    "llm_synthesis": nw_result.get("llm_synthesis"),
+                },
+                question=question,
+                max_depth=max_depth,
+                default_mode="network_fallback",
+                trace_summary="Network-wide deterministic fallback completed.",
+            )
 
     fb = _fallback_response(question)
     fallback_claims = [
@@ -841,28 +1255,34 @@ def research_endpoint(query: dict):
     claim_verdict_summary = _build_claim_verdict_summary(claim_verdicts)
     section_confidence = _build_section_confidence_from_claims(fallback_claims)
     citation_integrity = _build_citation_integrity(fallback_claims, section_confidence)
-    return {
-        "status": "ok",
-        "mode": "fallback",
-        "report": fb["response"],
-        "chart": None,
-        "insights": [],
-        "sources": fb["sources"],
-        "search_history": [question],
-        "depth_reached": 0,
-        "elapsed_seconds": 0,
-        "claim_citations": fallback_claims,
-        "claim_verdicts": claim_verdicts,
-        "claim_verdict_summary": claim_verdict_summary,
-        "citation_summary": summary,
-        "section_confidence": section_confidence,
-        "hallucination_guardrail": {
-            "strategy": "deterministic_fallback",
-            "removed_uncited_factual_sentences": 0,
-            "all_factual_claims_cited": True,
+    return _augment_research_payload(
+        {
+            "status": "ok",
+            "mode": "fallback",
+            "report": fb["response"],
+            "chart": None,
+            "insights": [],
+            "sources": fb["sources"],
+            "search_history": [question],
+            "depth_reached": 0,
+            "elapsed_seconds": 0,
+            "claim_citations": fallback_claims,
+            "claim_verdicts": claim_verdicts,
+            "claim_verdict_summary": claim_verdict_summary,
+            "citation_summary": summary,
+            "section_confidence": section_confidence,
+            "hallucination_guardrail": {
+                "strategy": "deterministic_fallback",
+                "removed_uncited_factual_sentences": 0,
+                "all_factual_claims_cited": True,
+            },
+            "citation_integrity": citation_integrity,
         },
-        "citation_integrity": citation_integrity,
-    }
+        question=question,
+        max_depth=max_depth,
+        default_mode="fallback",
+        trace_summary="Generic deterministic fallback completed.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -874,7 +1294,7 @@ def research_endpoint(query: dict):
 _STREAM_QUEUE_TIMEOUT = 135  # seconds
 
 
-def _stream_fallback_result(question: str) -> dict:
+def _stream_fallback_result(question: str, max_depth: int = 3) -> dict:
     """Build a streaming-compatible result using the same routing as /api/research.
 
     Detection order: site-name -> aquifer -> location -> network-wide -> generic KB.
@@ -926,10 +1346,16 @@ def _stream_fallback_result(question: str) -> dict:
     named = _detect_site_names(question)
     if named:
         label = " vs ".join(s["name"] for s in named)
-        return _wrap(
-            _site_research_fallback(question, named, label),
-            "site_fallback",
-            named,
+        return _augment_research_payload(
+            _wrap(
+                _site_research_fallback(question, named, label),
+                "site_fallback",
+                named,
+            ),
+            question=question,
+            max_depth=max_depth,
+            default_mode="site_fallback",
+            trace_summary="Streaming site fallback completed.",
         )
 
     # 2. Aquifer detection
@@ -938,10 +1364,16 @@ def _stream_fallback_result(question: str) -> dict:
         aq_key, aq_name = aq_hit
         aq_sites = _sites_for_aquifer(aq_key, max_sites=8)
         if aq_sites:
-            result = _wrap(
-                _site_research_fallback(question, aq_sites, aq_name),
-                "aquifer_fallback",
-                aq_sites,
+            result = _augment_research_payload(
+                _wrap(
+                    _site_research_fallback(question, aq_sites, aq_name),
+                    "aquifer_fallback",
+                    aq_sites,
+                ),
+                question=question,
+                max_depth=max_depth,
+                default_mode="aquifer_fallback",
+                trace_summary="Streaming aquifer fallback completed.",
             )
             result["aquifer_info"] = _build_aquifer_info(aq_name)
             return result
@@ -952,16 +1384,22 @@ def _stream_fallback_result(question: str) -> dict:
         ref_lat, ref_lng, loc_name, county_hint = loc
         loc_sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=10)
         if loc_sites:
-            result = _wrap(
-                _site_research_fallback(
-                    question,
+            result = _augment_research_payload(
+                _wrap(
+                    _site_research_fallback(
+                        question,
+                        loc_sites,
+                        loc_name,
+                        ref_lat=ref_lat,
+                        ref_lng=ref_lng,
+                    ),
+                    "fallback",
                     loc_sites,
-                    loc_name,
-                    ref_lat=ref_lat,
-                    ref_lng=ref_lng,
                 ),
-                "fallback",
-                loc_sites,
+                question=question,
+                max_depth=max_depth,
+                default_mode="fallback",
+                trace_summary="Streaming location fallback completed.",
             )
             if loc_sites:
                 result["aquifer_info"] = _build_aquifer_info(loc_sites[0]["aquifer"])
@@ -971,10 +1409,16 @@ def _stream_fallback_result(question: str) -> dict:
     if _is_network_wide_query(question):
         nw_sites = _all_sites_with_data(max_sites=36)
         if nw_sites:
-            return _wrap(
-                _site_research_fallback(question, nw_sites, "Florida monitoring network"),
-                "network_fallback",
-                nw_sites,
+            return _augment_research_payload(
+                _wrap(
+                    _site_research_fallback(question, nw_sites, "Florida monitoring network"),
+                    "network_fallback",
+                    nw_sites,
+                ),
+                question=question,
+                max_depth=max_depth,
+                default_mode="network_fallback",
+                trace_summary="Streaming network fallback completed.",
             )
 
     # 5. Generic KB
@@ -992,29 +1436,35 @@ def _stream_fallback_result(question: str) -> dict:
     ]
     claim_verdicts = _build_claim_verdicts(fallback_claims)
     section_confidence = _build_section_confidence_from_claims(fallback_claims)
-    return {
-        "type": "result",
-        "status": "ok",
-        "mode": "fallback",
-        "report": fb["response"],
-        "chart": None,
-        "insights": [],
-        "sources": fb["sources"],
-        "search_history": [question],
-        "depth_reached": 0,
-        "elapsed_seconds": 0,
-        "claim_citations": fallback_claims,
-        "claim_verdicts": claim_verdicts,
-        "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),
-        "citation_summary": _build_citation_summary(fallback_claims),
-        "section_confidence": section_confidence,
-        "hallucination_guardrail": {
-            "strategy": "deterministic_fallback",
-            "removed_uncited_factual_sentences": 0,
-            "all_factual_claims_cited": True,
+    return _augment_research_payload(
+        {
+            "type": "result",
+            "status": "ok",
+            "mode": "fallback",
+            "report": fb["response"],
+            "chart": None,
+            "insights": [],
+            "sources": fb["sources"],
+            "search_history": [question],
+            "depth_reached": 0,
+            "elapsed_seconds": 0,
+            "claim_citations": fallback_claims,
+            "claim_verdicts": claim_verdicts,
+            "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),
+            "citation_summary": _build_citation_summary(fallback_claims),
+            "section_confidence": section_confidence,
+            "hallucination_guardrail": {
+                "strategy": "deterministic_fallback",
+                "removed_uncited_factual_sentences": 0,
+                "all_factual_claims_cited": True,
+            },
+            "citation_integrity": _build_citation_integrity(fallback_claims, section_confidence),
         },
-        "citation_integrity": _build_citation_integrity(fallback_claims, section_confidence),
-    }
+        question=question,
+        max_depth=max_depth,
+        default_mode="fallback",
+        trace_summary="Streaming generic fallback completed.",
+    )
 
 
 def _run_research_in_thread(
@@ -1034,13 +1484,16 @@ def _run_research_in_thread(
       - "error"     -- something went wrong; contains a "message" key
     """
 
-    def progress_callback(message: str, progress: float) -> None:
+    def progress_callback(
+        message: str, progress: float, snapshot: dict[str, Any] | None = None
+    ) -> None:
         """Bridge the agent's callback to the SSE queue."""
         event_queue.put(
             {
                 "type": "progress",
                 "message": message,
                 "progress": round(progress, 2),
+                "snapshot": snapshot or {},
             }
         )
 
@@ -1053,32 +1506,55 @@ def _run_research_in_thread(
                 timeout=timeout,
                 progress_callback=progress_callback,
             )
+            claim_citations = result.get("claim_citations", [])
+            section_confidence = result.get("section_confidence", {})
             event_queue.put(
-                {
-                    "type": "result",
-                    "status": "ok",
-                    "mode": "deep_research",
-                    "report": result.get("report", ""),
-                    "chart": result.get("chart"),
-                    "insights": result.get("insights", []),
-                    "sources": result.get("sources", []),
-                    "search_history": result.get("search_history", []),
-                    "depth_reached": result.get("depth_reached", 0),
-                    "elapsed_seconds": result.get("elapsed_seconds", 0),
-                    "claim_citations": result.get("claim_citations", []),
-                    "citation_summary": result.get(
-                        "citation_summary",
-                        {
-                            "total_claims": 0,
-                            "cited_claims": 0,
-                            "citation_coverage": 0.0,
-                        },
-                    ),
-                }
+                _augment_research_payload(
+                    {
+                        "type": "result",
+                        "status": "ok",
+                        "mode": "deep_research",
+                        "report": result.get("report", ""),
+                        "chart": result.get("chart"),
+                        "insights": result.get("insights", []),
+                        "sources": result.get("sources", []),
+                        "session_id": result.get("session_id"),
+                        "research_plan": result.get("research_plan"),
+                        "budget_status": result.get("budget_status"),
+                        "checkpoints": result.get("checkpoints"),
+                        "tool_trace": result.get("tool_trace"),
+                        "recommended_views": result.get("recommended_views"),
+                        "chart_specs": result.get("chart_specs"),
+                        "search_history": result.get("search_history", []),
+                        "depth_reached": result.get("depth_reached", 0),
+                        "elapsed_seconds": result.get("elapsed_seconds", 0),
+                        "claim_citations": claim_citations,
+                        "claim_verdicts": result.get("claim_verdicts", []),
+                        "claim_verdict_summary": result.get("claim_verdict_summary", {}),
+                        "citation_summary": result.get(
+                            "citation_summary",
+                            {
+                                "total_claims": 0,
+                                "cited_claims": 0,
+                                "citation_coverage": 0.0,
+                            },
+                        ),
+                        "section_confidence": section_confidence,
+                        "hallucination_guardrail": result.get("hallucination_guardrail", {}),
+                        "citation_integrity": result.get(
+                            "citation_integrity",
+                            _build_citation_integrity(claim_citations, section_confidence),
+                        ),
+                    },
+                    question=question,
+                    max_depth=max_depth,
+                    default_mode="deep_research",
+                    trace_summary="Streaming LLM-backed research completed.",
+                )
             )
         else:
             # Fallback mode -- use same routing chain as /api/research.
-            event_queue.put(_stream_fallback_result(question))
+            event_queue.put(_stream_fallback_result(question, max_depth=max_depth))
     except Exception as exc:
         logger.error(
             "Streaming research thread error: %s\n%s",

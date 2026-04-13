@@ -1,5 +1,4 @@
-"""
-Advanced Research Optimization for Agentic Deep Research.
+"""Advanced Research Optimization for Agentic Deep Research.
 
 Implements patterns from Awesome-Deep-Research:
 - Research planning (multi-step decomposition)
@@ -23,11 +22,23 @@ import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
 
 from .llm_factory import get_llm
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_get_llm(llm_provider: str | None = None, llm_model: str | None = None):
+    """Return an LLM when available, otherwise degrade gracefully.
+
+    Research-planning helpers should still be usable in environments where
+    provider-specific dependencies or credentials are unavailable.
+    """
+    try:
+        return get_llm(provider=llm_provider, model=llm_model)
+    except Exception as exc:
+        logger.warning("Research optimizer LLM unavailable; using heuristic fallback: %s", exc)
+        return None
 
 
 @dataclass
@@ -37,9 +48,7 @@ class ResearchPlan:
     original_query: str
     main_question: str
     sub_questions: list[str] = field(default_factory=list)
-    research_areas: list[str] = field(
-        default_factory=list
-    )  # e.g., "hydrology", "climate"
+    research_areas: list[str] = field(default_factory=list)  # e.g., "hydrology", "climate"
     expected_sections: list[str] = field(default_factory=list)  # Report structure
     search_priority: list[str] = field(default_factory=list)  # Ordered search queries
     estimated_depth: int = 3
@@ -98,6 +107,7 @@ class SearchBudget:
     max_web_searches: int = 10
     max_kb_searches: int = 20
     max_api_calls: int = 50
+    max_total_cost: float = 10.0
     cost_per_web_search: float = 0.01
     cost_per_kb_search: float = 0.0  # Knowledge base is local
     cost_per_api_call: float = 0.001
@@ -113,7 +123,7 @@ class SearchBudget:
         spent = self.web_searches_used * self.cost_per_web_search
         spent += self.kb_searches_used * self.cost_per_kb_search
         spent += self.api_calls_used * self.cost_per_api_call
-        return 10.0 - spent  # Assume $10 budget
+        return round(max(0.0, self.max_total_cost - spent), 3)
 
     def can_do_web_search(self) -> bool:
         """Check if can perform web search."""
@@ -125,17 +135,17 @@ class SearchBudget:
     def record_web_search(self) -> None:
         """Record a web search."""
         self.web_searches_used += 1
-        self.total_cost += self.cost_per_web_search
+        self.total_cost = round(self.total_cost + self.cost_per_web_search, 3)
 
     def record_kb_search(self) -> None:
         """Record a knowledge base search."""
         self.kb_searches_used += 1
-        self.total_cost += self.cost_per_kb_search
+        self.total_cost = round(self.total_cost + self.cost_per_kb_search, 3)
 
     def record_api_call(self) -> None:
         """Record an API call."""
         self.api_calls_used += 1
-        self.total_cost += self.cost_per_api_call
+        self.total_cost = round(self.total_cost + self.cost_per_api_call, 3)
 
     def to_dict(self) -> dict:
         """Serialize for persistence."""
@@ -148,18 +158,17 @@ class SearchBudget:
 
 
 class ResearchPlanner:
-    """
-    Decomposes complex research questions into structured plans.
+    """Decomposes complex research questions into structured plans.
 
     Implements multi-step planning pattern from O-Researcher.
     """
 
     def __init__(self, llm_provider: str | None = None, llm_model: str | None = None):
-        self.llm = get_llm(provider=llm_provider, model=llm_model)
+        """Initialize the planner with an optional LLM backend."""
+        self.llm = _safe_get_llm(llm_provider=llm_provider, llm_model=llm_model)
 
     def plan_research(self, query: str, domain: str = "groundwater") -> ResearchPlan:
-        """
-        Break down a complex query into a structured research plan.
+        """Break down a complex query into a structured research plan.
 
         Args:
             query: Main research question
@@ -193,6 +202,9 @@ Format your response as JSON:
 
 Be specific and concrete."""
 
+        if self.llm is None:
+            return self._heuristic_plan(query)
+
         try:
             response = self.llm.invoke(prompt)
             data = json.loads(response.content)
@@ -206,9 +218,7 @@ Be specific and concrete."""
                 search_priority=data.get("search_priority", [query]),
                 estimated_depth=data.get("estimated_depth", 3),
             )
-            logger.info(
-                f"📋 Research plan created with {len(plan.sub_questions)} sub-questions"
-            )
+            logger.info(f"📋 Research plan created with {len(plan.sub_questions)} sub-questions")
             return plan
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse plan JSON: {e}")
@@ -221,20 +231,59 @@ Be specific and concrete."""
             )
         except Exception as e:
             logger.error(f"Research planning failed: {e}")
-            return ResearchPlan(
-                original_query=query, main_question=query, search_priority=[query]
-            )
+            return self._heuristic_plan(query)
+
+    def _heuristic_plan(self, query: str) -> ResearchPlan:
+        """Fallback planning when an LLM is unavailable."""
+        query_lower = query.lower()
+        research_areas: list[str] = []
+        if any(term in query_lower for term in ["salt", "intrusion", "coastal"]):
+            research_areas.extend(["hydrogeology", "coastal risk"])
+        if any(term in query_lower for term in ["trend", "compare", "change", "long-term"]):
+            research_areas.append("time-series analysis")
+        if any(term in query_lower for term in ["season", "wet", "dry"]):
+            research_areas.append("seasonality")
+        if any(term in query_lower for term in ["aquifer", "well", "site"]):
+            research_areas.append("site conditions")
+        if not research_areas:
+            research_areas = ["groundwater conditions", "supporting evidence"]
+
+        sub_questions = [
+            f"What is the direct answer to: {query}?",
+            "Which groundwater sites, aquifers, or counties are most relevant?",
+            "What trends, anomalies, or seasonal patterns support the answer?",
+        ]
+        search_priority = [
+            query,
+            f"{query} groundwater trends",
+            f"{query} USGS site analysis",
+        ]
+        expected_sections = [
+            "Direct Answer",
+            "Evidence and Trends",
+            "Caveats and Next Steps",
+        ]
+
+        return ResearchPlan(
+            original_query=query,
+            main_question=query,
+            sub_questions=sub_questions,
+            research_areas=research_areas,
+            expected_sections=expected_sections,
+            search_priority=search_priority,
+            estimated_depth=3,
+        )
 
 
 class PriorityRanker:
-    """
-    Ranks search results by relevance, trust, and recency.
+    """Ranks search results by relevance, trust, and recency.
 
     Implements SmartSearch pattern for intelligent result ordering.
     """
 
     def __init__(self, llm_provider: str | None = None, llm_model: str | None = None):
-        self.llm = get_llm(provider=llm_provider, model=llm_model)
+        """Initialize the ranker with an optional LLM backend."""
+        self.llm = _safe_get_llm(llm_provider=llm_provider, llm_model=llm_model)
 
     def rank_results(
         self,
@@ -242,8 +291,7 @@ class PriorityRanker:
         query: str,
         research_context: str = "",
     ) -> list[RankedSearchResult]:
-        """
-        Rank search results by combined relevance, trust, and recency scores.
+        """Rank search results by combined relevance, trust, and recency scores.
 
         Args:
             results: List of search result dicts with title, url, snippet, source
@@ -262,9 +310,7 @@ class PriorityRanker:
         # Sort by combined score (highest first)
         ranked.sort()
 
-        logger.info(
-            f"📊 Ranked {len(ranked)} results. Top score: {ranked[0].combined_score:.2f}"
-        )
+        logger.info(f"📊 Ranked {len(ranked)} results. Top score: {ranked[0].combined_score:.2f}")
         return ranked
 
     def _calculate_scores(
@@ -288,7 +334,10 @@ class PriorityRanker:
         # Combined: Weighted average
         combined_score = relevance_score * 0.5 + trust_score * 0.3 + recency_score * 0.2
 
-        reasoning = f"Relevance: {relevance_score:.2f}, Trust: {trust_score:.2f}, Recency: {recency_score:.2f}"
+        reasoning = (
+            f"Relevance: {relevance_score:.2f}, Trust: {trust_score:.2f}, "
+            f"Recency: {recency_score:.2f}"
+        )
 
         return RankedSearchResult(
             title=title,
@@ -353,21 +402,20 @@ class PriorityRanker:
 
 
 class SelfReflectionEvaluator:
-    """
-    Evaluates research quality and identifies gaps.
+    """Evaluates research quality and identifies gaps.
 
     Implements WebSeer pattern for quality control and guided re-search.
     """
 
     def __init__(self, llm_provider: str | None = None, llm_model: str | None = None):
-        self.llm = get_llm(provider=llm_provider, model=llm_model)
+        """Initialize the reflection evaluator with an optional LLM backend."""
+        self.llm = _safe_get_llm(llm_provider=llm_provider, llm_model=llm_model)
         self.min_quality_threshold = 0.7
 
     def evaluate_synthesis(
         self, synthesis: str, research_plan: ResearchPlan, insights: list[dict]
     ) -> ReflectionResult:
-        """
-        Evaluate a research synthesis for quality and completeness.
+        """Evaluate a research synthesis for quality and completeness.
 
         Args:
             synthesis: The synthesized report/answer
@@ -377,6 +425,9 @@ class SelfReflectionEvaluator:
         Returns:
             ReflectionResult with quality assessment
         """
+        avg_confidence = (
+            sum(i.get("confidence", 0.5) for i in insights) / len(insights) if insights else 0.5
+        )
         prompt = f"""You are a research quality evaluator.
 
 ORIGINAL RESEARCH QUESTION: {research_plan.main_question}
@@ -387,7 +438,7 @@ SUB-QUESTIONS TO ANSWER:
 SYNTHESIZED ANSWER:
 {synthesis}
 
-INSIGHTS GATHERED: {len(insights)} insights with average confidence {sum(i.get('confidence', 0.5) for i in insights) / len(insights):.2f}
+INSIGHTS GATHERED: {len(insights)} insights with average confidence {avg_confidence:.2f}
 
 Evaluate the synthesis on:
 1. **Coverage**: Do all sub-questions get answered?
@@ -409,20 +460,20 @@ Respond in JSON format:
 
 Be critical and honest."""
 
+        if self.llm is None:
+            return self._heuristic_evaluation(synthesis, research_plan, insights)
+
         try:
             response = self.llm.invoke(prompt)
             data = json.loads(response.content)
 
             result = ReflectionResult(
-                is_high_quality=data.get("overall_quality", 0.5)
-                >= self.min_quality_threshold,
+                is_high_quality=data.get("overall_quality", 0.5) >= self.min_quality_threshold,
                 confidence_score=data.get("confidence_score", 0.5),
                 coverage_score=data.get("coverage_score", 0.5),
                 missing_areas=data.get("missing_areas", []),
                 follow_up_queries=data.get("follow_up_queries", []),
-                sections_requiring_more_research=data.get(
-                    "sections_requiring_more_research", []
-                ),
+                sections_requiring_more_research=data.get("sections_requiring_more_research", []),
                 reasoning=data.get("reasoning", ""),
             )
 
@@ -442,23 +493,54 @@ Be critical and honest."""
             )
         except Exception as e:
             logger.error(f"Self-reflection failed: {e}")
-            return ReflectionResult(
-                is_high_quality=False,
-                confidence_score=0.5,
-                coverage_score=0.5,
-                reasoning=f"Reflection failed: {e}",
-            )
+            return self._heuristic_evaluation(synthesis, research_plan, insights)
+
+    def _heuristic_evaluation(
+        self, synthesis: str, research_plan: ResearchPlan, insights: list[dict]
+    ) -> ReflectionResult:
+        """Fallback quality evaluation without an LLM."""
+        synthesis_lower = synthesis.lower()
+        answered = 0
+        for question in research_plan.sub_questions:
+            tokens = [token for token in question.lower().split() if len(token) > 4]
+            if tokens and any(token in synthesis_lower for token in tokens[:3]):
+                answered += 1
+
+        coverage_score = (
+            answered / len(research_plan.sub_questions) if research_plan.sub_questions else 0.5
+        )
+        avg_conf = (
+            sum(float(i.get("confidence", 0.5)) for i in insights) / len(insights)
+            if insights
+            else 0.4
+        )
+        length_bonus = min(0.2, len(synthesis.split()) / 400)
+        confidence_score = round(min(1.0, (avg_conf * 0.7) + length_bonus), 3)
+        missing_areas = []
+        if coverage_score < 0.75:
+            missing_areas.extend(research_plan.sub_questions[answered:])
+
+        return ReflectionResult(
+            is_high_quality=confidence_score >= self.min_quality_threshold
+            and coverage_score >= 0.7,
+            confidence_score=confidence_score,
+            coverage_score=round(coverage_score, 3),
+            missing_areas=missing_areas,
+            follow_up_queries=research_plan.search_priority[1:3] if missing_areas else [],
+            sections_requiring_more_research=missing_areas[:2],
+            reasoning="Heuristic reflection fallback used because no planning LLM was available.",
+        )
 
 
 class StructuredReportBuilder:
-    """
-    Builds multi-section structured reports with per-section citations.
+    """Builds multi-section structured reports with per-section citations.
 
     Replaces simple prose synthesis with organized, cited sections.
     """
 
     def __init__(self, llm_provider: str | None = None, llm_model: str | None = None):
-        self.llm = get_llm(provider=llm_provider, model=llm_model)
+        """Initialize the report builder with an optional LLM backend."""
+        self.llm = _safe_get_llm(llm_provider=llm_provider, llm_model=llm_model)
 
     def build_report(
         self,
@@ -467,8 +549,7 @@ class StructuredReportBuilder:
         research_plan: ResearchPlan,
         visited_urls: set[str],
     ) -> dict:
-        """
-        Build a structured multi-section report.
+        """Build a structured multi-section report.
 
         Args:
             query: Original query
@@ -540,6 +621,9 @@ Format response as JSON:
 }}
 
 Be comprehensive and well-organized."""
+
+        if self.llm is None:
+            return self._heuristic_report(query, insights, research_plan, visited_urls)
 
         try:
             response = self.llm.invoke(prompt)
@@ -615,33 +699,62 @@ Be comprehensive and well-organized."""
             }
         except Exception as e:
             logger.error(f"Report building failed: {e}")
-            return {
-                "title": f"Research Report: {query}",
-                "executive_summary": f"Error: {e}",
-                "sections": [],
-                "source_summary": {
-                    "total_sources": len(visited_urls),
-                    "sources": list(visited_urls),
-                },
-                "confidence_overall": 0.0,
-                "generated_at": datetime.now().isoformat(),
+            return self._heuristic_report(query, insights, research_plan, visited_urls)
+
+    def _heuristic_report(
+        self,
+        query: str,
+        insights: list[dict],
+        research_plan: ResearchPlan,
+        visited_urls: set[str],
+    ) -> dict:
+        """Fallback report builder used when no report LLM is available."""
+        top_insights = insights[:3]
+        sections = [
+            {
+                "heading": "Research Overview",
+                "content": "\n".join(f"- {insight.get('content', '')}" for insight in top_insights)
+                or "No structured insights were available.",
+                "confidence": (
+                    round(
+                        sum(float(i.get("confidence", 0.5)) for i in top_insights)
+                        / len(top_insights),
+                        3,
+                    )
+                    if top_insights
+                    else 0.3
+                ),
+                "citations": [i.get("source_url", "") for i in top_insights if i.get("source_url")],
             }
+        ]
+        return {
+            "title": f"Research Report: {research_plan.main_question or query}",
+            "executive_summary": "Heuristic report generated without an external planning model.",
+            "sections": sections,
+            "conclusion": "Use the cited insights as the primary evidence base.",
+            "further_research": "Collect additional verified sources for deeper coverage.",
+            "source_summary": {
+                "total_sources": len(visited_urls),
+                "sources": sorted(list(visited_urls)),
+            },
+            "confidence_overall": sections[0]["confidence"] if sections else 0.3,
+            "generated_at": datetime.now().isoformat(),
+        }
 
 
 class ResearchSessionPersistence:
-    """
-    Save and restore research sessions for resumability.
+    """Save and restore research sessions for resumability.
 
     Enables pausing and resuming long research operations.
     """
 
     def __init__(self, session_dir: Path = Path("./research_sessions")):
+        """Initialize the persistence layer and ensure the session directory exists."""
         self.session_dir = Path(session_dir)
-        self.session_dir.mkdir(exist_ok=True)
+        self.session_dir.mkdir(parents=True, exist_ok=True)
 
     def save_session(self, session_id: str, session_data: dict) -> Path:
-        """
-        Save a research session to disk.
+        """Save a research session to disk.
 
         Args:
             session_id: Unique session identifier
@@ -665,8 +778,7 @@ class ResearchSessionPersistence:
             raise
 
     def load_session(self, session_id: str) -> dict | None:
-        """
-        Load a research session from disk.
+        """Load a research session from disk.
 
         Args:
             session_id: Unique session identifier

@@ -19,11 +19,22 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 from ..claim_disagreement import ClaimDisagreementEngine, summarize_claim_verdicts
 from .knowledge import add_document, search_knowledge
 from .llm_factory import get_llm
+from .research_optimizer import (
+    PriorityRanker,
+    ResearchPlan,
+    ResearchPlanner,
+    ResearchSessionPersistence,
+    SearchBudget,
+    SelfReflectionEvaluator,
+    StructuredReportBuilder,
+)
 from .source_verification import SourceVerification, verify_source
 
 logger = logging.getLogger(__name__)
@@ -33,6 +44,8 @@ FACTUAL_SIGNAL_RE = re.compile(
     r"increas\w*|rising|falling|aquifer)\b",
     re.IGNORECASE,
 )
+BASE_DIR = Path(__file__).resolve().parents[2]
+RESEARCH_SESSION_DIR = BASE_DIR / "outputs" / "research" / "sessions"
 
 
 def _llm_invoke_with_retry(llm, prompt: str, retries: int = 2) -> str:
@@ -115,6 +128,7 @@ class ResearchContext:
     """Tracks the state of a research session."""
 
     original_query: str
+    session_id: str = ""
     current_query: str = ""
     insights: list[ResearchInsight] = field(default_factory=list)
     visited_urls: set[str] = field(default_factory=set)
@@ -122,13 +136,21 @@ class ResearchContext:
     current_depth: int = 0
     max_depth: int = 3
     search_history: list[str] = field(default_factory=list)
+    research_plan: dict[str, Any] = field(default_factory=dict)
+    checkpoints: list[dict[str, Any]] = field(default_factory=list)
+    tool_trace: list[dict[str, Any]] = field(default_factory=list)
+    search_budget: SearchBudget = field(default_factory=SearchBudget)
+    recommended_views: list[str] = field(default_factory=list)
+    chart_specs: list[dict[str, Any]] = field(default_factory=list)
+    partial_completion_available: bool = False
+    phase: str = "planning"
 
     # Timeout and stop controls
     start_time: float = field(default_factory=time.time)
     timeout_seconds: float = 300.0  # 5 minutes default
     stop_requested: bool = False
     status: str = "idle"
-    progress_callback: Callable[[str, float], None] | None = None
+    progress_callback: Callable[..., None] | None = None
 
     def add_insight(self, insight: ResearchInsight) -> None:
         """Add an insight, avoiding duplicates. Only add verified insights."""
@@ -182,12 +204,14 @@ class ResearchContext:
         self.status = "stop_requested"
         logger.info("Stop requested by user")
 
-    def update_progress(self, message: str) -> None:
+    def update_progress(self, message: str, snapshot: dict[str, Any] | None = None) -> None:
         """Update progress via callback if set."""
         progress = min(1.0, self.current_depth / self.max_depth)
         self.status = message
         if self.progress_callback:
             try:
+                self.progress_callback(message, progress, snapshot or {})
+            except TypeError:
                 self.progress_callback(message, progress)
             except Exception as e:
                 logger.error(f"Progress callback error: {e}")
@@ -215,6 +239,10 @@ class DeepResearchAgent:
         auto_learn: bool = True,
         min_confidence_for_learning: float = 0.7,
         timeout_seconds: float = 300.0,  # 5 minutes default
+        enable_planning: bool = True,
+        enable_reflection: bool = True,
+        enable_budget_management: bool = True,
+        enable_persistence: bool = True,
     ):
         """Initialize the Deep Research Agent.
 
@@ -227,6 +255,10 @@ class DeepResearchAgent:
             auto_learn: Whether to automatically add verified insights to knowledge base
             min_confidence_for_learning: Minimum confidence for auto-learning (0.0-1.0)
             timeout_seconds: Maximum time for research in seconds (default 5 min)
+            enable_planning: Build a structured research plan before searching.
+            enable_reflection: Evaluate coverage quality during and after research.
+            enable_budget_management: Track search/tool budgets and stop if exhausted.
+            enable_persistence: Persist checkpoints and session snapshots to disk.
         """
         self.max_depth = max_depth
         self.max_results_per_search = max_results_per_search
@@ -234,6 +266,10 @@ class DeepResearchAgent:
         self.auto_learn = auto_learn
         self.min_confidence_for_learning = min_confidence_for_learning
         self.timeout_seconds = timeout_seconds
+        self.enable_planning = enable_planning
+        self.enable_reflection = enable_reflection
+        self.enable_budget_management = enable_budget_management
+        self.enable_persistence = enable_persistence
         self.claim_disagreement_engine = ClaimDisagreementEngine()
 
         # Active research context (for stop control)
@@ -241,7 +277,22 @@ class DeepResearchAgent:
         self._research_lock = threading.Lock()
 
         # Initialize LLM
-        self.llm = get_llm(provider=llm_provider, model=llm_model)
+        try:
+            self.llm = get_llm(provider=llm_provider, model=llm_model)
+        except Exception as exc:
+            logger.warning(
+                "DeepResearchAgent LLM unavailable; using deterministic fallbacks: %s", exc
+            )
+            self.llm = None
+
+        self.planner = ResearchPlanner(llm_provider=llm_provider, llm_model=llm_model)
+        self.ranker = PriorityRanker(llm_provider=llm_provider, llm_model=llm_model)
+        self.reflector = SelfReflectionEvaluator(llm_provider=llm_provider, llm_model=llm_model)
+        self.report_builder = StructuredReportBuilder(
+            llm_provider=llm_provider, llm_model=llm_model
+        )
+        self.persistence = ResearchSessionPersistence(RESEARCH_SESSION_DIR)
+        self.search_budget = self._create_search_budget(max_depth, timeout_seconds)
 
         # Web search availability
         self._ddg_available = False
@@ -297,12 +348,177 @@ class DeepResearchAgent:
                 }
             return {"running": False, "status": "idle"}
 
+    def list_sessions(self) -> list[str]:
+        """List saved research sessions."""
+        return self.persistence.list_sessions()
+
+    def get_search_budget_status(self) -> dict[str, Any]:
+        """Return current or default search-budget status."""
+        budget = self._active_context.search_budget if self._active_context else self.search_budget
+        return {
+            "web_searches_used": budget.web_searches_used,
+            "web_searches_max": budget.max_web_searches,
+            "kb_searches_used": budget.kb_searches_used,
+            "kb_searches_max": budget.max_kb_searches,
+            "api_calls_used": budget.api_calls_used,
+            "api_calls_max": budget.max_api_calls,
+            "total_cost": budget.total_cost,
+            "remaining_budget": budget.remaining_budget(),
+        }
+
+    def _create_search_budget(self, max_depth: int, timeout_seconds: float) -> SearchBudget:
+        """Create a budget tuned to the current research effort."""
+        depth = max(1, int(max_depth))
+        return SearchBudget(
+            max_web_searches=max(3, depth * 2 + 2),
+            max_kb_searches=max(6, depth * 4),
+            max_api_calls=max(10, depth * 6),
+            max_total_cost=max(5.0, min(15.0, timeout_seconds / 20)),
+            cost_per_web_search=0.05,
+            cost_per_kb_search=0.0,
+            cost_per_api_call=0.005,
+        )
+
+    def _build_research_plan(self, query: str, depth: int) -> dict[str, Any]:
+        """Create a lightweight research plan for the current query."""
+        plan: ResearchPlan = self.planner.plan_research(query, domain="groundwater")
+        plan_dict = plan.to_dict()
+        plan_dict["recommended_tools"] = self._recommend_tools(query)
+        plan_dict["expected_outputs"] = [
+            "source-backed report",
+            "claim citations",
+            "budget trace",
+            "checkpoint history",
+        ]
+        plan_dict["effort_level"] = "deep" if depth >= 4 else "moderate" if depth >= 2 else "quick"
+        return plan_dict
+
+    def _recommend_tools(self, query: str) -> list[str]:
+        """Heuristically recommend tool families for the session."""
+        query_lower = query.lower()
+        tools = ["knowledge_base_search"]
+        if self.use_web_search:
+            tools.append("web_search")
+        if any(term in query_lower for term in ["trend", "compare", "change", "long-term"]):
+            tools.append("trend_analysis")
+        if any(term in query_lower for term in ["season", "wet", "dry"]):
+            tools.append("seasonal_analysis")
+        if any(term in query_lower for term in ["anomal", "outlier", "extreme"]):
+            tools.append("anomaly_scan")
+        if any(term in query_lower for term in ["aquifer", "site", "well", "county"]):
+            tools.append("cohort_summary")
+        return list(dict.fromkeys(tools))
+
+    def _budget_status(self, context: ResearchContext) -> dict[str, Any]:
+        """Build a serializable budget snapshot for the session."""
+        budget = context.search_budget
+        return {
+            "max_depth": context.max_depth,
+            "depth_reached": context.current_depth,
+            "elapsed_seconds": round(context.elapsed_time(), 2),
+            "remaining_seconds": round(context.remaining_time(), 2),
+            "insights_gathered": len(context.insights),
+            "web_searches_used": budget.web_searches_used,
+            "web_searches_max": budget.max_web_searches,
+            "kb_searches_used": budget.kb_searches_used,
+            "kb_searches_max": budget.max_kb_searches,
+            "api_calls_used": budget.api_calls_used,
+            "api_calls_max": budget.max_api_calls,
+            "total_cost": budget.total_cost,
+            "remaining_budget": budget.remaining_budget(),
+            "status": context.status,
+            "continuing": (
+                context.current_depth < context.max_depth
+                and not context.stop_requested
+                and not context.is_timed_out()
+            ),
+            "timed_out": context.is_timed_out(),
+            "partial_completion_available": context.partial_completion_available,
+        }
+
+    def _progress_snapshot(self, context: ResearchContext) -> dict[str, Any]:
+        """Build a snapshot for live progress streaming."""
+        return {
+            "session_id": context.session_id,
+            "phase": context.phase,
+            "research_plan": context.research_plan,
+            "budget_status": self._budget_status(context),
+            "checkpoints": context.checkpoints[-5:],
+            "tool_trace": context.tool_trace[-10:],
+        }
+
+    def _persist_session_state(self, context: ResearchContext) -> None:
+        """Persist session state for resumability and debugging."""
+        if not self.enable_persistence:
+            return
+        self.persistence.save_session(
+            context.session_id,
+            {
+                "session_id": context.session_id,
+                "query": context.original_query,
+                "current_query": context.current_query,
+                "phase": context.phase,
+                "status": context.status,
+                "max_depth": context.max_depth,
+                "depth_reached": context.current_depth,
+                "research_plan": context.research_plan,
+                "search_history": context.search_history,
+                "checkpoints": context.checkpoints,
+                "tool_trace": context.tool_trace,
+                "budget_status": self._budget_status(context),
+                "visited_urls": sorted(list(context.visited_urls)),
+                "insights": [insight.to_dict() for insight in context.insights],
+            },
+        )
+
+    def _save_checkpoint(
+        self,
+        context: ResearchContext,
+        stage: str,
+        summary: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Append and persist a session checkpoint."""
+        checkpoint = {
+            "checkpoint_id": f"cp_{len(context.checkpoints) + 1:03d}",
+            "timestamp": datetime.now().isoformat(),
+            "stage": stage,
+            "summary": summary,
+            "depth": context.current_depth,
+            "phase": context.phase,
+            "status": context.status,
+            "insights_gathered": len(context.insights),
+            "budget_status": self._budget_status(context),
+            "details": details or {},
+        }
+        context.checkpoints.append(checkpoint)
+        self._persist_session_state(context)
+
+    def _record_tool_event(
+        self,
+        context: ResearchContext,
+        tool_name: str,
+        status: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Track observable tool usage for the frontend demo surface."""
+        event = {
+            "timestamp": datetime.now().isoformat(),
+            "phase": context.phase,
+            "depth": context.current_depth,
+            "tool": tool_name,
+            "status": status,
+            "details": details or {},
+        }
+        context.tool_trace.append(event)
+        context.tool_trace = context.tool_trace[-50:]
+
     def research(
         self,
         query: str,
         max_depth: int | None = None,
         timeout: float | None = None,
-        progress_callback: Callable[[str, float], None] | None = None,
+        progress_callback: Callable[..., None] | None = None,
     ) -> dict[str, Any]:
         """Conduct deep research on a query.
 
@@ -317,13 +533,21 @@ class DeepResearchAgent:
         """
         depth = max_depth or self.max_depth
         timeout_secs = timeout or self.timeout_seconds
+        session_id = f"research_{uuid4().hex[:12]}"
+        research_plan = self._build_research_plan(query, depth)
+        search_budget = self._create_search_budget(depth, timeout_secs)
+        self.search_budget = search_budget
 
         context = ResearchContext(
             original_query=query,
+            session_id=session_id,
             current_query=query,
             max_depth=depth,
             timeout_seconds=timeout_secs,
             progress_callback=progress_callback,
+            research_plan=research_plan,
+            search_budget=search_budget,
+            recommended_views=["report", "citations", "tool_trace", "budget"],
         )
 
         # Register active context for stop control
@@ -332,14 +556,32 @@ class DeepResearchAgent:
 
         try:
             logger.info(f"Starting deep research: {query} (timeout: {timeout_secs}s)")
-            context.update_progress("Starting research...")
+            context.phase = "planning"
+            context.status = "starting"
+            self._save_checkpoint(
+                context,
+                stage="planning",
+                summary="Created research session and initial plan.",
+                details={"research_plan": research_plan},
+            )
+            context.update_progress("Starting research...", self._progress_snapshot(context))
 
             # Execute research graph
             try:
                 self._research_graph(context)
             except Exception as e:
                 logger.error("Research graph execution failed: %s", e)
-                context.update_progress("Research graph failed; returning partial output.")
+                context.partial_completion_available = bool(context.insights)
+                self._save_checkpoint(
+                    context,
+                    stage="runtime_error",
+                    summary="Research graph failed; returning partial output.",
+                    details={"error": str(e)},
+                )
+                context.update_progress(
+                    "Research graph failed; returning partial output.",
+                    self._progress_snapshot(context),
+                )
 
             # Check if we were stopped
             claim_citations, citation_summary = self._build_claim_citations(context.insights)
@@ -349,36 +591,79 @@ class DeepResearchAgent:
             claim_verdict_summary = summarize_claim_verdicts(claim_verdicts)
 
             if context.stop_requested:
-                context.update_progress("Research stopped by user")
+                context.phase = "stopped"
+                context.partial_completion_available = bool(context.insights)
+                context.update_progress(
+                    "Research stopped by user", self._progress_snapshot(context)
+                )
                 report = (
                     self._synthesize_report(context, claim_citations, claim_verdicts)
                     if context.insights
                     else "Research was stopped before completion."
                 )
             elif context.is_timed_out():
-                context.update_progress("Research timed out")
+                context.phase = "timed_out"
+                context.partial_completion_available = bool(context.insights)
+                context.update_progress("Research timed out", self._progress_snapshot(context))
                 report = (
                     self._synthesize_report(context, claim_citations, claim_verdicts)
                     if context.insights
                     else "Research timed out before completion."
                 )
             else:
-                context.update_progress("Synthesizing report...")
+                context.phase = "synthesizing"
+                context.update_progress("Synthesizing report...", self._progress_snapshot(context))
                 report = self._synthesize_report(context, claim_citations, claim_verdicts)
 
             # Auto-learn: Add high-confidence insights to knowledge base
             learned_count = 0
             if self.auto_learn and context.insights:
-                context.update_progress("Saving learnings...")
+                context.phase = "learning"
+                context.update_progress("Saving learnings...", self._progress_snapshot(context))
                 learned_count = self._save_learnings(context)
 
             report, removed_factual_sentences = self._strip_uncited_factual_sentences(report)
 
-            context.update_progress("Complete")
+            if context.insights and self.enable_reflection:
+                provisional_synthesis = "\n".join(insight.content for insight in context.insights)
+                plan_data = context.research_plan
+                reflection = self.reflector.evaluate_synthesis(
+                    provisional_synthesis,
+                    ResearchPlan(
+                        original_query=plan_data.get("original_query", context.original_query),
+                        main_question=plan_data.get("main_question", context.original_query),
+                        sub_questions=plan_data.get("sub_questions", []),
+                        research_areas=plan_data.get("research_areas", []),
+                        expected_sections=plan_data.get("expected_sections", []),
+                        search_priority=plan_data.get("search_priority", [context.original_query]),
+                        estimated_depth=plan_data.get("estimated_depth", context.max_depth),
+                    ),
+                    [insight.to_dict() for insight in context.insights],
+                )
+                self._record_tool_event(
+                    context,
+                    "self_reflection",
+                    "completed",
+                    {
+                        "confidence_score": reflection.confidence_score,
+                        "coverage_score": reflection.coverage_score,
+                        "is_high_quality": reflection.is_high_quality,
+                    },
+                )
+            context.phase = "complete"
+            context.update_progress("Complete", self._progress_snapshot(context))
             context.status = "complete"
+            self._save_checkpoint(
+                context,
+                stage="complete",
+                summary="Research session completed.",
+                details={"removed_uncited_factual_sentences": removed_factual_sentences},
+            )
 
             return {
+                "session_id": context.session_id,
                 "query": query,
+                "research_plan": context.research_plan,
                 "insights": [i.to_dict() for i in context.insights],
                 "search_history": context.search_history,
                 "depth_reached": context.current_depth,
@@ -388,6 +673,11 @@ class DeepResearchAgent:
                 "elapsed_seconds": context.elapsed_time(),
                 "stopped": context.stop_requested,
                 "timed_out": context.is_timed_out(),
+                "budget_status": self._budget_status(context),
+                "checkpoints": context.checkpoints,
+                "tool_trace": context.tool_trace,
+                "recommended_views": context.recommended_views,
+                "chart_specs": context.chart_specs,
                 "claim_citations": claim_citations,
                 "claim_verdicts": claim_verdicts,
                 "claim_verdict_summary": claim_verdict_summary,
@@ -482,23 +772,42 @@ Date: {insight.timestamp.isoformat()}
             context.current_depth += 1
             elapsed = context.elapsed_time()
             remaining = context.remaining_time()
+            context.phase = "research_loop"
 
             context.update_progress(
                 f"Depth {context.current_depth}/{context.max_depth} "
-                f"({elapsed:.0f}s elapsed, {remaining:.0f}s remaining)"
+                f"({elapsed:.0f}s elapsed, {remaining:.0f}s remaining)",
+                self._progress_snapshot(context),
             )
             logger.info(
                 f"Research depth: {context.current_depth}/{context.max_depth} "
                 f"[{elapsed:.1f}s elapsed, {remaining:.1f}s remaining]"
             )
+            self._save_checkpoint(
+                context,
+                stage="depth_start",
+                summary=f"Starting depth {context.current_depth}.",
+            )
 
             # Check timeout before expensive operations
             if context.is_stopped():
                 break
+            if self.enable_budget_management and context.search_budget.remaining_budget() <= 0:
+                context.status = "budget_exhausted"
+                self._save_checkpoint(
+                    context,
+                    stage="budget_exhausted",
+                    summary="Stopped research because the search budget was exhausted.",
+                )
+                break
 
             # Step 1: Optimize query based on current context
             if context.current_depth > 1:
-                context.update_progress(f"Optimizing query (depth {context.current_depth})...")
+                context.phase = "query_optimization"
+                context.update_progress(
+                    f"Optimizing query (depth {context.current_depth})...",
+                    self._progress_snapshot(context),
+                )
                 context.current_query = self._generate_optimized_query(context)
                 if context.is_stopped():
                     break
@@ -506,7 +815,11 @@ Date: {insight.timestamp.isoformat()}
             context.search_history.append(context.current_query)
 
             # Step 2: Search multiple sources
-            context.update_progress(f"Searching: {context.current_query[:50]}...")
+            context.phase = "searching"
+            context.update_progress(
+                f"Searching: {context.current_query[:50]}...",
+                self._progress_snapshot(context),
+            )
             results = self._search(context.current_query, context)
             if context.is_stopped():
                 break
@@ -516,7 +829,11 @@ Date: {insight.timestamp.isoformat()}
                 break
 
             # Step 3: Extract insights from results
-            context.update_progress(f"Extracting insights from {len(results)} results...")
+            context.phase = "extracting_insights"
+            context.update_progress(
+                f"Extracting insights from {len(results)} results...",
+                self._progress_snapshot(context),
+            )
             new_insights = self._extract_insights(results, context)
             if context.is_stopped():
                 break
@@ -524,26 +841,77 @@ Date: {insight.timestamp.isoformat()}
             for insight in new_insights:
                 context.add_insight(insight)
 
-            context.update_progress(f"Found {len(context.insights)} total insights")
+            context.partial_completion_available = bool(context.insights)
+            self._save_checkpoint(
+                context,
+                stage="insight_update",
+                summary=f"Collected {len(new_insights)} new insights.",
+                details={
+                    "new_insights": len(new_insights),
+                    "total_insights": len(context.insights),
+                },
+            )
+            context.update_progress(
+                f"Found {len(context.insights)} total insights",
+                self._progress_snapshot(context),
+            )
 
             # Step 4: Check if we have enough information
             if self._is_research_complete(context):
                 logger.info("Research complete - sufficient insights gathered")
+                self._save_checkpoint(
+                    context,
+                    stage="research_complete",
+                    summary="Research loop finished because coverage was sufficient.",
+                )
                 break
 
             # Step 5: Generate follow-up queries for next iteration
             if context.should_continue():
-                context.update_progress("Generating follow-up queries...")
+                context.phase = "follow_up_generation"
+                context.update_progress(
+                    "Generating follow-up queries...",
+                    self._progress_snapshot(context),
+                )
                 follow_ups = self._generate_follow_ups(context)
                 if context.is_stopped():
                     break
                 if follow_ups:
                     context.current_query = follow_ups[0]
+                    self._save_checkpoint(
+                        context,
+                        stage="follow_up_selected",
+                        summary="Selected follow-up query for next depth.",
+                        details={"next_query": context.current_query, "candidates": follow_ups},
+                    )
                 else:
                     break
 
     def _generate_optimized_query(self, context: ResearchContext) -> str:
         """Generate an optimized search query based on current research state."""
+        self._record_tool_event(
+            context,
+            "query_optimizer",
+            "started",
+            {"previous_queries": len(context.search_history)},
+        )
+        if self.llm is None:
+            query = next(
+                (
+                    candidate
+                    for candidate in context.research_plan.get("search_priority", [])
+                    if candidate not in context.search_history
+                ),
+                context.original_query,
+            )
+            self._record_tool_event(
+                context,
+                "query_optimizer",
+                "completed",
+                {"mode": "heuristic", "query": query},
+            )
+            return query
+
         prompt = f"""You are a research query optimizer for groundwater science.
 
 Original research question: {context.original_query}
@@ -563,9 +931,22 @@ The query should:
 Return ONLY the search query, nothing else."""
 
         try:
-            return _llm_invoke_with_retry(self.llm, prompt).strip().strip("\"'")
+            query = _llm_invoke_with_retry(self.llm, prompt).strip().strip("\"'")
+            self._record_tool_event(
+                context,
+                "query_optimizer",
+                "completed",
+                {"mode": "llm", "query": query},
+            )
+            return query
         except Exception as e:
             logger.error(f"Query optimization failed: {e}")
+            self._record_tool_event(
+                context,
+                "query_optimizer",
+                "failed",
+                {"error": str(e)},
+            )
             return context.original_query
 
     def _search(self, query: str, context: ResearchContext) -> list[SearchResult]:
@@ -574,7 +955,14 @@ Return ONLY the search query, nothing else."""
 
         # Search local knowledge base first
         try:
+            context.search_budget.record_kb_search()
             kb_docs = search_knowledge(query, k=3, score_threshold=0.0)
+            self._record_tool_event(
+                context,
+                "knowledge_base_search",
+                "completed",
+                {"query": query, "result_count": len(kb_docs)},
+            )
             for doc in kb_docs:
                 results.append(
                     SearchResult(
@@ -586,15 +974,59 @@ Return ONLY the search query, nothing else."""
                 )
         except Exception as e:
             logger.error(f"Knowledge base search failed: {e}")
+            self._record_tool_event(
+                context,
+                "knowledge_base_search",
+                "failed",
+                {"query": query, "error": str(e)},
+            )
 
         # Web search if available
-        if self._ddg_available and self.use_web_search:
+        if (
+            self._ddg_available
+            and self.use_web_search
+            and (not self.enable_budget_management or context.search_budget.can_do_web_search())
+        ):
             try:
                 web_results = self._search_web(query, context)
                 if web_results:
                     results.extend(web_results)
             except Exception as e:
                 logger.error(f"Web search failed: {e}")
+                self._record_tool_event(
+                    context,
+                    "web_search",
+                    "failed",
+                    {"query": query, "error": str(e)},
+                )
+
+        if results and self.ranker is not None:
+            ranked = self.ranker.rank_results(
+                [
+                    {
+                        "title": result.title,
+                        "url": result.url,
+                        "snippet": result.snippet,
+                        "source": result.source,
+                    }
+                    for result in results
+                ],
+                query,
+                context.original_query,
+            )
+            score_by_url = {item.url: item for item in ranked}
+            results.sort(
+                key=lambda item: (
+                    score_by_url.get(item.url).combined_score if item.url in score_by_url else 0.0
+                ),
+                reverse=True,
+            )
+            self._record_tool_event(
+                context,
+                "priority_ranker",
+                "completed",
+                {"query": query, "result_count": len(results)},
+            )
 
         return results
 
@@ -607,9 +1039,16 @@ Return ONLY the search query, nothing else."""
         try:
             # Add groundwater context to query
             enhanced_query = f"groundwater hydrogeology {query}"
+            context.search_budget.record_web_search()
 
             search_results = self._ddg.text(enhanced_query, max_results=self.max_results_per_search)
             if not search_results:
+                self._record_tool_event(
+                    context,
+                    "web_search",
+                    "completed",
+                    {"query": enhanced_query, "result_count": 0},
+                )
                 return []
 
             for result in search_results:
@@ -637,8 +1076,20 @@ Return ONLY the search query, nothing else."""
                         logger.warning(
                             f"✗ Rejected unverified source: {url} - {verification.reason}"
                         )
+            self._record_tool_event(
+                context,
+                "web_search",
+                "completed",
+                {"query": enhanced_query, "result_count": len(results)},
+            )
         except Exception as e:
             logger.error(f"DuckDuckGo search error: {e}")
+            self._record_tool_event(
+                context,
+                "web_search",
+                "failed",
+                {"query": query, "error": str(e)},
+            )
             return []
 
         return results
@@ -655,6 +1106,12 @@ Return ONLY the search query, nothing else."""
 
         if not verified_results:
             logger.warning("No verified sources to extract insights from")
+            self._record_tool_event(
+                context,
+                "insight_extractor",
+                "completed",
+                {"verified_results": 0, "insights": 0},
+            )
             return []
 
         # Prepare content for analysis
@@ -691,10 +1148,26 @@ SOURCE: [source url or title]
 Extract up to 3 insights. Only include genuinely useful information."""
 
         try:
-            content = _llm_invoke_with_retry(self.llm, prompt)
-            return self._parse_insights(content, results)
+            if self.llm is None:
+                insights = self._heuristic_insights(verified_results)
+            else:
+                content = _llm_invoke_with_retry(self.llm, prompt)
+                insights = self._parse_insights(content, results)
+            self._record_tool_event(
+                context,
+                "insight_extractor",
+                "completed",
+                {"verified_results": len(verified_results), "insights": len(insights)},
+            )
+            return insights
         except Exception as e:
             logger.error(f"Insight extraction failed: {e}")
+            self._record_tool_event(
+                context,
+                "insight_extractor",
+                "failed",
+                {"error": str(e)},
+            )
             return []
 
     def _parse_insights(
@@ -724,6 +1197,29 @@ Extract up to 3 insights. Only include genuinely useful information."""
         if current_insight.get("content"):
             insights.append(self._create_insight(current_insight, results))
 
+        return insights
+
+    def _heuristic_insights(self, results: list[SearchResult]) -> list[ResearchInsight]:
+        """Fallback insight extraction when no synthesis LLM is available."""
+        insights: list[ResearchInsight] = []
+        for result in results[:3]:
+            snippet = (result.snippet or "").strip()
+            sentence = re.split(r"(?<=[.!?])\s+", snippet)[0].strip() if snippet else ""
+            content = sentence or result.title or "Relevant groundwater source identified."
+            trust_level = (
+                result.verification.trust_level.value
+                if result.verification is not None
+                else "verified"
+            )
+            insights.append(
+                ResearchInsight(
+                    content=content[:280],
+                    source_url=result.url,
+                    confidence=0.72 if result.source == "knowledge_base" else 0.66,
+                    verified=result.source == "knowledge_base" or result.is_verified,
+                    trust_level=trust_level,
+                )
+            )
         return insights
 
     def _create_insight(self, data: dict, results: list[SearchResult]) -> ResearchInsight:
@@ -772,6 +1268,26 @@ Extract up to 3 insights. Only include genuinely useful information."""
 
     def _generate_follow_ups(self, context: ResearchContext) -> list[str]:
         """Generate follow-up queries based on current research state."""
+        self._record_tool_event(
+            context,
+            "follow_up_generator",
+            "started",
+            {"search_history_count": len(context.search_history)},
+        )
+        if self.llm is None:
+            follow_ups = [
+                candidate
+                for candidate in context.research_plan.get("search_priority", [])[1:]
+                if candidate not in context.search_history
+            ]
+            self._record_tool_event(
+                context,
+                "follow_up_generator",
+                "completed",
+                {"mode": "heuristic", "follow_ups": follow_ups[:2]},
+            )
+            return follow_ups[:2]
+
         prompt = f"""You are a research assistant identifying knowledge gaps.
 
 Original question: {context.original_query}
@@ -806,9 +1322,22 @@ If the research seems complete, respond with: COMPLETE"""
                     if query and query not in context.search_history:
                         follow_ups.append(query)
 
-            return follow_ups[:2]
+            follow_ups = follow_ups[:2]
+            self._record_tool_event(
+                context,
+                "follow_up_generator",
+                "completed",
+                {"mode": "llm", "follow_ups": follow_ups},
+            )
+            return follow_ups
         except Exception as e:
             logger.error(f"Follow-up generation failed: {e}")
+            self._record_tool_event(
+                context,
+                "follow_up_generator",
+                "failed",
+                {"error": str(e)},
+            )
             return []
 
     def _is_research_complete(self, context: ResearchContext) -> bool:
@@ -816,6 +1345,35 @@ If the research seems complete, respond with: COMPLETE"""
         # Need at least some insights
         if len(context.insights) < 2:
             return False
+
+        if self.enable_reflection and context.current_depth >= 2:
+            plan_data = context.research_plan
+            research_plan = ResearchPlan(
+                original_query=plan_data.get("original_query", context.original_query),
+                main_question=plan_data.get("main_question", context.original_query),
+                sub_questions=plan_data.get("sub_questions", []),
+                research_areas=plan_data.get("research_areas", []),
+                expected_sections=plan_data.get("expected_sections", []),
+                search_priority=plan_data.get("search_priority", [context.original_query]),
+                estimated_depth=plan_data.get("estimated_depth", context.max_depth),
+            )
+            reflection = self.reflector.evaluate_synthesis(
+                "\n".join(insight.content for insight in context.insights),
+                research_plan,
+                [insight.to_dict() for insight in context.insights],
+            )
+            self._record_tool_event(
+                context,
+                "self_reflection",
+                "completed",
+                {
+                    "confidence_score": reflection.confidence_score,
+                    "coverage_score": reflection.coverage_score,
+                    "is_high_quality": reflection.is_high_quality,
+                },
+            )
+            if reflection.is_high_quality and reflection.coverage_score >= 0.65:
+                return True
 
         # Check if high-confidence insights exist
         high_confidence = [i for i in context.insights if i.confidence >= 0.7]
@@ -895,7 +1453,7 @@ If the research seems complete, respond with: COMPLETE"""
 
         # Build a claim_id → verdict lookup for O(1) access below.
         verdict_by_claim: dict[str, str] = {}
-        for v in (claim_verdicts or []):
+        for v in claim_verdicts or []:
             cid = str(v.get("claim_id", ""))
             if cid:
                 verdict_by_claim[cid] = str(v.get("verdict", "")).lower()
@@ -1004,9 +1562,36 @@ If the research seems complete, respond with: COMPLETE"""
         if not context.insights:
             return "No insights were gathered during research. Try a different query."
 
+        if self.llm is None:
+            overview = self.report_builder.build_report(
+                context.original_query,
+                [insight.to_dict() for insight in context.insights],
+                ResearchPlan(
+                    original_query=context.research_plan.get(
+                        "original_query", context.original_query
+                    ),
+                    main_question=context.research_plan.get(
+                        "main_question", context.original_query
+                    ),
+                    sub_questions=context.research_plan.get("sub_questions", []),
+                    research_areas=context.research_plan.get("research_areas", []),
+                    expected_sections=context.research_plan.get("expected_sections", []),
+                    search_priority=context.research_plan.get(
+                        "search_priority", [context.original_query]
+                    ),
+                    estimated_depth=context.research_plan.get("estimated_depth", context.max_depth),
+                ),
+                context.visited_urls,
+            )
+            lines = [overview.get("executive_summary", "").strip()]
+            for section in overview.get("sections", []):
+                lines.append(f"## {section.get('heading', 'Overview')}")
+                lines.append(section.get("content", "").strip())
+            return "\n\n".join(line for line in lines if line)
+
         # Build a verdict lookup: claim_id → verdict string
         verdict_map: dict[str, str] = {}
-        for v in (claim_verdicts or []):
+        for v in claim_verdicts or []:
             cid = str(v.get("claim_id", ""))
             if cid:
                 verdict_map[cid] = str(v.get("verdict", "")).lower()
@@ -1014,7 +1599,8 @@ If the research seems complete, respond with: COMPLETE"""
         # Separate contradicted from supported/insufficient claims so we can
         # present them differently in the prompt and in the appended section.
         contradicted_claims = [
-            c for c in claim_citations
+            c
+            for c in claim_citations
             if verdict_map.get(str(c.get("claim_id", ""))) == "contradicted"
         ]
         contradicted_rate = (
@@ -1040,9 +1626,7 @@ If the research seems complete, respond with: COMPLETE"""
             # Append a warning marker on contradicted claims so the LLM knows
             # to flag them with [⚠ contradicted] when it cites them.
             flag = " ⚠ CONTRADICTED — flag this inline" if verdict == "contradicted" else ""
-            claim_lines.append(
-                f"- [{claim_id}] {claim_text} (confidence={confidence:.2f}){flag}"
-            )
+            claim_lines.append(f"- [{claim_id}] {claim_text} (confidence={confidence:.2f}){flag}")
 
         contradiction_instruction = ""
         if contradicted_claims:
@@ -1073,7 +1657,8 @@ Structure your response with:
 Hard constraints:
 - Every factual sentence MUST end with at least one claim reference, e.g. [claim_001].
 - Do not include factual statements that are not supported by the evidence-backed claims above.
-- If evidence is limited, explicitly state uncertainty and cite the relevant claim ID.{contradiction_instruction}"""
+- If evidence is limited, explicitly state uncertainty and cite the relevant claim ID.
+{contradiction_instruction}"""
 
         try:
             report = _llm_invoke_with_retry(self.llm, prompt)
@@ -1093,9 +1678,7 @@ Hard constraints:
                 cid = claim.get("claim_id", "")
                 text = str(claim.get("claim", "")).strip()
                 confidence = float(claim.get("confidence", 0.0))
-                conflict_lines.append(
-                    f"- **[{cid}]** {text} *(confidence: {confidence:.2f})*"
-                )
+                conflict_lines.append(f"- **[{cid}]** {text} *(confidence: {confidence:.2f})*")
             conflict_lines.append(
                 "\nInterpret findings in this section with caution. "
                 "Cross-check with primary USGS data sources before drawing conclusions."

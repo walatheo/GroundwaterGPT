@@ -9,6 +9,7 @@ Validates:
  • Input validation (empty / missing fields → 400)
 """
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -259,6 +260,13 @@ class TestResearchEndpoint:
         assert "section_confidence" in body
         assert "hallucination_guardrail" in body
         assert "citation_integrity" in body
+        assert "session_id" in body
+        assert "research_plan" in body
+        assert "budget_status" in body
+        assert "checkpoints" in body
+        assert "tool_trace" in body
+        assert "recommended_views" in body
+        assert "chart_specs" in body
         assert isinstance(body["claim_citations"], list)
         assert isinstance(body["claim_verdicts"], list)
         assert isinstance(body["claim_verdict_summary"], dict)
@@ -266,6 +274,36 @@ class TestResearchEndpoint:
         assert isinstance(body["section_confidence"], dict)
         assert isinstance(body["hallucination_guardrail"], dict)
         assert isinstance(body["citation_integrity"], dict)
+        assert isinstance(body["research_plan"], dict)
+        assert isinstance(body["budget_status"], dict)
+        assert isinstance(body["checkpoints"], list)
+        assert isinstance(body["tool_trace"], list)
+        assert isinstance(body["recommended_views"], list)
+        assert isinstance(body["chart_specs"], list)
+
+    def test_research_stream_emits_snapshot_and_result_contract(self):
+        """Streaming endpoint should emit progress snapshots and a typed final result."""
+        resp = client.post(
+            "/api/research/stream",
+            json={"question": "Estero trends"},
+        )
+        assert resp.status_code == 200
+        chunks = [line for line in resp.text.split("\n\n") if line.strip().startswith("data:")]
+        assert chunks, "Expected SSE data frames in response body"
+
+        parsed = []
+        for chunk in chunks:
+            payload = chunk.replace("data:", "", 1).strip()
+            parsed.append(json.loads(payload))
+
+        final = next(event for event in parsed if event.get("type") == "result")
+        assert "session_id" in final
+        assert "research_plan" in final
+        assert "budget_status" in final
+        assert "checkpoints" in final
+        assert "tool_trace" in final
+        assert "recommended_views" in final
+        assert "chart_specs" in final
 
     def test_research_claim_citation_shape(self):
         """Claim-citation schema should include claim text and citations list."""
