@@ -116,7 +116,7 @@ export default function AgentChart({ chartData }) {
             <h4 className="text-sm font-semibold text-slate-700">
               📊 {title}
             </h4>
-            {cohortRiskLevel && (
+            {cohortRiskLevel && cohortRiskLevel !== 'unknown' && (
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                 cohortRiskLevel === 'high'
                   ? 'bg-red-100 text-red-700'
@@ -134,7 +134,7 @@ export default function AgentChart({ chartData }) {
             className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
           >
             <Download className="h-3.5 w-3.5" />
-            CSV
+            Monthly CSV
           </button>
         </div>
       )}

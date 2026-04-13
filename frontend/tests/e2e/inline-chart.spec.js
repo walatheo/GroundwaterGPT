@@ -17,7 +17,7 @@ test('renders inline comparison chart and downloads chart CSV', async ({ page })
   await expect(page.getByText(/Chart Insights/i)).toBeVisible()
 
   const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: /^CSV$/ }).click()
+  await page.getByRole('button', { name: /^Monthly CSV$/ }).click()
   const download = await downloadPromise
 
   expect(download.suggestedFilename()).toMatch(/\.csv$/)

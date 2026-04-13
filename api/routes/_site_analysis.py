@@ -17,7 +17,7 @@ import os
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, TypedDict
 
 import pandas as pd
 
@@ -38,6 +38,33 @@ from api.routes._detection import (
 logger = logging.getLogger(__name__)
 
 CHART_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6"]
+
+
+class PerSiteMetric(TypedDict):
+    """Per-well metrics returned by cohort analysis."""
+
+    site_id: str
+    name: str
+    trend: str
+    net_change_ft: float
+    annual_change_ft_yr: float
+
+
+class DivergentSiteSummary(TypedDict):
+    """Subset of per-well metrics used in divergent-pair summaries."""
+
+    site_id: str
+    name: str
+    trend: str
+    annual_change_ft_yr: float
+
+
+class DivergentPair(TypedDict):
+    """Pairwise summary for wells with opposing directional trends."""
+
+    site_a: DivergentSiteSummary
+    site_b: DivergentSiteSummary
+    divergence_magnitude: float
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +174,7 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
             "per_site_metrics": [],
         }
 
-    per_site: list[dict] = []
+    per_site: list[PerSiteMetric] = []
     annual_changes: list[float] = []
     for site in sites:
         df = site["series"]
@@ -175,7 +202,7 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
     mean_ann = sum(annual_changes) / n_total
     std_dev = math.sqrt(sum((x - mean_ann) ** 2 for x in annual_changes) / n_total)
 
-    divergent: list[dict] = []
+    divergent: list[DivergentPair] = []
     for i in range(n_total):
         for j in range(i + 1, n_total):
             a, b = per_site[i], per_site[j]
@@ -226,7 +253,11 @@ def _linear_trend_values(
     ordered_dates: list[str],
     values_by_date: dict[str, float],
 ) -> dict[str, float]:
-    """Return regression trend values bounded to the observed period."""
+    """Return regression trend values bounded to the observed period.
+
+    The fitted slope is measured per monthly chart bin, not calendar month.
+    Multiply by 12 if this is ever surfaced as ft/yr.
+    """
     points = [
         (idx, values_by_date[date_str])
         for idx, date_str in enumerate(ordered_dates)
@@ -264,8 +295,8 @@ def _build_chart_insights(
     if not per_site:
         return insights
 
-    strongest_decline = min(per_site, key=lambda item: item.get("annual_change_ft_yr", 0.0))
-    strongest_rise = max(per_site, key=lambda item: item.get("annual_change_ft_yr", 0.0))
+    strongest_decline = min(per_site, key=lambda item: item["annual_change_ft_yr"])
+    strongest_rise = max(per_site, key=lambda item: item["annual_change_ft_yr"])
     risk_level = str(cross_well.get("risk_level", "unknown")).upper()
 
     insights.append(
@@ -277,7 +308,7 @@ def _build_chart_insights(
         f"{strongest_decline['name']} "
         f"({strongest_decline['annual_change_ft_yr']:+.3f} ft/yr)."
     )
-    if strongest_rise.get("annual_change_ft_yr", 0.0) > 0:
+    if strongest_rise["annual_change_ft_yr"] > 0:
         insights.append(
             "Strongest rise: "
             f"{strongest_rise['name']} "
@@ -287,6 +318,8 @@ def _build_chart_insights(
     divergent_pairs = cross_well.get("divergent_pairs", [])
     if divergent_pairs:
         top_pair = divergent_pairs[0]
+        assert "site_a" in top_pair and "site_b" in top_pair
+        assert "name" in top_pair["site_a"] and "name" in top_pair["site_b"]
         insights.append(
             f"Largest divergence: {top_pair['site_a']['name']} vs {top_pair['site_b']['name']}."
         )
@@ -298,7 +331,7 @@ def _build_chart_insights(
             f"series ({highlighted_count} total)."
         )
 
-    return insights[:4]
+    return insights[:5]
 
 
 def _build_chart_payload(
@@ -331,15 +364,11 @@ def _build_chart_payload(
         highlighted_reasons[str(divergent_pairs[0]["site_a"]["site_id"])] = "divergent pair"
         highlighted_reasons[str(divergent_pairs[0]["site_b"]["site_id"])] = "divergent pair"
     if per_site_metrics:
-        strongest_decline = min(
-            per_site_metrics, key=lambda item: item.get("annual_change_ft_yr", 0.0)
-        )
+        strongest_decline = min(per_site_metrics, key=lambda item: item["annual_change_ft_yr"])
         highlighted_keys.add(str(strongest_decline["site_id"]))
         highlighted_reasons[str(strongest_decline["site_id"])] = "fastest decline"
-        strongest_rise = max(
-            per_site_metrics, key=lambda item: item.get("annual_change_ft_yr", 0.0)
-        )
-        if strongest_rise.get("annual_change_ft_yr", 0.0) > 0:
+        strongest_rise = max(per_site_metrics, key=lambda item: item["annual_change_ft_yr"])
+        if strongest_rise["annual_change_ft_yr"] > 0:
             highlighted_keys.add(str(strongest_rise["site_id"]))
             highlighted_reasons[str(strongest_rise["site_id"])] = "strongest rise"
 
@@ -348,6 +377,7 @@ def _build_chart_payload(
         if df is None or df.empty:
             continue
 
+        # Comparison charts intentionally export month-start aggregates, not raw readings.
         monthly = df.set_index("datetime")["value"].resample("MS").mean().dropna().round(2)
         if monthly.empty:
             continue

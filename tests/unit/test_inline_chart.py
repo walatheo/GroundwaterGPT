@@ -106,6 +106,8 @@ class TestBuildChartPayload:
         assert "site_001_trend" in series_keys or "site_002_trend" in series_keys
         assert chart["cohort_risk_level"] in {"low", "moderate", "high"}
         assert chart["insights"]
+        assert len(chart["insights"]) == 5
+        assert any("Highlighted wells mark" in insight for insight in chart["insights"])
         assert any(
             series.get("highlight") for series in chart["series"] if not series.get("isTrend")
         )
@@ -129,6 +131,25 @@ class TestBuildChartPayload:
 
     def test_build_chart_payload_empty(self):
         assert _build_chart_payload([], "Nowhere") is None
+
+    def test_build_chart_payload_surfaces_missing_metric_keys(self):
+        sites = [
+            _make_site("site_001", "Well A", ["2024-01-01", "2024-02-01"], [10.0, 9.0]),
+            _make_site("site_002", "Well B", ["2024-01-01", "2024-02-01"], [10.0, 11.0]),
+        ]
+        broken_cross_well = {
+            "per_site_metrics": [
+                {"site_id": "site_001", "name": "Well A"},
+                {"site_id": "site_002", "name": "Well B"},
+            ],
+            "divergent_pairs": [],
+            "risk_level": "low",
+            "cohort_trend": "stable",
+            "n_total": 2,
+        }
+
+        with pytest.raises(KeyError):
+            _build_chart_payload(sites, "Test Area", cross_well=broken_cross_well)
 
 
 class TestInlineChartIntegration:
