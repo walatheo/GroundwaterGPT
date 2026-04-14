@@ -13,6 +13,7 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import threading
@@ -38,7 +39,7 @@ from .research_optimizer import (
 from .source_verification import SourceVerification, verify_source
 
 logger = logging.getLogger(__name__)
-CLAIM_REF_RE = re.compile(r"\[claim_\d{3}\]")
+CLAIM_REF_RE = re.compile(r"\[claim_\d{3}(?:[;\],\s][^\]]*)?\]")
 FACTUAL_SIGNAL_RE = re.compile(
     r"\b(\d{4}-\d{2}-\d{2}|\d+(\.\d+)?\s*(ft|feet|%|year|years)|\d{15}|usgs|trend|declin\w*|"
     r"increas\w*|rising|falling|aquifer)\b",
@@ -142,6 +143,7 @@ class ResearchContext:
     search_budget: SearchBudget = field(default_factory=SearchBudget)
     recommended_views: list[str] = field(default_factory=list)
     chart_specs: list[dict[str, Any]] = field(default_factory=list)
+    structured_response: dict[str, Any] = field(default_factory=dict)
     partial_completion_available: bool = False
     phase: str = "planning"
 
@@ -702,6 +704,7 @@ class DeepResearchAgent:
                 "tool_trace": context.tool_trace,
                 "recommended_views": context.recommended_views,
                 "chart_specs": context.chart_specs,
+                "structured_response": context.structured_response,
                 "claim_citations": claim_citations,
                 "claim_verdicts": claim_verdicts,
                 "claim_verdict_summary": claim_verdict_summary,
@@ -1424,6 +1427,7 @@ If the research seems complete, respond with: COMPLETE"""
             citation_entry = (
                 [
                     {
+                        "evidence_id": f"evidence_{index:03d}_source_1",
                         "url": source_url,
                         "verified": bool(insight.verified),
                         "trust_level": insight.trust_level,
@@ -1436,8 +1440,10 @@ If the research seems complete, respond with: COMPLETE"""
             claims.append(
                 {
                     "claim_id": f"claim_{index:03d}",
+                    "claim_type": "retrieved_insight",
                     "claim": insight.content,
                     "confidence": insight.confidence,
+                    "evidence_ids": [f"evidence_{index:03d}_source_1"] if has_source else [],
                     "citations": citation_entry,
                 }
             )
@@ -1570,6 +1576,194 @@ If the research seems complete, respond with: COMPLETE"""
             return cleaned, removed
         return "No citation-safe factual claims were available in this response.", removed
 
+    def _build_evidence_items(self, claim_citations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Build a compact evidence registry for structured LLM synthesis."""
+        evidence_items: list[dict[str, Any]] = []
+        for claim in claim_citations:
+            claim_id = str(claim.get("claim_id", "claim_unknown"))
+            for idx, citation in enumerate(claim.get("citations", []), start=1):
+                evidence_id = str(
+                    citation.get("evidence_id") or f"evidence_{claim_id[-3:]}_source_{idx}"
+                )
+                evidence_items.append(
+                    {
+                        "evidence_id": evidence_id,
+                        "claim_id": claim_id,
+                        "url": citation.get("url") or citation.get("source") or "unknown",
+                        "trust_level": citation.get("trust_level", "unknown"),
+                        "verified": bool(citation.get("verified", False)),
+                    }
+                )
+        return evidence_items
+
+    def _heuristic_structured_response(
+        self,
+        question: str,
+        claim_citations: list[dict[str, Any]],
+        claim_verdicts: list[dict[str, Any]],
+        evidence_items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Create a structured response without an LLM or when JSON parsing fails."""
+        verdict_by_claim = {
+            str(verdict.get("claim_id", "")): str(verdict.get("verdict", "insufficient_evidence"))
+            for verdict in claim_verdicts
+        }
+        evidence_by_claim: dict[str, list[str]] = {}
+        for item in evidence_items:
+            evidence_by_claim.setdefault(str(item["claim_id"]), []).append(str(item["evidence_id"]))
+
+        claims = []
+        for claim in claim_citations[:6]:
+            claim_id = str(claim.get("claim_id", "claim_unknown"))
+            evidence_ids = evidence_by_claim.get(claim_id, [])
+            claims.append(
+                {
+                    "claim": str(claim.get("claim", "")),
+                    "claim_type": str(claim.get("claim_type", "retrieved_insight")),
+                    "claim_ids": [claim_id],
+                    "evidence_ids": evidence_ids,
+                    "confidence": float(claim.get("confidence", 0.5)),
+                    "is_interpretive": False,
+                    "uncertainty": (
+                        "Evidence is limited for this claim."
+                        if not evidence_ids
+                        or verdict_by_claim.get(claim_id) == "insufficient_evidence"
+                        else ""
+                    ),
+                }
+            )
+
+        answer_claims = [claim["claim"] for claim in claims[:2] if claim.get("claim")]
+        return {
+            "schema_version": "evidence_response_v1",
+            "question": question,
+            "answer": " ".join(answer_claims)
+            or "The available verified evidence was insufficient for a detailed answer.",
+            "claims": claims,
+            "limitations": [
+                (
+                    "This response is constrained to verified retrieved "
+                    "evidence and local data artifacts."
+                ),
+            ],
+            "recommended_followup": [
+                (
+                    "Compare the answer against deterministic site metrics "
+                    "when the question references monitored wells."
+                ),
+            ],
+            "evidence": evidence_items,
+        }
+
+    def _parse_structured_response(
+        self,
+        raw_response: str,
+        question: str,
+        claim_citations: list[dict[str, Any]],
+        claim_verdicts: list[dict[str, Any]],
+        evidence_items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Parse and validate the LLM's evidence-ID JSON response."""
+        text = raw_response.strip()
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
+        if fenced:
+            text = fenced.group(1)
+        else:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                text = text[start : end + 1]
+
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            raise ValueError("structured response is not a JSON object")
+
+        valid_claim_ids = {str(claim.get("claim_id")) for claim in claim_citations}
+        valid_evidence_ids = {str(item.get("evidence_id")) for item in evidence_items}
+        sanitized_claims: list[dict[str, Any]] = []
+        for item in parsed.get("claims", []):
+            if not isinstance(item, dict):
+                continue
+            claim_ids = [
+                str(claim_id)
+                for claim_id in item.get("claim_ids", [])
+                if str(claim_id) in valid_claim_ids
+            ]
+            evidence_ids = [
+                str(evidence_id)
+                for evidence_id in item.get("evidence_ids", [])
+                if str(evidence_id) in valid_evidence_ids
+            ]
+            if not claim_ids or not evidence_ids:
+                continue
+            sanitized_claims.append(
+                {
+                    "claim": str(item.get("claim", "")).strip(),
+                    "claim_type": str(item.get("claim_type", "interpretation")),
+                    "claim_ids": claim_ids,
+                    "evidence_ids": evidence_ids,
+                    "confidence": max(0.0, min(1.0, float(item.get("confidence", 0.5)))),
+                    "is_interpretive": bool(item.get("is_interpretive", False)),
+                    "uncertainty": str(item.get("uncertainty", "")).strip(),
+                }
+            )
+
+        if not sanitized_claims:
+            return self._heuristic_structured_response(
+                question,
+                claim_citations,
+                claim_verdicts,
+                evidence_items,
+            )
+
+        return {
+            "schema_version": "evidence_response_v1",
+            "question": question,
+            "answer": str(parsed.get("answer", "")).strip(),
+            "claims": sanitized_claims,
+            "limitations": [
+                str(item).strip() for item in parsed.get("limitations", []) if str(item).strip()
+            ],
+            "recommended_followup": [
+                str(item).strip()
+                for item in parsed.get("recommended_followup", [])
+                if str(item).strip()
+            ],
+            "evidence": evidence_items,
+        }
+
+    def _render_structured_report(self, structured: dict[str, Any]) -> str:
+        """Render evidence-structured synthesis as citation-safe markdown."""
+        claims = structured.get("claims", [])
+        answer = str(structured.get("answer", "")).strip()
+        if answer and claims and not CLAIM_REF_RE.search(answer):
+            first_claim_ids = claims[0].get("claim_ids", [])
+            if first_claim_ids:
+                answer = f"{answer} [{first_claim_ids[0]}]"
+        lines = [answer]
+        if claims:
+            lines.append("\n## Evidence-Linked Claims")
+            for item in claims:
+                claim_ids = ", ".join(item.get("claim_ids", []))
+                evidence_ids = ", ".join(item.get("evidence_ids", []))
+                uncertainty = str(item.get("uncertainty", "")).strip()
+                suffix = f" Uncertainty: {uncertainty}" if uncertainty else ""
+                lines.append(
+                    f"- {item.get('claim', '')} [{claim_ids}; evidence: {evidence_ids}]{suffix}"
+                )
+
+        limitations = structured.get("limitations", [])
+        if limitations:
+            lines.append("\n## Limitations")
+            lines.extend(f"- {item}" for item in limitations)
+
+        followup = structured.get("recommended_followup", [])
+        if followup:
+            lines.append("\n## Recommended Follow-Up")
+            lines.extend(f"- {item}" for item in followup)
+
+        return "\n".join(line for line in lines if str(line).strip())
+
     def _synthesize_report(
         self,
         context: ResearchContext,
@@ -1586,32 +1780,16 @@ If the research seems complete, respond with: COMPLETE"""
         if not context.insights:
             return "No insights were gathered during research. Try a different query."
 
+        evidence_items = self._build_evidence_items(claim_citations)
+
         if self.llm is None:
-            overview = self.report_builder.build_report(
+            context.structured_response = self._heuristic_structured_response(
                 context.original_query,
-                [insight.to_dict() for insight in context.insights],
-                ResearchPlan(
-                    original_query=context.research_plan.get(
-                        "original_query", context.original_query
-                    ),
-                    main_question=context.research_plan.get(
-                        "main_question", context.original_query
-                    ),
-                    sub_questions=context.research_plan.get("sub_questions", []),
-                    research_areas=context.research_plan.get("research_areas", []),
-                    expected_sections=context.research_plan.get("expected_sections", []),
-                    search_priority=context.research_plan.get(
-                        "search_priority", [context.original_query]
-                    ),
-                    estimated_depth=context.research_plan.get("estimated_depth", context.max_depth),
-                ),
-                context.visited_urls,
+                claim_citations,
+                claim_verdicts or [],
+                evidence_items,
             )
-            lines = [overview.get("executive_summary", "").strip()]
-            for section in overview.get("sections", []):
-                lines.append(f"## {section.get('heading', 'Overview')}")
-                lines.append(section.get("content", "").strip())
-            return "\n\n".join(line for line in lines if line)
+            return self._render_structured_report(context.structured_response)
 
         # Build a verdict lookup: claim_id → verdict string
         verdict_map: dict[str, str] = {}
@@ -1638,6 +1816,8 @@ If the research seems complete, respond with: COMPLETE"""
             ]
         )
 
+        evidence_json = json.dumps(evidence_items, indent=2)
+
         # Build the claim list with verdict labels so the LLM can cite them
         # correctly and flag contradictions inline.
         claim_lines = []
@@ -1646,11 +1826,15 @@ If the research seems complete, respond with: COMPLETE"""
             claim_text = str(claim.get("claim", "")).strip()
             confidence = float(claim.get("confidence", 0.0))
             verdict = verdict_map.get(claim_id, "insufficient_evidence")
+            evidence_ids = ", ".join(claim.get("evidence_ids", [])) or "no_evidence_id"
 
             # Append a warning marker on contradicted claims so the LLM knows
             # to flag them with [⚠ contradicted] when it cites them.
             flag = " ⚠ CONTRADICTED — flag this inline" if verdict == "contradicted" else ""
-            claim_lines.append(f"- [{claim_id}] {claim_text} (confidence={confidence:.2f}){flag}")
+            claim_lines.append(
+                f"- [{claim_id}] {claim_text} "
+                f"(confidence={confidence:.2f}; evidence={evidence_ids}){flag}"
+            )
 
         contradiction_instruction = ""
         if contradicted_claims:
@@ -1669,26 +1853,56 @@ Research Insights:
 Evidence-backed claims (use these claim IDs as citations):
 {chr(10).join(claim_lines)}
 
+Evidence ID registry:
+{evidence_json}
+
 Sources Consulted: {len(context.visited_urls)} web sources + local knowledge base
 
-Write a comprehensive answer to the original question based on these insights.
-Structure your response with:
-1. Direct answer to the question
-2. Key supporting details
-3. Any caveats or limitations
-4. Suggestions for further research if applicable
+Return ONLY valid JSON with this schema:
+{{
+  "answer": "direct answer in 2-4 sentences",
+  "claims": [
+    {{
+      "claim": "one factual or interpretive statement",
+      "claim_type": "trend|metadata|literature|interpretation|limitation",
+      "claim_ids": ["claim_001"],
+      "evidence_ids": ["evidence_001_source_1"],
+      "confidence": 0.0,
+      "is_interpretive": false,
+      "uncertainty": "short caveat"
+    }}
+  ],
+  "limitations": ["data or method limitation"],
+  "recommended_followup": ["specific follow-up analysis"]
+}}
 
 Hard constraints:
-- Every factual sentence MUST end with at least one claim reference, e.g. [claim_001].
-- Do not include factual statements that are not supported by the evidence-backed claims above.
-- If evidence is limited, explicitly state uncertainty and cite the relevant claim ID.
+- Every factual claim object MUST include at least one claim_id and one
+  evidence_id from the registry.
+- Use no quantitative values unless they appear in the evidence-backed claims.
+- Put caveats in "limitations" rather than inventing extra factual claims.
 {contradiction_instruction}"""
 
         try:
-            report = _llm_invoke_with_retry(self.llm, prompt)
+            raw_response = _llm_invoke_with_retry(self.llm, prompt)
+            structured = self._parse_structured_response(
+                raw_response,
+                context.original_query,
+                claim_citations,
+                claim_verdicts or [],
+                evidence_items,
+            )
+            context.structured_response = structured
+            report = self._render_structured_report(structured)
         except Exception as e:
             logger.error(f"Report synthesis failed: {e}")
-            return f"Research gathered {len(context.insights)} insights but synthesis failed: {e}"
+            context.structured_response = self._heuristic_structured_response(
+                context.original_query,
+                claim_citations,
+                claim_verdicts or [],
+                evidence_items,
+            )
+            return self._render_structured_report(context.structured_response)
 
         # Append a deterministic "Conflicting Evidence" section when the
         # contradicted rate exceeds 15% — no extra LLM call needed.

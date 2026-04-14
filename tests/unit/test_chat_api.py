@@ -349,6 +349,10 @@ class TestResearchEndpoint:
         assert "tool_trace" in body
         assert "recommended_views" in body
         assert "chart_specs" in body
+        assert "structured_response" in body
+        assert "provenance" in body
+        assert "changepoints" in body
+        assert "cross_well_clusters" in body
         assert isinstance(body["claim_citations"], list)
         assert isinstance(body["claim_verdicts"], list)
         assert isinstance(body["claim_verdict_summary"], dict)
@@ -362,6 +366,14 @@ class TestResearchEndpoint:
         assert isinstance(body["tool_trace"], list)
         assert isinstance(body["recommended_views"], list)
         assert isinstance(body["chart_specs"], list)
+        assert isinstance(body["structured_response"], dict)
+        assert isinstance(body["provenance"], dict)
+        assert body["structured_response"]["schema_version"] == "evidence_response_v1"
+        assert "claims" in body["structured_response"]
+        assert "evidence" in body["structured_response"]
+        assert body["provenance"]["schema_version"] == "research_provenance_v1"
+        assert "response_sha256" in body["provenance"]
+        assert body["provenance"]["methodology"]["external_covariates"]["included"] is False
 
     def test_research_stream_emits_snapshot_and_result_contract(self):
         """Streaming endpoint should emit progress snapshots and a typed final result."""
@@ -386,6 +398,29 @@ class TestResearchEndpoint:
         assert "tool_trace" in final
         assert "recommended_views" in final
         assert "chart_specs" in final
+        assert "structured_response" in final
+        assert "provenance" in final
+
+    def test_research_structured_response_links_claims_to_evidence_ids(self):
+        """Research responses should expose manuscript-friendly claim/evidence links."""
+        resp = client.post(
+            "/api/research",
+            json={"question": "Estero trends"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        structured = body["structured_response"]
+
+        assert structured["schema_version"] == "evidence_response_v1"
+        assert structured["question"] == "Estero trends"
+        assert structured["claims"]
+        assert structured["evidence"]
+        assert all(item["claim_ids"] for item in structured["claims"])
+        assert all(item["evidence_ids"] for item in structured["claims"])
+        assert all(
+            str(evidence["evidence_id"]).startswith("evidence_")
+            for evidence in structured["evidence"]
+        )
 
     def test_research_claim_citation_shape(self):
         """Claim-citation schema should include claim text and citations list."""

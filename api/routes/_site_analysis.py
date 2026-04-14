@@ -50,6 +50,13 @@ class PerSiteMetric(TypedDict):
     annual_change_ft_yr: float
 
 
+def _safe_round(value: float | None, digits: int = 4) -> float | None:
+    """Round finite floats while preserving None for unavailable metrics."""
+    if value is None or not math.isfinite(value):
+        return None
+    return round(value, digits)
+
+
 class DivergentSiteSummary(TypedDict):
     """Subset of per-well metrics used in divergent-pair summaries."""
 
@@ -156,6 +163,195 @@ def _seasonal_decomposition(df: "pd.DataFrame") -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _monthly_values(df: "pd.DataFrame") -> list[tuple[str, float]]:
+    """Return monthly-mean observations as ordered ``(YYYY-MM-DD, value)`` pairs."""
+    if df is None or df.empty:
+        return []
+    monthly = df.set_index("datetime")["value"].resample("MS").mean().dropna()
+    return [(dt.strftime("%Y-%m-%d"), float(value)) for dt, value in monthly.items()]
+
+
+def _linear_fit_sse(points: list[tuple[int, float]]) -> tuple[float, float, float]:
+    """Return ``(slope_per_bin, intercept, sse)`` for indexed points."""
+    if len(points) < 2:
+        intercept = points[0][1] if points else 0.0
+        return 0.0, intercept, 0.0
+
+    xs = [x for x, _ in points]
+    ys = [y for _, y in points]
+    mean_x = sum(xs) / len(xs)
+    mean_y = sum(ys) / len(ys)
+    denom = sum((x - mean_x) ** 2 for x in xs)
+    slope = 0.0 if denom == 0 else sum((x - mean_x) * (y - mean_y) for x, y in points) / denom
+    intercept = mean_y - slope * mean_x
+    sse = sum((y - (intercept + slope * x)) ** 2 for x, y in points)
+    return slope, intercept, sse
+
+
+def _detect_changepoint(df: "pd.DataFrame") -> dict:
+    """Detect a simple two-segment monthly trend changepoint.
+
+    This is a deterministic screening statistic, not a formal hypothesis test.
+    It compares one OLS line against the best two-line split with at least 12
+    monthly bins on each side.
+    """
+    monthly = _monthly_values(df)
+    if len(monthly) < 36:
+        return {"detected": False, "reason": "insufficient_monthly_bins"}
+
+    points = [(idx, value) for idx, (_, value) in enumerate(monthly)]
+    full_slope, _full_intercept, full_sse = _linear_fit_sse(points)
+    if full_sse <= 0:
+        return {"detected": False, "reason": "no_residual_variance"}
+
+    min_segment = 12
+    best: dict | None = None
+    for split_idx in range(min_segment, len(points) - min_segment):
+        left = points[:split_idx]
+        right = points[split_idx:]
+        left_slope, _left_intercept, left_sse = _linear_fit_sse(left)
+        right_slope, _right_intercept, right_sse = _linear_fit_sse(right)
+        total_sse = left_sse + right_sse
+        improvement = (full_sse - total_sse) / full_sse
+        if best is None or improvement > best["improvement_ratio"]:
+            best = {
+                "split_idx": split_idx,
+                "improvement_ratio": improvement,
+                "pre_slope_per_bin": left_slope,
+                "post_slope_per_bin": right_slope,
+                "full_slope_per_bin": full_slope,
+            }
+
+    if best is None or best["improvement_ratio"] < 0.2:
+        return {
+            "detected": False,
+            "reason": "weak_two_segment_improvement",
+            "improvement_ratio": _safe_round(best["improvement_ratio"] if best else 0.0, 3),
+        }
+
+    improvement = float(best["improvement_ratio"])
+    confidence = "high" if improvement >= 0.45 else "moderate" if improvement >= 0.3 else "low"
+    split_idx = int(best["split_idx"])
+    return {
+        "detected": True,
+        "date": monthly[split_idx][0],
+        "pre_annual_change_ft_yr": round(float(best["pre_slope_per_bin"]) * 12, 4),
+        "post_annual_change_ft_yr": round(float(best["post_slope_per_bin"]) * 12, 4),
+        "full_period_annual_change_ft_yr": round(float(best["full_slope_per_bin"]) * 12, 4),
+        "improvement_ratio": round(improvement, 3),
+        "confidence": confidence,
+    }
+
+
+def _cluster_wells(sites: list[dict], per_site: list[dict]) -> list[dict]:
+    """Cluster wells by deterministic local-data features.
+
+    Features are annual change, seasonal amplitude, and confinement flag. This
+    keeps the grouping reproducible and tied to local USGS observations.
+    """
+    if len(per_site) < 3:
+        return []
+
+    site_by_id = {str(site["site_id"]): site for site in sites}
+    rows: list[dict] = []
+    for metric in per_site:
+        site = site_by_id.get(str(metric["site_id"]))
+        if not site:
+            continue
+        seasonal = _seasonal_decomposition(site["series"])
+        rows.append(
+            {
+                "site_id": str(metric["site_id"]),
+                "name": metric["name"],
+                "aquifer": site.get("aquifer", "Unknown Aquifer"),
+                "annual_change_ft_yr": float(metric["annual_change_ft_yr"]),
+                "seasonal_amplitude_ft": float(seasonal.get("seasonal_amplitude_ft", 0.0)),
+                "confined": 1.0 if site.get("confined", False) else 0.0,
+            }
+        )
+
+    if len(rows) < 3:
+        return []
+
+    feature_names = ["annual_change_ft_yr", "seasonal_amplitude_ft", "confined"]
+    means = {key: sum(float(row[key]) for row in rows) / len(rows) for key in feature_names}
+    stds = {}
+    for key in feature_names:
+        variance = sum((float(row[key]) - means[key]) ** 2 for row in rows) / len(rows)
+        stds[key] = math.sqrt(variance) or 1.0
+
+    vectors = [
+        tuple((float(row[key]) - means[key]) / stds[key] for key in feature_names) for row in rows
+    ]
+    k = 3 if len(rows) >= 6 else 2
+    sorted_indices = sorted(range(len(rows)), key=lambda idx: rows[idx]["annual_change_ft_yr"])
+    if k == 2:
+        centroid_indices = [sorted_indices[0], sorted_indices[-1]]
+    else:
+        centroid_indices = [
+            sorted_indices[0],
+            sorted_indices[len(sorted_indices) // 2],
+            sorted_indices[-1],
+        ]
+    centroids = [vectors[idx] for idx in centroid_indices]
+    assignments = [0] * len(rows)
+
+    for _ in range(20):
+        changed = False
+        for idx, vector in enumerate(vectors):
+            distances = [
+                sum((vector[dim] - centroid[dim]) ** 2 for dim in range(len(feature_names)))
+                for centroid in centroids
+            ]
+            cluster_idx = min(range(k), key=lambda cidx: distances[cidx])
+            if assignments[idx] != cluster_idx:
+                assignments[idx] = cluster_idx
+                changed = True
+        for cluster_idx in range(k):
+            members = [
+                vectors[idx] for idx, assigned in enumerate(assignments) if assigned == cluster_idx
+            ]
+            if not members:
+                continue
+            centroids[cluster_idx] = tuple(
+                sum(member[dim] for member in members) / len(members)
+                for dim in range(len(feature_names))
+            )
+        if not changed:
+            break
+
+    clusters: list[dict] = []
+    for cluster_idx in range(k):
+        members = [row for row, assigned in zip(rows, assignments) if assigned == cluster_idx]
+        if not members:
+            continue
+        mean_rate = sum(row["annual_change_ft_yr"] for row in members) / len(members)
+        mean_amp = sum(row["seasonal_amplitude_ft"] for row in members) / len(members)
+        aquifer_counts: dict[str, int] = defaultdict(int)
+        for row in members:
+            aquifer_counts[str(row["aquifer"])] += 1
+        dominant_aquifer = max(aquifer_counts, key=aquifer_counts.get)
+        trend_label = (
+            "declining" if mean_rate < -0.05 else "rising" if mean_rate > 0.05 else "stable"
+        )
+        season_label = "seasonal" if mean_amp >= 1.0 else "muted-seasonality"
+        clusters.append(
+            {
+                "cluster_id": f"cluster_{cluster_idx + 1}",
+                "label": f"{trend_label} {season_label} wells",
+                "n_sites": len(members),
+                "site_ids": [row["site_id"] for row in members],
+                "names": [row["name"] for row in members],
+                "dominant_aquifer": dominant_aquifer,
+                "mean_annual_change_ft_yr": round(mean_rate, 4),
+                "mean_seasonal_amplitude_ft": round(mean_amp, 2),
+            }
+        )
+
+    clusters.sort(key=lambda item: (item["mean_annual_change_ft_yr"], item["label"]))
+    return clusters
+
+
 def _cross_well_analysis(sites: list[dict]) -> dict:
     """Compute cohort-level statistics across a set of wells with loaded timeseries.
 
@@ -172,6 +368,8 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
             "divergent_pairs": [],
             "risk_level": "unknown",
             "per_site_metrics": [],
+            "changepoints": [],
+            "clusters": [],
         }
 
     per_site: list[PerSiteMetric] = []
@@ -189,6 +387,7 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
                 "trend": _trend_label(net),
                 "net_change_ft": round(net, 3),
                 "annual_change_ft_yr": round(ann, 4),
+                "changepoint": _detect_changepoint(df),
             }
         )
         annual_changes.append(ann)
@@ -232,6 +431,25 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
     else:
         risk = "low"
 
+    clusters = _cluster_wells(sites, per_site)
+    cluster_by_site = {
+        site_id: cluster["cluster_id"]
+        for cluster in clusters
+        for site_id in cluster.get("site_ids", [])
+    }
+    for metric in per_site:
+        metric["cluster_id"] = cluster_by_site.get(str(metric["site_id"]))
+
+    changepoints = [
+        {
+            "site_id": metric["site_id"],
+            "name": metric["name"],
+            **metric["changepoint"],
+        }
+        for metric in per_site
+        if metric.get("changepoint", {}).get("detected")
+    ]
+
     return {
         "n_total": n_total,
         "trend_distribution": dist,
@@ -241,6 +459,8 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
         "divergent_pairs": divergent,
         "risk_level": risk,
         "per_site_metrics": per_site,
+        "changepoints": changepoints,
+        "clusters": clusters,
     }
 
 
@@ -821,6 +1041,47 @@ def _site_research_fallback(
             }
         )
 
+        if cross_well.get("changepoints"):
+            top_cp = cross_well["changepoints"][0]
+            changepoint_claim = (
+                f"{len(cross_well['changepoints'])} {location_name} wells show a candidate "
+                f"monthly trend changepoint; the strongest screened example is "
+                f"{top_cp['name']} near {top_cp['date']} with post-change rate "
+                f"{top_cp['post_annual_change_ft_yr']:+.3f} ft/yr."
+            )
+            claim_citations.append(
+                {
+                    "claim_id": f"claim_{len(claim_citations) + 1:03d}",
+                    "claim": changepoint_claim,
+                    "confidence": 0.72,
+                    "citations": [
+                        {
+                            "url": _usgs_site_url(top_cp["site_id"]),
+                            "verified": True,
+                            "trust_level": "verified",
+                        }
+                    ],
+                }
+            )
+
+        if cross_well.get("clusters"):
+            cluster_claim = (
+                f"Cross-well clustering groups the {location_name} cohort into "
+                f"{len(cross_well['clusters'])} local-data behavior clusters using annual "
+                "change, seasonal amplitude, and confinement."
+            )
+            claim_citations.append(
+                {
+                    "claim_id": f"claim_{len(claim_citations) + 1:03d}",
+                    "claim": cluster_claim,
+                    "confidence": 0.76,
+                    "citations": [
+                        {"url": u, "verified": True, "trust_level": "verified"}
+                        for u in source_urls[: min(5, len(source_urls))]
+                    ],
+                }
+            )
+
     # Build aquifer-aware implications based on confinement types present
     confinement_types = {("confined" if s.get("confined") else "unconfined") for s in sites}
     if "unconfined" in confinement_types:
@@ -871,6 +1132,24 @@ def _site_research_fallback(
             cohort_section += (
                 f"- Divergence: {sa['name']} ({sa['trend']}) " f"vs {sb['name']} ({sb['trend']})\n"
             )
+        if cross_well.get("changepoints"):
+            cohort_section += "- Candidate changepoints:\n"
+            for cp in cross_well["changepoints"][:3]:
+                cohort_section += (
+                    f"  - {cp['name']}: near {cp['date']}; "
+                    f"pre {cp['pre_annual_change_ft_yr']:+.3f} ft/yr, "
+                    f"post {cp['post_annual_change_ft_yr']:+.3f} ft/yr "
+                    f"({cp['confidence']} screen).\n"
+                )
+        if cross_well.get("clusters"):
+            cohort_section += "- Cross-well behavior clusters:\n"
+            for cluster in cross_well["clusters"]:
+                cohort_section += (
+                    f"  - {cluster['label']}: {cluster['n_sites']} wells, "
+                    f"mean {cluster['mean_annual_change_ft_yr']:+.3f} ft/yr, "
+                    f"seasonal amplitude {cluster['mean_seasonal_amplitude_ft']:.2f} ft, "
+                    f"dominant aquifer {cluster['dominant_aquifer']}.\n"
+                )
 
     # --- Aquifer-grouped report ---
     by_aquifer: dict[str, list[dict]] = defaultdict(list)
@@ -1213,6 +1492,8 @@ def _site_research_fallback(
         },
         "llm_synthesis": synthesis_section.strip() if synthesis_section else None,
         "divergent_pairs": cross_well.get("divergent_pairs", []),
+        "changepoints": cross_well.get("changepoints", []),
+        "cross_well_clusters": cross_well.get("clusters", []),
         "cohort_risk_level": cross_well.get("risk_level"),
         "search_history": [question, f"USGS {location_name} proxy sites trend analysis"],
         "depth_reached": 1,

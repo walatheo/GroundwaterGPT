@@ -345,6 +345,40 @@ class TestResearchSectionConfidence:
         assert len(section_data["sections"]) == 2
 
 
+class TestStructuredResearchSynthesis:
+    """Test evidence-ID structured response helpers."""
+
+    @patch("src.agent.research_agent.get_llm")
+    def test_structured_response_renders_evidence_ids(self, mock_get_llm):
+        """Structured synthesis should preserve claim IDs and evidence IDs."""
+        mock_get_llm.return_value = _mock_llm()
+        agent = DeepResearchAgent(use_web_search=False)
+        insights = [
+            ResearchInsight(
+                content="USGS site 262724081260701 shows a monitored groundwater trend.",
+                source_url="https://waterdata.usgs.gov/monitoring-location/262724081260701",
+                confidence=0.85,
+                verified=True,
+                trust_level="verified",
+            )
+        ]
+        claims, _summary = agent._build_claim_citations(insights)
+        evidence = agent._build_evidence_items(claims)
+        structured = agent._heuristic_structured_response(
+            "What does the well show?",
+            claims,
+            [],
+            evidence,
+        )
+        report = agent._render_structured_report(structured)
+
+        assert structured["schema_version"] == "evidence_response_v1"
+        assert structured["claims"][0]["claim_ids"] == ["claim_001"]
+        assert structured["claims"][0]["evidence_ids"] == ["evidence_001_source_1"]
+        assert "[claim_001" in report
+        assert "evidence_001_source_1" in report
+
+
 class TestClaimVerdicts:
     """Test claim-level disagreement verdict generation in research outputs."""
 

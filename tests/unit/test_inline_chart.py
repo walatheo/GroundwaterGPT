@@ -162,6 +162,37 @@ class TestBuildChartPayload:
         with pytest.raises(KeyError):
             _build_chart_payload(sites, "Test Area", cross_well=broken_cross_well)
 
+    def test_cross_well_analysis_adds_changepoints_and_clusters(self):
+        dates = pd.date_range("2020-01-01", periods=60, freq="MS")
+        date_labels = [date.strftime("%Y-%m-%d") for date in dates]
+        sites = [
+            _make_site(
+                "site_001",
+                "Step Change Well",
+                date_labels,
+                [10.0 + idx * 0.01 if idx < 30 else 10.3 + (idx - 30) * 0.18 for idx in range(60)],
+            ),
+            _make_site(
+                "site_002",
+                "Recovery Well",
+                date_labels,
+                [20.0 - idx * 0.04 for idx in range(60)],
+            ),
+            _make_site(
+                "site_003",
+                "Seasonal Stable Well",
+                date_labels,
+                [15.0 + (1.5 if idx % 12 in {5, 6, 7, 8, 9} else 0.0) for idx in range(60)],
+            ),
+        ]
+
+        cross_well = _cross_well_analysis(sites)
+
+        assert cross_well["changepoints"]
+        assert cross_well["changepoints"][0]["detected"] is True
+        assert cross_well["clusters"]
+        assert sum(cluster["n_sites"] for cluster in cross_well["clusters"]) == 3
+
 
 class TestInlineChartIntegration:
     def test_site_research_fallback_includes_chart(self):

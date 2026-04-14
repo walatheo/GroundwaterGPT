@@ -49,6 +49,7 @@ from api.routes._detection import (  # noqa: E402
     _sites_for_aquifer,
     _usgs_site_url,
 )
+from api.routes._provenance import build_research_provenance
 from api.routes._site_analysis import (  # noqa: E402
     _cross_well_analysis,
     _half_trend,
@@ -824,6 +825,106 @@ def _build_research_visual_bundle(question: str) -> dict[str, Any]:
     }
 
 
+def _build_structured_evidence_items(
+    claim_citations: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build a compact evidence registry from claim-level citations."""
+    evidence_items: list[dict[str, Any]] = []
+    for claim in claim_citations:
+        claim_id = str(claim.get("claim_id", "claim_unknown"))
+        for idx, citation in enumerate(claim.get("citations", []), start=1):
+            source = citation.get("url") or citation.get("source") or "unknown"
+            evidence_items.append(
+                {
+                    "evidence_id": str(
+                        citation.get("evidence_id") or f"evidence_{claim_id[-3:]}_source_{idx}"
+                    ),
+                    "claim_id": claim_id,
+                    "url": source,
+                    "trust_level": citation.get("trust_level", "unknown"),
+                    "verified": bool(citation.get("verified", False)),
+                }
+            )
+    return evidence_items
+
+
+def _build_structured_response_from_claims(
+    question: str,
+    claim_citations: list[dict[str, Any]],
+    claim_verdicts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Derive a manuscript-friendly structured response from cited claims."""
+    evidence_items = _build_structured_evidence_items(claim_citations)
+    evidence_by_claim: dict[str, list[str]] = {}
+    for item in evidence_items:
+        evidence_by_claim.setdefault(str(item["claim_id"]), []).append(str(item["evidence_id"]))
+
+    verdict_by_claim = {
+        str(verdict.get("claim_id", "")): str(verdict.get("verdict", "insufficient_evidence"))
+        for verdict in claim_verdicts
+    }
+
+    structured_claims: list[dict[str, Any]] = []
+    omitted_uncited_claims = 0
+    for claim in claim_citations[:8]:
+        claim_id = str(claim.get("claim_id", "claim_unknown"))
+        evidence_ids = evidence_by_claim.get(claim_id, [])
+        if not evidence_ids:
+            omitted_uncited_claims += 1
+            continue
+
+        verdict = verdict_by_claim.get(claim_id, "insufficient_evidence")
+        uncertainty = ""
+        if verdict == "contradicted":
+            uncertainty = "This claim is contradicted by other sources."
+        elif verdict == "insufficient_evidence":
+            uncertainty = "Evidence is limited for this claim."
+
+        structured_claims.append(
+            {
+                "claim": str(claim.get("claim", "")).strip(),
+                "claim_type": str(claim.get("claim_type", "retrieved_insight")),
+                "claim_ids": [claim_id],
+                "evidence_ids": evidence_ids,
+                "confidence": max(0.0, min(1.0, float(claim.get("confidence", 0.5)))),
+                "is_interpretive": str(claim.get("claim_type", "")).lower() == "interpretation",
+                "uncertainty": uncertainty,
+            }
+        )
+
+    answer = " ".join(
+        claim["claim"] for claim in structured_claims[:2] if str(claim.get("claim", "")).strip()
+    ).strip()
+    if not answer:
+        answer = "The available cited evidence was insufficient for a structured answer."
+
+    limitations = [
+        (
+            "This response is constrained to cited claims backed by local "
+            "groundwater data and verified sources where available."
+        ),
+    ]
+    if omitted_uncited_claims:
+        limitations.append(
+            f"{omitted_uncited_claims} uncited claim(s) were excluded from the structured response."
+        )
+
+    return {
+        "schema_version": "evidence_response_v1",
+        "question": question,
+        "answer": answer,
+        "claims": structured_claims,
+        "limitations": limitations,
+        "recommended_followup": [
+            (
+                "Review the cited evidence registry and deterministic cohort "
+                "metrics before drafting manuscript conclusions."
+            ),
+        ],
+        "evidence": evidence_items,
+    }
+
+
 def _augment_research_payload(
     payload: dict[str, Any],
     *,
@@ -881,6 +982,21 @@ def _augment_research_payload(
         payload["chart_specs"] = visual_bundle["chart_specs"]
     if payload.get("aquifer_info") is None and visual_bundle.get("aquifer_info") is not None:
         payload["aquifer_info"] = visual_bundle["aquifer_info"]
+    if not payload.get("structured_response"):
+        claim_citations = payload.get("claim_citations", [])
+        claim_verdicts = payload.get("claim_verdicts") or _build_claim_verdicts(claim_citations)
+        payload["structured_response"] = _build_structured_response_from_claims(
+            question,
+            claim_citations,
+            claim_verdicts,
+        )
+    payload.setdefault("changepoints", [])
+    payload.setdefault("cross_well_clusters", [])
+    payload["provenance"] = build_research_provenance(
+        payload,
+        question=question,
+        route_mode=payload.get("mode", default_mode),
+    )
 
     return payload
 
@@ -1283,6 +1399,7 @@ def research_endpoint(query: dict):
                     "tool_trace": result.get("tool_trace"),
                     "recommended_views": result.get("recommended_views"),
                     "chart_specs": result.get("chart_specs"),
+                    "structured_response": result.get("structured_response"),
                     "search_history": result.get("search_history", []),
                     "depth_reached": result.get("depth_reached", 0),
                     "elapsed_seconds": result.get("elapsed_seconds", 0),
@@ -1356,6 +1473,8 @@ def research_endpoint(query: dict):
                 ),
                 "wells": _build_wells_payload(named_sites),
                 "divergent_pairs": ns_result.get("divergent_pairs", []),
+                "changepoints": ns_result.get("changepoints", []),
+                "cross_well_clusters": ns_result.get("cross_well_clusters", []),
                 "cohort_risk_level": ns_result.get("cohort_risk_level"),
                 "llm_synthesis": ns_result.get("llm_synthesis"),
             },
@@ -1408,6 +1527,8 @@ def research_endpoint(query: dict):
                 "wells": _build_wells_payload(aq_sites),
                 "aquifer_info": _build_aquifer_info(aq_display_name),
                 "divergent_pairs": aq_result.get("divergent_pairs", []),
+                "changepoints": aq_result.get("changepoints", []),
+                "cross_well_clusters": aq_result.get("cross_well_clusters", []),
                 "cohort_risk_level": aq_result.get("cohort_risk_level"),
                 "llm_synthesis": aq_result.get("llm_synthesis"),
             },
@@ -1462,6 +1583,8 @@ def research_endpoint(query: dict):
                     ),
                     "wells": _build_wells_payload(multi_sites),
                     "divergent_pairs": multi_result.get("divergent_pairs", []),
+                    "changepoints": multi_result.get("changepoints", []),
+                    "cross_well_clusters": multi_result.get("cross_well_clusters", []),
                     "cohort_risk_level": multi_result.get("cohort_risk_level"),
                     "llm_synthesis": multi_result.get("llm_synthesis"),
                 },
@@ -1517,6 +1640,8 @@ def research_endpoint(query: dict):
                     _build_aquifer_info(loc_sites[0]["aquifer"]) if loc_sites else None
                 ),
                 "divergent_pairs": site_result.get("divergent_pairs", []),
+                "changepoints": site_result.get("changepoints", []),
+                "cross_well_clusters": site_result.get("cross_well_clusters", []),
                 "cohort_risk_level": site_result.get("cohort_risk_level"),
                 "llm_synthesis": site_result.get("llm_synthesis"),
             },
@@ -1567,6 +1692,8 @@ def research_endpoint(query: dict):
                     ),
                     "wells": _build_wells_payload(nw_sites),
                     "divergent_pairs": nw_result.get("divergent_pairs", []),
+                    "changepoints": nw_result.get("changepoints", []),
+                    "cross_well_clusters": nw_result.get("cross_well_clusters", []),
                     "cohort_risk_level": nw_result.get("cohort_risk_level"),
                     "llm_synthesis": nw_result.get("llm_synthesis"),
                 },
@@ -1677,6 +1804,8 @@ def _stream_fallback_result(question: str, max_depth: int = 3) -> dict:
             "llm_synthesis": site_result.get("llm_synthesis"),
             "wells": _build_wells_payload(sites),
             "divergent_pairs": site_result.get("divergent_pairs", []),
+            "changepoints": site_result.get("changepoints", []),
+            "cross_well_clusters": site_result.get("cross_well_clusters", []),
             "cohort_risk_level": site_result.get("cohort_risk_level"),
         }
 
@@ -1884,6 +2013,7 @@ def _run_research_in_thread(
                         "tool_trace": result.get("tool_trace"),
                         "recommended_views": result.get("recommended_views"),
                         "chart_specs": result.get("chart_specs"),
+                        "structured_response": result.get("structured_response"),
                         "search_history": result.get("search_history", []),
                         "depth_reached": result.get("depth_reached", 0),
                         "elapsed_seconds": result.get("elapsed_seconds", 0),
