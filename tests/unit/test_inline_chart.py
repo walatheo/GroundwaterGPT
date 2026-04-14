@@ -1,5 +1,6 @@
 """Tests for inline chart payloads in chat/research responses."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from api.main import app  # noqa: E402
+from api.routes import chat as chat_routes  # noqa: E402
+from api.routes._agent_chart_hook import attach_chart_from_agent_result  # noqa: E402
 from api.routes._site_analysis import (  # noqa: E402
     _build_chart_payload,
     _cross_well_analysis,
@@ -49,6 +52,14 @@ def _first_site_id():
         if (data_dir / f"usgs_{sid}.csv").exists():
             return sid
     pytest.skip("No site CSV files on disk")
+
+
+def _first_two_site_ids():
+    data_dir = Path(__file__).parent.parent.parent / "data"
+    site_ids = [sid for sid in SITE_METADATA if (data_dir / f"usgs_{sid}.csv").exists()]
+    if len(site_ids) < 2:
+        pytest.skip("Need at least two site CSV files on disk")
+    return site_ids[:2]
 
 
 class TestBuildChartPayload:
@@ -187,3 +198,97 @@ class TestInlineChartIntegration:
         assert "series" in body["chart"]
         assert "insights" in body["chart"]
         assert len(body["chart"]["data"]) > 0
+
+    def test_agent_path_attaches_chart_when_sites_identified(self, monkeypatch):
+        site_ids = _first_two_site_ids()
+        result = {
+            "report": "Agent report",
+            "chart_specs": [{"id": "trend-comparison", "site_ids": site_ids}],
+            "tool_trace": [],
+        }
+
+        attached = attach_chart_from_agent_result(result)
+
+        assert attached["chart"] is not None
+        assert len(attached["chart"]["series"]) >= 2
+        assert len(attached["chart"]["data"]) > 0
+
+    def test_agent_path_no_sites_leaves_chart_none(self):
+        result = {
+            "report": "Agent report",
+            "chart_specs": [{"id": "trend-comparison"}],
+            "tool_trace": [{"tool": "research_router", "details": {"summary": "No sites"}}],
+        }
+
+        attached = attach_chart_from_agent_result(result)
+
+        assert attached.get("chart") is None
+
+    def test_streaming_agent_path_yields_chart_in_final_event(self, monkeypatch):
+        site_ids = _first_two_site_ids()
+
+        class _StubResearchAgent:
+            def research(self, **_kwargs):
+                return {
+                    "report": "Stubbed agent research response",
+                    "insights": [],
+                    "sources": [],
+                    "session_id": "session_stub",
+                    "research_plan": {"main_question": "Compare selected wells"},
+                    "budget_status": {"status": "complete", "depth_reached": 1, "max_depth": 1},
+                    "checkpoints": [],
+                    "tool_trace": [
+                        {
+                            "tool": "site_selector",
+                            "status": "completed",
+                            "details": {"site_ids": site_ids},
+                        }
+                    ],
+                    "chart_specs": [{"id": "trend-comparison", "site_ids": site_ids}],
+                    "search_history": [],
+                    "depth_reached": 1,
+                    "elapsed_seconds": 0.1,
+                    "claim_citations": [],
+                    "claim_verdicts": [],
+                    "claim_verdict_summary": {},
+                    "citation_summary": {
+                        "total_claims": 0,
+                        "cited_claims": 0,
+                        "citation_coverage": 0.0,
+                    },
+                    "section_confidence": {},
+                    "hallucination_guardrail": {},
+                }
+
+        monkeypatch.setattr(chat_routes, "_research_agent", _StubResearchAgent())
+
+        resp = client.post(
+            "/api/research/stream",
+            json={"question": "Compare selected wells", "max_depth": 1, "timeout": 60},
+        )
+
+        assert resp.status_code == 200
+        chunks = [line for line in resp.text.split("\n\n") if line.strip().startswith("data:")]
+        events = [json.loads(chunk.replace("data:", "", 1).strip()) for chunk in chunks]
+        final = next(event for event in events if event.get("type") == "result")
+
+        assert final["chart"] is not None
+        assert final["chart"]["series"]
+        assert final["chart"]["data"]
+
+    def test_build_chart_payload_trend_names_have_ft_yr_units(self):
+        sites = [
+            _make_site(
+                "site_001", "Well A", ["2024-01-01", "2024-02-01", "2024-03-01"], [10.0, 11.0, 12.0]
+            ),
+            _make_site(
+                "site_002", "Well B", ["2024-01-01", "2024-02-01", "2024-03-01"], [30.0, 28.0, 26.0]
+            ),
+        ]
+
+        cross_well = _cross_well_analysis(sites)
+        chart = _build_chart_payload(sites, "Test Area", cross_well=cross_well)
+
+        trend_series_names = [series["name"] for series in chart["series"] if series.get("isTrend")]
+        assert trend_series_names
+        assert all("ft/yr" in name for name in trend_series_names)

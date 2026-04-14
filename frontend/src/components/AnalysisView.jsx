@@ -151,7 +151,7 @@ export default function AnalysisView({ data, site, stats }) {
 
       {/* Seasonal Pattern Chart */}
       <div>
-        <h3 className="text-lg font-semibold text-slate-800 mb-4">🌊 Seasonal Pattern</h3>
+        <h3 className="text-lg font-semibold text-slate-800 mb-4">Seasonal Pattern</h3>
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={monthlyStats} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
@@ -178,18 +178,18 @@ export default function AnalysisView({ data, site, stats }) {
         <div className="flex justify-center gap-6 mt-4 text-sm">
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-amber-500" />
-            <span>🌵 Dry Season (Nov-May)</span>
+            <span>Dry Season (Nov-May)</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-blue-500" />
-            <span>🌧️ Wet Season (Jun-Oct)</span>
+            <span>Wet Season (Jun-Oct)</span>
           </div>
         </div>
       </div>
 
       {/* Yearly Trend Chart */}
       <div>
-        <h3 className="text-lg font-semibold text-slate-800 mb-4">📅 Annual Averages</h3>
+        <h3 className="text-lg font-semibold text-slate-800 mb-4">Annual Averages</h3>
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={yearlyStats} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
@@ -210,7 +210,7 @@ export default function AnalysisView({ data, site, stats }) {
 
       {/* Data Table */}
       <div>
-        <h3 className="text-lg font-semibold text-slate-800 mb-4">📋 Yearly Summary</h3>
+        <h3 className="text-lg font-semibold text-slate-800 mb-4">Yearly Summary</h3>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">

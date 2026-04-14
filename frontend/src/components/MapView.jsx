@@ -151,7 +151,7 @@ export default function MapView({ sites = [], selectedSite, setSelectedSite, set
       {/* Site count badge */}
       <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg px-3 py-2 z-[1000]">
         <p className="text-sm font-semibold text-slate-700">
-          📍 {sites.length} Monitoring Sites
+          {sites.length} Monitoring Sites
         </p>
       </div>
     </div>

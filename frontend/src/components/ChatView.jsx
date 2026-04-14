@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef } from 'react'
-import { Send, Bot, User, AlertCircle, Sparkles, Search, MessageCircle } from 'lucide-react'
+import { Suspense, lazy, useState, useEffect, useRef } from 'react'
+import { Send, Bot, User, Sparkles, Search, MessageCircle, FlaskConical } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-import { sendChatMessage, sendResearchQueryStreaming, fetchChatStatus } from '../api/client'
-import AgentChart from './AgentChart'
-import ResearchChartsPanel from './ResearchChartsPanel'
+import { backendStatus, sendChatMessage, sendResearchQueryStreaming, fetchChatStatus } from '../api/client'
 import ResearchSessionPanel from './ResearchSessionPanel'
+
+const AgentChart = lazy(() => import('./AgentChart'))
+const ResearchChartsPanel = lazy(() => import('./ResearchChartsPanel'))
+const VISUAL_QUERY_RE = /plot|chart|trend|visuali[sz]e|graph/i
 
 /** Custom component overrides for ReactMarkdown (no @tailwindcss/typography). */
 const markdownComponents = {
@@ -69,11 +71,11 @@ const RESEARCH_EXAMPLES = [
   "What does the literature say about saltwater intrusion in Southeast Florida?",
 ]
 
-export default function ChatView({ selectedSite }) {
+export default function ChatView({ selectedSite, onOpenWorkbench }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: "👋 Welcome to GroundwaterGPT! I can help answer questions about groundwater, irrigation, crops, and aquifers in Florida. Switch to Deep Research mode for multi-step investigations with source citations.",
+      content: "Welcome to Florida Aquifer Analysis. I can help answer questions about groundwater, irrigation, crops, and aquifers in Florida. Switch to Deep Research mode for multi-step investigations with source citations.",
       sources: [],
     }
   ])
@@ -81,6 +83,7 @@ export default function ChatView({ selectedSite }) {
   const [loading, setLoading] = useState(false)
   const [mode, setMode] = useState('chat') // 'chat' | 'research'
   const [agentStatus, setAgentStatus] = useState(null)
+  const [backendState, setBackendState] = useState(() => backendStatus.getStatus())
   const messagesEndRef = useRef(null)
 
   // Scroll to bottom when messages change
@@ -94,6 +97,8 @@ export default function ChatView({ selectedSite }) {
       .then(setAgentStatus)
       .catch(() => setAgentStatus(null))
   }, [])
+
+  useEffect(() => backendStatus.subscribe(setBackendState), [])
 
   const sendMessage = async (text = input) => {
     if (!text.trim()) return
@@ -113,10 +118,11 @@ export default function ChatView({ selectedSite }) {
         const PROGRESS_ID = Date.now() // stable key to find the bubble later
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: '🔍 Starting deep research…',
+          content: 'Starting deep research...',
           isProgress: true,
           progressId: PROGRESS_ID,
           progressValue: 0,
+          progressStartedAt: Date.now(),
           sessionId: '',
           researchPlan: null,
           budgetStatus: null,
@@ -129,7 +135,7 @@ export default function ChatView({ selectedSite }) {
         const handleProgress = (message, progress, snapshot) => {
           setMessages(prev => prev.map(m =>
             m.progressId === PROGRESS_ID
-              ? { ...m, content: `🔍 ${message}`, progressValue: progress }
+              ? { ...m, content: message, progressValue: progress }
               : m
           ).map(m =>
             m.progressId === PROGRESS_ID
@@ -147,8 +153,8 @@ export default function ChatView({ selectedSite }) {
 
         const data = await sendResearchQueryStreaming(text, { onProgress: handleProgress })
         const reportRaw = data.report || data.response || 'Research complete — no report generated.'
-        const { text: reportText, chart: extractedChart } = extractChart(reportRaw)
-        const chart = data.chart || extractedChart
+        const { text: reportText } = extractChart(reportRaw)
+        const chart = data.chart || null
 
         // Swap out the progress bubble for the finished report.
         setMessages(prev => {
@@ -182,14 +188,15 @@ export default function ChatView({ selectedSite }) {
             llmSynthesis: data.llm_synthesis || null,
             hallucinationGuardrail: data.hallucination_guardrail || null,
             citationIntegrity: data.citation_integrity || null,
+            requestedVisualization: VISUAL_QUERY_RE.test(text),
             mode: data.mode,
           }]
         })
       } else {
         // Quick chat mode
         const data = await sendChatMessage(text)
-        const { text: replyText, chart: extractedChart } = extractChart(data.response)
-        const chart = data.chart || extractedChart
+        const { text: replyText } = extractChart(data.response)
+        const chart = data.chart || null
 
         setMessages(prev => [...prev, {
           role: 'assistant',
@@ -211,6 +218,7 @@ export default function ChatView({ selectedSite }) {
           llmSynthesis: data.llm_synthesis || null,
           hallucinationGuardrail: data.hallucination_guardrail || null,
           citationIntegrity: data.citation_integrity || null,
+          requestedVisualization: VISUAL_QUERY_RE.test(text),
           mode: data.mode,
           status: data.status,
         }])
@@ -241,17 +249,18 @@ export default function ChatView({ selectedSite }) {
   const examples = mode === 'research' ? RESEARCH_EXAMPLES : EXAMPLE_QUESTIONS
 
   return (
-    <div className="flex flex-col h-[600px]">
+    <div className="flex h-[700px] flex-col bg-[linear-gradient(180deg,_rgba(248,250,252,0.92),_rgba(255,255,255,0.98))]">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white p-4 rounded-t-lg">
+      <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.16),_transparent_24%),linear-gradient(135deg,_#0f172a,_#164e63)] p-5 text-white">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="bg-white/20 p-2 rounded-lg">
+            <div className="rounded-2xl bg-white/10 p-2.5 ring-1 ring-white/10">
               <Bot className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="font-bold text-lg">GroundwaterGPT Assistant</h3>
-              <p className="text-blue-100 text-sm flex items-center gap-1">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-teal-100/80">Groundwater Assistant</p>
+              <h3 className="text-xl font-semibold">Ask about wells, aquifers, trends, and supply risk</h3>
+              <p className="mt-1 flex items-center gap-1 text-sm text-teal-50/80">
                 <Sparkles className="w-3 h-3" />
                 {agentStatus?.agent_available
                   ? 'LLM-powered agent active'
@@ -261,11 +270,11 @@ export default function ChatView({ selectedSite }) {
           </div>
 
           {/* Mode Toggle */}
-          <div className="flex bg-white/20 rounded-lg overflow-hidden text-sm">
+          <div className="flex overflow-hidden rounded-xl bg-white/10 text-sm ring-1 ring-white/10">
             <button
               onClick={() => setMode('chat')}
               className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${
-                mode === 'chat' ? 'bg-white/30 font-semibold' : 'hover:bg-white/10'
+                mode === 'chat' ? 'bg-white/20 font-semibold' : 'hover:bg-white/10'
               }`}
             >
               <MessageCircle className="w-3.5 h-3.5" /> Chat
@@ -273,17 +282,51 @@ export default function ChatView({ selectedSite }) {
             <button
               onClick={() => setMode('research')}
               className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${
-                mode === 'research' ? 'bg-white/30 font-semibold' : 'hover:bg-white/10'
+                mode === 'research' ? 'bg-white/20 font-semibold' : 'hover:bg-white/10'
               }`}
             >
               <Search className="w-3.5 h-3.5" /> Research
             </button>
           </div>
         </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-full bg-white/10 px-3 py-1.5 text-teal-50/85">
+            {mode === 'chat' ? 'Fast answers for groundwater prompts' : 'Long-form, multi-step groundwater research'}
+          </span>
+          {selectedSite && (
+            <span className="rounded-full bg-teal-400/15 px-3 py-1.5 text-teal-100">
+              Current site: {selectedSite.name}
+            </span>
+          )}
+        </div>
       </div>
 
+      {backendState === 'down' && (
+        <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">
+          <span className="font-medium">Backend unreachable</span> — check uvicorn on `:8000`.
+        </div>
+      )}
+
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+      <div className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,_rgba(248,250,252,0.65),_rgba(241,245,249,0.85))] p-4">
+        {selectedSite && (
+          <div className="mb-4 rounded-2xl border border-teal-100 bg-teal-50/80 p-4 text-sm text-slate-700 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-white p-2 text-teal-700 shadow-sm">
+                <FlaskConical className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="font-medium text-slate-900">Selected site context available</p>
+                <p className="mt-1 leading-6 text-slate-600">
+                  Ask about <span className="font-medium text-slate-800">{selectedSite.name}</span>, compare it to nearby wells, or switch to research mode for a cited report.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
         {messages.map((msg, idx) => (
           <div
             key={idx}
@@ -314,6 +357,7 @@ export default function ChatView({ selectedSite }) {
                 <ResearchSessionPanel
                   sessionId={msg.sessionId}
                   progressValue={msg.progressValue}
+                  progressStartedAt={msg.progressStartedAt}
                   live={Boolean(msg.isProgress)}
                   message={msg.content}
                   researchPlan={msg.researchPlan}
@@ -326,15 +370,25 @@ export default function ChatView({ selectedSite }) {
               {/* Inline chart from agent visualization tools */}
               {msg.chart && (
                 <div className="mt-3 -mx-1">
-                  <AgentChart chartData={msg.chart} />
+                  <Suspense fallback={<div className="h-[320px]" />}>
+                    <AgentChart chartData={msg.chart} />
+                  </Suspense>
+                </div>
+              )}
+
+              {!msg.chart && msg.requestedVisualization && (
+                <div className="mt-3 text-xs italic text-slate-400">
+                  No time series available for this query.
                 </div>
               )}
 
               {msg.chartSpecs && msg.chartSpecs.length > 0 && (
-                <ResearchChartsPanel
-                  chartSpecs={msg.chartSpecs}
-                  recommendedViews={msg.recommendedViews || []}
-                />
+                <Suspense fallback={<div className="h-[320px]" />}>
+                  <ResearchChartsPanel
+                    chartSpecs={msg.chartSpecs}
+                    recommendedViews={msg.recommendedViews || []}
+                  />
+                </Suspense>
               )}
 
               {msg.llmSynthesis && (
@@ -350,7 +404,7 @@ export default function ChatView({ selectedSite }) {
 
               {msg.hallucinationGuardrail && !msg.hallucinationGuardrail.all_factual_claims_cited && (
                 <div className="text-[10px] text-amber-500 mt-1">
-                  ⚠ Some claims uncited
+                  Some claims are uncited
                   {msg.hallucinationGuardrail.has_llm_synthesis && ' · includes LLM synthesis'}
                 </div>
               )}
@@ -372,7 +426,7 @@ export default function ChatView({ selectedSite }) {
 
               {msg.context && (
                 <p className="text-xs mt-2 opacity-70 border-t border-slate-200 pt-2">
-                  📍 {msg.context}
+                  {msg.context}
                 </p>
               )}
 
@@ -409,12 +463,12 @@ export default function ChatView({ selectedSite }) {
                   <span className="text-slate-500 font-medium">Verdict:</span>
                   {/* Supported count — green */}
                   <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">
-                    ✅ {msg.claimVerdictSummary.supported_claims} supported
+                    {msg.claimVerdictSummary.supported_claims} supported
                   </span>
                   {/* Contradicted count — red, only shown when >0 */}
                   {msg.claimVerdictSummary.contradicted_claims > 0 && (
                     <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-full">
-                      ⚠ {msg.claimVerdictSummary.contradicted_claims} contradicted
+                      {msg.claimVerdictSummary.contradicted_claims} contradicted
                     </span>
                   )}
                   {/* Insufficient evidence count — grey */}
@@ -426,7 +480,7 @@ export default function ChatView({ selectedSite }) {
                   {/* Contradicted rate warning — only shown when rate exceeds 15% */}
                   {msg.claimVerdictSummary.contradicted_claim_rate > 0.15 && (
                     <span className="text-red-600 font-medium">
-                      ⚠ {Math.round(msg.claimVerdictSummary.contradicted_claim_rate * 100)}% of claims conflict — see report below
+                      {Math.round(msg.claimVerdictSummary.contradicted_claim_rate * 100)}% of claims conflict — see report below
                     </span>
                   )}
                 </div>
@@ -455,9 +509,9 @@ export default function ChatView({ selectedSite }) {
                           : 'bg-slate-100 text-slate-500'
 
                       const badgeLabel =
-                        verdict === 'supported' ? '✅'
-                        : verdict === 'contradicted' ? '⚠'
-                        : '—'
+                        verdict === 'supported' ? 'Supported'
+                        : verdict === 'contradicted' ? 'Conflicted'
+                        : 'Insufficient'
 
                       return (
                         <li key={claim.claim_id || i} className="text-xs text-slate-600 flex items-start gap-1.5">
@@ -574,7 +628,7 @@ export default function ChatView({ selectedSite }) {
               {msg.divergentPairs && msg.divergentPairs.length > 0 && (
                 <details className="mt-2 pt-2 border-t border-slate-200">
                   <summary className="text-xs text-slate-500 cursor-pointer">
-                    ⚡ {msg.divergentPairs.length} divergent well pair{msg.divergentPairs.length > 1 ? 's' : ''} detected
+                    {msg.divergentPairs.length} divergent well pair{msg.divergentPairs.length > 1 ? 's' : ''} detected
                     {msg.cohortRisk && (
                       <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${
                         msg.cohortRisk === 'high' ? 'bg-red-100 text-red-700'
@@ -603,14 +657,30 @@ export default function ChatView({ selectedSite }) {
                 </details>
               )}
 
+              {onOpenWorkbench && msg.wells && msg.wells.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => onOpenWorkbench({
+                      siteIds: msg.wells.map((well) => well.site_id).filter(Boolean).slice(0, 8),
+                      sourceLabel: msg.mode || 'assistant',
+                    })}
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100"
+                  >
+                    <FlaskConical className="h-3.5 w-3.5" />
+                    Open in Workbench
+                  </button>
+                </div>
+              )}
+
               {msg.mode && (
                 <div className="mt-2 flex items-center gap-1 text-xs text-slate-400">
-                  {msg.mode === 'agent' && '🤖 Agent'}
-                  {msg.mode === 'deep_research' && '🔬 Deep Research'}
-                  {msg.mode === 'fallback' && '📍 Location Analysis'}
-                  {msg.mode === 'site_fallback' && '📍 Site Analysis'}
-                  {msg.mode === 'aquifer_fallback' && '🌊 Aquifer Analysis'}
-                  {msg.mode === 'network_fallback' && '🗺️ Network Analysis'}
+                  {msg.mode === 'agent' && 'Agent'}
+                  {msg.mode === 'deep_research' && 'Deep Research'}
+                  {msg.mode === 'fallback' && 'Location Analysis'}
+                  {msg.mode === 'site_fallback' && 'Site Analysis'}
+                  {msg.mode === 'aquifer_fallback' && 'Aquifer Analysis'}
+                  {msg.mode === 'network_fallback' && 'Network Analysis'}
                 </div>
               )}
             </div>
@@ -622,6 +692,7 @@ export default function ChatView({ selectedSite }) {
             )}
           </div>
         ))}
+        </div>
 
         {loading && !messages.some(m => m.isProgress) && (
           <div className="flex gap-3">
@@ -642,25 +713,33 @@ export default function ChatView({ selectedSite }) {
       </div>
 
       {/* Example Questions */}
-      <div className="bg-white border-t border-slate-200 p-3">
-        <p className="text-xs text-slate-500 mb-2">
-          {mode === 'research' ? '🔬 Research examples:' : '💬 Try asking:'}
+      <div className="border-t border-slate-200 bg-white/90 p-4">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+          {mode === 'research' ? 'Research examples:' : 'Try asking:'}
         </p>
         <div className="flex flex-wrap gap-2">
           {examples.slice(0, 3).map((q, i) => (
             <button
               key={i}
               onClick={() => sendMessage(q)}
-              className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-full transition-colors"
+              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-800"
             >
               {q}
             </button>
           ))}
+          {selectedSite && (
+            <button
+              onClick={() => sendMessage(`Summarize groundwater conditions at ${selectedSite.name}.`)}
+              className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs text-teal-800 transition-colors hover:bg-teal-100"
+            >
+              Summarize {selectedSite.name}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Input */}
-      <div className="bg-white border-t border-slate-200 p-4">
+      <div className="border-t border-slate-200 bg-white/95 p-4">
         <div className="flex gap-2">
           <input
             type="text"
@@ -669,10 +748,10 @@ export default function ChatView({ selectedSite }) {
             onKeyPress={handleKeyPress}
             placeholder={
               mode === 'research'
-                ? 'Ask a deep-research question…'
-                : 'Ask about groundwater, irrigation, crops…'
+                ? 'Ask a deep-research question with a site, county, or aquifer focus…'
+                : 'Ask about groundwater levels, aquifers, well depth, irrigation, or supply risk…'
             }
-            className="flex-1 border border-slate-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="flex-1 rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm shadow-inner focus:border-transparent focus:outline-none focus:ring-2 focus:ring-teal-500"
             disabled={loading}
           />
           <button
@@ -680,12 +759,23 @@ export default function ChatView({ selectedSite }) {
             disabled={loading || !input.trim()}
             className={`${
               mode === 'research'
-                ? 'bg-purple-600 hover:bg-purple-700'
-                : 'bg-blue-600 hover:bg-blue-700'
-            } disabled:bg-slate-300 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2`}
+                ? 'bg-teal-700 hover:bg-teal-800'
+                : 'bg-slate-900 hover:bg-teal-700'
+            } flex items-center gap-2 rounded-2xl px-4 py-2 text-white transition-colors disabled:bg-slate-300`}
           >
             {mode === 'research' ? <Search className="w-4 h-4" /> : <Send className="w-4 h-4" />}
           </button>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
+          <span>Tip: include a county, well name, site ID, or aquifer for more grounded answers.</span>
+          {selectedSite && mode === 'chat' && (
+            <button
+              onClick={() => setInput(`Compare ${selectedSite.name} to nearby wells in ${selectedSite.county} County.`)}
+              className="text-teal-700 hover:text-teal-800"
+            >
+              Use selected site as a starting prompt
+            </button>
+          )}
         </div>
       </div>
     </div>

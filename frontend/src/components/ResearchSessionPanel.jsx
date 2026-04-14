@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 function formatBudgetValue(value, suffix = '') {
   if (value == null || Number.isNaN(value)) return '—'
   return `${value}${suffix}`
@@ -6,6 +8,7 @@ function formatBudgetValue(value, suffix = '') {
 export default function ResearchSessionPanel({
   sessionId,
   progressValue,
+  progressStartedAt,
   live = false,
   message,
   researchPlan,
@@ -13,10 +16,32 @@ export default function ResearchSessionPanel({
   checkpoints = [],
   toolTrace = [],
 }) {
+  const [liveElapsedSeconds, setLiveElapsedSeconds] = useState(0)
+
+  useEffect(() => {
+    if (!live || !progressStartedAt) {
+      setLiveElapsedSeconds(0)
+      return
+    }
+
+    const updateElapsed = () => {
+      setLiveElapsedSeconds(Math.max(0, Math.round((Date.now() - progressStartedAt) / 1000)))
+    }
+
+    updateElapsed()
+    const intervalId = window.setInterval(updateElapsed, 1000)
+    return () => window.clearInterval(intervalId)
+  }, [live, progressStartedAt])
+
   const planTools = researchPlan?.recommended_tools || []
   const planQuestions = researchPlan?.sub_questions || []
   const visibleCheckpoints = checkpoints.slice(-4).reverse()
   const visibleTrace = toolTrace.slice(-5).reverse()
+  const elapsedSeconds = Math.round(
+    budgetStatus?.elapsed_seconds ?? (live ? liveElapsedSeconds : 0)
+  )
+  const progressPercent = typeof progressValue === 'number' ? Math.round(progressValue * 100) : null
+  const phaseLabel = (budgetStatus?.status || '').replaceAll('_', ' ')
 
   return (
     <div className={`mt-3 rounded-xl border p-3 ${
@@ -34,17 +59,21 @@ export default function ResearchSessionPanel({
         </div>
         {budgetStatus?.status && (
           <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-600 border border-slate-200">
-            {budgetStatus.status}
+            {phaseLabel}
           </span>
         )}
       </div>
 
       {live && typeof progressValue === 'number' && (
         <div className="mt-3">
+          <div className="mb-1 flex items-center justify-between text-[11px] text-amber-700">
+            <span>{message || 'Research in progress'}</span>
+            <span className="font-semibold">{progressPercent}%</span>
+          </div>
           <div className="h-2 rounded-full bg-amber-100 overflow-hidden">
             <div
               className="h-full rounded-full bg-amber-500 transition-all duration-500"
-              style={{ width: `${Math.round(progressValue * 100)}%` }}
+              style={{ width: `${progressPercent}%` }}
             />
           </div>
         </div>
@@ -72,7 +101,7 @@ export default function ResearchSessionPanel({
         <div className="rounded-lg bg-white border border-slate-200 p-2">
           <div className="text-[10px] uppercase tracking-wide text-slate-400">Elapsed</div>
           <div className="text-sm font-semibold text-slate-800">
-            {formatBudgetValue(Math.round(budgetStatus?.elapsed_seconds || 0), 's')}
+            {formatBudgetValue(elapsedSeconds, 's')}
           </div>
         </div>
       </div>

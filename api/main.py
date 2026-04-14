@@ -1,4 +1,4 @@
-"""FastAPI backend for GroundwaterGPT Dashboard.
+"""FastAPI backend for Florida Aquifer Analysis.
 
 Thin application factory — all endpoint logic lives in ``api.routes.*``.
 """
@@ -19,7 +19,7 @@ from api.routes.research_workflow import router as research_workflow_router  # n
 from api.routes.wells import router as wells_router  # noqa: E402
 from api.site_metadata import SITE_METADATA  # noqa: F401, E402
 
-app = FastAPI(title="GroundwaterGPT API", version="1.0.0")
+app = FastAPI(title="Florida Aquifer Analysis API", version="1.0.0")
 
 # Enable CORS for React frontend
 app.add_middleware(
@@ -42,7 +42,7 @@ app.include_router(wells_router)
 def root():
     """API root — health-check and link to docs."""
     return {
-        "name": "GroundwaterGPT API",
+        "name": "Florida Aquifer Analysis API",
         "version": "1.0.0",
         "docs": "/docs",
     }

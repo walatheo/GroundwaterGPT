@@ -249,14 +249,13 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _linear_trend_values(
+def _linear_trend_values_with_slope(
     ordered_dates: list[str],
     values_by_date: dict[str, float],
-) -> dict[str, float]:
+) -> tuple[dict[str, float], float]:
     """Return regression trend values bounded to the observed period.
 
-    The fitted slope is measured per monthly chart bin, not calendar month.
-    Multiply by 12 if this is ever surfaced as ft/yr.
+    The fitted slope is measured in ft per monthly chart bin.
     """
     points = [
         (idx, values_by_date[date_str])
@@ -264,22 +263,36 @@ def _linear_trend_values(
         if date_str in values_by_date
     ]
     if len(points) < 2:
-        return {}
+        return {}, 0.0
 
     xs = [x for x, _ in points]
     ys = [y for _, y in points]
     mean_x = sum(xs) / len(xs)
     mean_y = sum(ys) / len(ys)
     denom = sum((x - mean_x) ** 2 for x in xs)
-    slope = 0.0 if denom == 0 else sum((x - mean_x) * (y - mean_y) for x, y in points) / denom
-    intercept = mean_y - slope * mean_x
+    slope_per_bin = (
+        0.0 if denom == 0 else sum((x - mean_x) * (y - mean_y) for x, y in points) / denom
+    )
+    intercept = mean_y - slope_per_bin * mean_x
 
     start_idx = xs[0]
     end_idx = xs[-1]
-    return {
-        ordered_dates[idx]: round(intercept + slope * idx, 2)
-        for idx in range(start_idx, end_idx + 1)
-    }
+    return (
+        {
+            ordered_dates[idx]: round(intercept + slope_per_bin * idx, 2)
+            for idx in range(start_idx, end_idx + 1)
+        },
+        slope_per_bin,
+    )
+
+
+def _linear_trend_values(
+    ordered_dates: list[str],
+    values_by_date: dict[str, float],
+) -> dict[str, float]:
+    """Return regression trend values bounded to the observed period."""
+    trend_values, _slope_per_bin = _linear_trend_values_with_slope(ordered_dates, values_by_date)
+    return trend_values
 
 
 def _build_chart_insights(
@@ -294,6 +307,13 @@ def _build_chart_insights(
     per_site = cross_well.get("per_site_metrics", [])
     if not per_site:
         return insights
+
+    if highlighted_keys:
+        highlighted_count = len(highlighted_keys)
+        insights.append(
+            "Highlighted wells mark the most divergent or fastest-changing "
+            f"series ({highlighted_count} total)."
+        )
 
     strongest_decline = min(per_site, key=lambda item: item["annual_change_ft_yr"])
     strongest_rise = max(per_site, key=lambda item: item["annual_change_ft_yr"])
@@ -322,13 +342,6 @@ def _build_chart_insights(
         assert "name" in top_pair["site_a"] and "name" in top_pair["site_b"]
         insights.append(
             f"Largest divergence: {top_pair['site_a']['name']} vs {top_pair['site_b']['name']}."
-        )
-
-    if highlighted_keys:
-        highlighted_count = len(highlighted_keys)
-        insights.append(
-            "Highlighted wells mark the most divergent or fastest-changing "
-            f"series ({highlighted_count} total)."
         )
 
     return insights[:5]
@@ -433,15 +446,23 @@ def _build_chart_payload(
         )
 
     trend_targets: list[tuple[str, str, str]] = []
+    annual_rates_by_site = {
+        str(metric["site_id"]): float(metric["annual_change_ft_yr"])
+        for metric in per_site_metrics
+        if "site_id" in metric and "annual_change_ft_yr" in metric
+    }
     if include_avg:
         avg_series = {row["date"]: row["avg"] for row in records if row.get("avg") is not None}
-        avg_trend = _linear_trend_values(sorted_dates, avg_series)
+        avg_trend, avg_slope_per_bin = _linear_trend_values_with_slope(sorted_dates, avg_series)
         if avg_trend:
             for row in records:
                 value = avg_trend.get(row["date"])
                 if value is not None:
                     row["avg_trend"] = value
-            trend_targets.append(("avg_trend", "Cohort Trend", "#6b7280"))
+            avg_annual_rate = avg_slope_per_bin * 12
+            trend_targets.append(
+                ("avg_trend", f"Cohort Trend ({avg_annual_rate:+.2f} ft/yr)", "#6b7280")
+            )
 
     for sid in sorted(highlighted_keys):
         if sid not in site_series:
@@ -455,10 +476,11 @@ def _build_chart_payload(
             if value is not None:
                 row[trend_key] = value
         base_series = next((series for series in chart_series if series["key"] == sid), None)
+        annual_rate = annual_rates_by_site.get(sid, 0.0)
         trend_targets.append(
             (
                 trend_key,
-                f"{site_names.get(sid, sid)} Trend",
+                f"{site_names.get(sid, sid)} Trend ({annual_rate:+.2f} ft/yr)",
                 base_series.get("color", "#64748b") if base_series else "#64748b",
             )
         )
@@ -497,6 +519,7 @@ def _site_research_fallback(
     location_name: str,
     ref_lat: Optional[float] = None,
     ref_lng: Optional[float] = None,
+    allow_llm_synthesis: bool = True,
 ) -> dict:
     """Generate a deterministic, cited response for any USGS site/location query."""
     if not sites:
@@ -1072,7 +1095,9 @@ def _site_research_fallback(
 
     # --- LLM synthesis (hybrid mode) ---
     synthesis_section = ""
-    needs_synthesis = is_supply_query or bool(_SYNTHESIS_TRIGGER_RE.search(question))
+    needs_synthesis = allow_llm_synthesis and (
+        is_supply_query or bool(_SYNTHESIS_TRIGGER_RE.search(question))
+    )
     if needs_synthesis:
         synthesis_data = {
             "location": location_name,

@@ -1446,6 +1446,184 @@
     ]
   },
   {
+    "id": "L1_aquifer_detail_05",
+    "level": "L1",
+    "question": "Which wells monitor the Hawthorn Group and how deep are they?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_well_id",
+      "has_aquifer_language",
+      "has_well_depth",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "aquifer_fallback",
+        "label": "routes_to_aquifer_path"
+      },
+      {
+        "type": "contains",
+        "value": "hawthorn",
+        "label": "names_hawthorn"
+      },
+      {
+        "type": "min_wells",
+        "value": 3,
+        "label": "returns_hawthorn_wells"
+      }
+    ]
+  },
+  {
+    "id": "L1_aquifer_detail_06",
+    "level": "L1",
+    "question": "Is the Surficial Aquifer confined or unconfined?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_aquifer_language",
+      "has_confined_language",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "aquifer_fallback",
+        "label": "routes_to_aquifer_path"
+      },
+      {
+        "type": "contains",
+        "value": "surficial",
+        "label": "names_surficial"
+      },
+      {
+        "type": "contains",
+        "value": "unconfined",
+        "label": "identifies_unconfined"
+      }
+    ]
+  },
+  {
+    "id": "L1_aquifer_detail_07",
+    "level": "L1",
+    "question": "Which wells monitor the Intermediate Aquifer System and what depths are typical?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_well_id",
+      "has_aquifer_language",
+      "has_well_depth",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "aquifer_fallback",
+        "label": "routes_to_aquifer_path"
+      },
+      {
+        "type": "contains",
+        "value": "intermediate",
+        "label": "names_intermediate"
+      },
+      {
+        "type": "min_wells",
+        "value": 4,
+        "label": "returns_intermediate_wells"
+      }
+    ]
+  },
+  {
+    "id": "L1_aquifer_detail_08",
+    "level": "L1",
+    "question": "Are Hawthorn Group wells confined or unconfined?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_aquifer_language",
+      "has_confined_language",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "aquifer_fallback",
+        "label": "routes_to_aquifer_path"
+      },
+      {
+        "type": "contains",
+        "value": "hawthorn",
+        "label": "names_hawthorn"
+      },
+      {
+        "type": "contains",
+        "value": "mixed confined/unconfined",
+        "label": "describes_mixed_confinement"
+      }
+    ]
+  },
+  {
+    "id": "L1_named_well_zone_01",
+    "level": "L1",
+    "question": "What is the aquifer zone and depth range for well G-5004?",
+    "max_depth": 1,
+    "timeout": 60,
+    "max_seconds": 20,
+    "required_checks": [
+      "ok_status",
+      "has_report",
+      "has_sources",
+      "has_claim_citations",
+      "has_well_id",
+      "has_aquifer_language",
+      "has_well_depth",
+      "within_time_budget"
+    ],
+    "assertions": [
+      {
+        "type": "expected_mode",
+        "value": "site_fallback",
+        "label": "routes_to_site_path"
+      },
+      {
+        "type": "contains",
+        "value": "G-5004",
+        "label": "names_correct_well"
+      },
+      {
+        "type": "contains",
+        "value": "biscayne",
+        "label": "names_biscayne_zone"
+      },
+      {
+        "type": "contains",
+        "value": "95 ft",
+        "label": "reports_depth_range_value"
+      }
+    ]
+  },
+  {
     "id": "L2_multi_site_01",
     "level": "L2",
     "question": "Compare groundwater trends between Miami-Dade and Lee County wells.",

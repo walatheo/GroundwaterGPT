@@ -8,6 +8,24 @@
 
 ---
 
+## Quick Demo
+
+```bash
+make demo
+```
+
+Open http://localhost:3000, then try:
+
+- `Estero trends` for a 10-well cohort chart.
+- `compare G-3336 and G-5004` for a 2-well overlay.
+- `which aquifer supplies Estero?` for a text-only answer with no chart.
+
+The demo starts FastAPI on http://127.0.0.1:8000 with `GROUNDWATERGPT_SKIP_AGENT_INIT=1`, waits for `/api/chat/status`, then starts the Vite frontend on http://localhost:3000. Logs stream to `/tmp/gwgpt-backend.log` and `/tmp/gwgpt-frontend.log`.
+
+Build note, 2026-04-14: after lazy-loading chart panels, the initial Vite JS chunk is `260.26 kB` gzip; chart-heavy panels load as async chunks.
+
+---
+
 ## 🎯 Project Overview
 
 GroundwaterGPT is a **whitebox AI system** that combines:

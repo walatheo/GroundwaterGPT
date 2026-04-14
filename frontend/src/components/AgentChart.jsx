@@ -40,6 +40,18 @@ export default function AgentChart({ chartData }) {
     cohort_risk_level: cohortRiskLevel,
   } = chartData
 
+  const legendPayload = useMemo(() => {
+    if (series.length <= 6) return undefined
+    return series
+      .filter((entry) => entry.highlight || entry.isTrend || entry.key === 'avg')
+      .map((entry) => ({
+        value: entry.name || entry.key,
+        type: 'line',
+        id: entry.key,
+        color: entry.color || '#3b82f6',
+      }))
+  }, [series])
+
   // Determine Y-axis domain from data
   const yDomain = useMemo(() => {
     let min = Infinity
@@ -101,7 +113,7 @@ export default function AgentChart({ chartData }) {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')
     link.href = url
-    link.download = `${baseName || 'groundwater-chart'}.csv`
+    link.download = `${baseName || 'groundwater-chart'}-monthly.csv`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -114,7 +126,7 @@ export default function AgentChart({ chartData }) {
         <div className="mb-2 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <h4 className="text-sm font-semibold text-slate-700">
-              📊 {title}
+              {title}
             </h4>
             {cohortRiskLevel && cohortRiskLevel !== 'unknown' && (
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
@@ -131,6 +143,7 @@ export default function AgentChart({ chartData }) {
           <button
             type="button"
             onClick={handleDownload}
+            title="Monthly-mean aggregation of all plotted wells"
             className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
           >
             <Download className="h-3.5 w-3.5" />
@@ -162,7 +175,7 @@ export default function AgentChart({ chartData }) {
               }
             />
             <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} payload={legendPayload} />
 
             {series.map((s) => (
               <Line

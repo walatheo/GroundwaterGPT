@@ -202,6 +202,88 @@ class TestChatEndpoint:
         assert isinstance(body["citation_integrity"], dict)
         assert "passed" in body["citation_integrity"]
 
+    def test_chat_kb_query_skips_agent_for_fast_fallback(self, monkeypatch):
+        """KB-matched chat queries should not invoke the slower LLM agent path."""
+        from api.routes import chat as chat_routes
+
+        class _BoomAgent:
+            def chat(self, _query):
+                raise AssertionError("chat agent should not be called for KB fast path")
+
+        monkeypatch.setattr(chat_routes, "_chat_agent", _BoomAgent())
+        resp = client.post(
+            "/api/chat",
+            json={"message": "When is the best time to plant considering groundwater?"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["mode"] == "fallback"
+
+    def test_chat_site_analysis_disables_llm_synthesis(self, monkeypatch):
+        """Chat site-analysis fast paths should stay deterministic and skip synthesis."""
+        from api.routes import chat as chat_routes
+
+        captured: dict[str, object] = {}
+
+        def _fake_site_fallback(*args, **kwargs):
+            captured["allow_llm_synthesis"] = kwargs.get("allow_llm_synthesis")
+            return {
+                "report": "Synthetic site analysis",
+                "sources": ["https://example.com/usgs"],
+                "chart": None,
+                "divergent_pairs": [],
+                "cohort_risk_level": "low",
+                "llm_synthesis": None,
+                "hallucination_guardrail": {"all_factual_claims_cited": True},
+                "claim_citations": [],
+                "section_confidence": {},
+            }
+
+        monkeypatch.setattr(chat_routes, "_site_research_fallback", _fake_site_fallback)
+        resp = client.post(
+            "/api/chat",
+            json={"message": "Assess Estero groundwater source reliability."},
+        )
+        assert resp.status_code == 200
+        assert captured["allow_llm_synthesis"] is False
+
+    def test_chat_typo_aquifer_query_fuzzy_matches(self):
+        """Common aquifer misspellings should still route to the right deterministic answer."""
+        resp = client.post(
+            "/api/chat", json={"message": "Tell me about the Biscanye aquifer trends"}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "biscayne" in body["response"].lower()
+        assert body["mode"] in {"aquifer_fallback", "fallback"}
+
+    def test_chat_out_of_scope_query_avoids_fake_groundwater_data(self):
+        """Out-of-scope locations should return scoped guidance instead of invented measurements."""
+        resp = client.post(
+            "/api/chat", json={"message": "What are groundwater levels in Antarctica?"}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        text = body["response"].lower()
+        assert "antarctica" in text
+        assert "net change" not in text
+        assert "ft/yr" not in text
+
+    def test_chat_multi_location_compare_returns_network_context(self):
+        """County-vs-county comparison prompts should not collapse to a single-location answer."""
+        resp = client.post(
+            "/api/chat",
+            json={
+                "message": (
+                    "Compare Miami-Dade wells to Sarasota wells - " "which area has more decline?"
+                )
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["mode"] == "network_fallback"
+        assert len(body.get("wells", [])) >= 2
+
 
 # ===================================================================
 # POST /api/research  endpoint integration tests

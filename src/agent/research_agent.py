@@ -152,6 +152,30 @@ class ResearchContext:
     status: str = "idle"
     progress_callback: Callable[..., None] | None = None
 
+    def progress_fraction(self) -> float:
+        """Estimate progress with finer-grained phase awareness."""
+        phase_offsets = {
+            "planning": 0.06,
+            "research_loop": 0.12,
+            "query_optimization": 0.18,
+            "searching": 0.28,
+            "extracting_insights": 0.42,
+            "follow_up_generation": 0.56,
+            "synthesizing": 0.82,
+            "learning": 0.9,
+            "timed_out": 0.94,
+            "stopped": 0.94,
+            "complete": 1.0,
+        }
+        depth_weight = 0.0
+        if self.max_depth > 0:
+            depth_weight = min(0.6, 0.6 * (self.current_depth / self.max_depth))
+        phase_weight = phase_offsets.get(self.phase, 0.1)
+        insight_bonus = min(0.08, len(self.insights) * 0.01)
+        if self.phase == "complete":
+            return 1.0
+        return min(0.98, max(0.03, phase_weight + depth_weight + insight_bonus))
+
     def add_insight(self, insight: ResearchInsight) -> None:
         """Add an insight, avoiding duplicates. Only add verified insights."""
         if not insight.verified:
@@ -206,7 +230,7 @@ class ResearchContext:
 
     def update_progress(self, message: str, snapshot: dict[str, Any] | None = None) -> None:
         """Update progress via callback if set."""
-        progress = min(1.0, self.current_depth / self.max_depth)
+        progress = self.progress_fraction()
         self.status = message
         if self.progress_callback:
             try:

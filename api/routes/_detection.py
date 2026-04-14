@@ -135,11 +135,8 @@ def _detect_location(question: str) -> Optional[tuple[float, float, str, Optiona
     Uses word-boundary matching so "florida" does not match inside "floridan",
     and prefers longer keywords to avoid "miami" shadowing "miami-dade".
     """
-    q = question.lower()
-    for keyword in sorted(_LOCATION_REFERENCE_POINTS, key=len, reverse=True):
-        if re.search(r"\b" + re.escape(keyword) + r"\b", q):
-            return _LOCATION_REFERENCE_POINTS[keyword]
-    return None
+    matches = _detect_locations(question, max_matches=1)
+    return matches[0] if matches else None
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +145,9 @@ def _detect_location(question: str) -> Optional[tuple[float, float, str, Optiona
 
 _AQUIFER_DETECTION_MAP: dict[str, tuple[str, str]] = {
     "biscayne aquifer": ("biscayne", "Biscayne Aquifer"),
+    "biscanye aquifer": ("biscayne", "Biscayne Aquifer"),
     "biscayne": ("biscayne", "Biscayne Aquifer"),
+    "biscanye": ("biscayne", "Biscayne Aquifer"),
     "surficial aquifer system": ("surficial", "Surficial Aquifer"),
     "surficial aquifer": ("surficial", "Surficial Aquifer"),
     "surficial": ("surficial", "Surficial Aquifer"),
@@ -192,6 +191,42 @@ def _detect_aquifer(question: str) -> Optional[tuple[str, str]]:
         if re.search(r"\b" + re.escape(keyword) + r"\b", q):
             return _AQUIFER_DETECTION_MAP[keyword]
     return None
+
+
+def _detect_locations(
+    question: str, max_matches: int = 4
+) -> list[tuple[float, float, str, Optional[str]]]:
+    """Return multiple non-overlapping location matches in query order."""
+    q = question.lower()
+    matches: list[tuple[int, int, tuple[float, float, str, Optional[str]]]] = []
+    occupied_spans: list[tuple[int, int]] = []
+    seen_labels: set[str] = set()
+
+    for keyword in sorted(_LOCATION_REFERENCE_POINTS, key=len, reverse=True):
+        for hit in re.finditer(r"\b" + re.escape(keyword) + r"\b", q):
+            start, end = hit.span()
+            if any(
+                not (end <= occ_start or start >= occ_end) for occ_start, occ_end in occupied_spans
+            ):
+                continue
+            candidate = _LOCATION_REFERENCE_POINTS[keyword]
+            label = candidate[2].lower()
+            if label in seen_labels:
+                continue
+            matches.append((start, end, candidate))
+            occupied_spans.append((start, end))
+            seen_labels.add(label)
+            break
+
+    matches.sort(key=lambda item: item[0])
+    ordered = [candidate for _, _, candidate in matches]
+
+    # Drop generic statewide catch-alls when a more specific location is present.
+    generic_labels = {"florida", "everglades area"}
+    if any(candidate[2].lower() not in generic_labels for candidate in ordered):
+        ordered = [candidate for candidate in ordered if candidate[2].lower() not in generic_labels]
+
+    return ordered[:max_matches]
 
 
 # ---------------------------------------------------------------------------
@@ -491,6 +526,12 @@ _NETWORK_WIDE_KEYWORDS = [
     "all county",
     "all counties",
     "network-wide",
+    "statewide",
+    "across florida",
+    "florida-wide",
+    "state of florida",
+    "florida network",
+    "florida groundwater",
 ]
 
 

@@ -5,10 +5,14 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from src.agent.tools import (create_experiment_plan,
-                             generate_research_paper_draft,
-                             get_experiment_plan, list_experiment_plans,
-                             log_experiment_run_entry)
+from api.routes._research_workbench import build_research_workbench_payload
+from src.agent.tools import (
+    create_experiment_plan,
+    generate_research_paper_draft,
+    get_experiment_plan,
+    list_experiment_plans,
+    log_experiment_run_entry,
+)
 
 router = APIRouter(prefix="/api/research", tags=["research-workflow"])
 
@@ -62,6 +66,32 @@ class DraftRequest(BaseModel):
     target_venue: str = "arXiv"
     include_methods_detail: bool = True
     citations: List[str] = Field(default_factory=list)
+
+
+class WorkbenchFilters(BaseModel):
+    """Optional site-picker filters echoed back by the workbench."""
+
+    county: List[str] = Field(default_factory=list)
+    aquifer: List[str] = Field(default_factory=list)
+    confined: Optional[bool] = None
+
+
+class WorkbenchDateWindow(BaseModel):
+    """Date window selection for research workbench comparisons."""
+
+    preset: str = "last_10y"
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+class ResearchWorkbenchRequest(BaseModel):
+    """Request payload for comparative research workbench analysis."""
+
+    site_ids: List[str] = Field(default_factory=list)
+    filters: WorkbenchFilters = Field(default_factory=WorkbenchFilters)
+    date_window: WorkbenchDateWindow = Field(default_factory=WorkbenchDateWindow)
+    aggregation: str = "monthly"
+    normalization: str = "raw"
 
 
 def _model_to_dict(model: Any) -> Dict[str, Any]:
@@ -208,3 +238,18 @@ def draft_plan_paper(plan_id: str, payload: DraftRequest):
         "provenance": result.get("provenance", {}),
         "citations": result.get("citations", []),
     }
+
+
+@router.post("/workbench")
+def research_workbench(payload: ResearchWorkbenchRequest):
+    """Build a comparative groundwater workbench payload for researchers."""
+    try:
+        return build_research_workbench_payload(
+            site_ids=payload.site_ids,
+            filters=_model_to_dict(payload.filters),
+            date_window=_model_to_dict(payload.date_window),
+            aggregation=payload.aggregation,
+            normalization=payload.normalization,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

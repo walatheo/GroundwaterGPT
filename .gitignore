@@ -24,7 +24,12 @@ ENV/
 .vite/
 
 # Data files (too large for git, regenerate with download_data.py)
+/data/
 data/*.csv
+
+# Generated benchmark / browser test artifacts
+/chat_benchmark_report.json
+/frontend/test-results/
 
 # Model files (regenerate with train_groundwater.py)
 models/*.joblib
