@@ -4,8 +4,6 @@
 # Core Data Science
 pandas>=2.0.0
 numpy>=1.24.0
-scikit-learn>=1.3.0
-joblib>=1.3.0
 
 # LangChain AI/ML Stack
 langchain-core>=0.3.81
@@ -23,13 +21,11 @@ langgraph>=0.0.1
 # Vector Database
 chromadb>=0.4.0
 
-# UI & Visualization
-plotly>=5.17.0
-
 # Web & API
 fastapi>=0.109.1
 uvicorn>=0.24.0
 requests>=2.31.0
+python-dotenv>=1.0.0
 
 # Testing
 pytest>=7.4.0

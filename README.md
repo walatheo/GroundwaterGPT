@@ -142,8 +142,7 @@ EAGLE/
 │
 ├── 🧠 knowledge_base/        # ChromaDB vector store
 │
-├── 📈 outputs/               # Generated outputs
-│   └── plots/                # Visualizations
+├── 📈 outputs/               # Generated research outputs, ignored by git
 │
 ├── 🧪 tests/                 # Test suite (181 unit tests passing locally)
 │   ├── data/                 # Data quality & integrity tests
@@ -316,6 +315,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## 🙏 Acknowledgments
 
 - **USGS** - Groundwater monitoring data via NWIS
-- **Copernicus Climate Data Store** - ERA5 reanalysis data
-- **scikit-learn** - Machine learning framework
-- **Plotly** - Interactive visualizations
+- **Copernicus Climate Data Store** - Optional ERA5 reanalysis source for local experiments

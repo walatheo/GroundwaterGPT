@@ -9,7 +9,7 @@
 **Document structure.**
 
 1. System purpose and scope
-2. Data substrate: USGS monitoring records, per-site metadata, knowledge base, scoped-out forecast code
+2. Data substrate: USGS monitoring records, per-site metadata, and the local knowledge base
 3. Deterministic hydrogeologic analysis layer (the reference pipeline)
 4. Language-model synthesis layer and the evidence-ID binding
 5. Join point, typed session contract, provenance, streaming, citation integrity
@@ -40,7 +40,7 @@ The design goal, stated across the code and in-repo docs, is **explainability**:
 
 ### 1.2 What EAGLE is not
 
-It is not a hydrologic model — it does not solve Darcy's law, does not run groundwater-flow simulations, and does not couple surface-water and groundwater processes. Historical forecast code may still exist under [src/ml/](src/ml/), but it is explicitly **out of manuscript scope** and not wired into the serving API.
+It is not a hydrologic model — it does not solve Darcy's law, does not run groundwater-flow simulations, and does not couple surface-water and groundwater processes. Historical forecast experiments have been removed from the maintained tree and should stay out of manuscript claims until a future served, validated forecasting path exists.
 
 It is not a national or global service — adding a new site requires editing [api/site_metadata.py](api/site_metadata.py)'s underlying JSON and dropping a matching `usgs_<15-digit>.csv` into [data/](data/). There is no dynamic site discovery.
 
@@ -76,9 +76,9 @@ The indexed corpus covers three source families:
 
 For the manuscript argument the KB's role is narrow: it supplies aquifer supply / confinement / domain sentences that the deterministic pipeline needs to phrase the "what does this aquifer supply" half of a question like the Estero example. It does not contribute numeric trend values; every numeric conclusion traces back to a USGS CSV via `_load_site_timeseries`.
 
-### 2.4 ML forecast pipeline (separate, not wired to the serving API)
+### 2.4 Forecasting status
 
-Historical training code lives under [src/ml/](src/ml/). It is **not imported by any `api/` route in the current codebase** and is not part of the manuscript system this overview supports. Forecast claims and artifacts were removed from the submission-facing repository surface because they do not yet have manuscript-ready validation.
+Forecasting is not part of the maintained serving system. The previous standalone scikit-learn forecast experiment has been removed, along with generated model and plot artifacts, because it did not have a served endpoint, rolling-origin validation, uncertainty handling, or manuscript-ready evaluation.
 
 ---
 
@@ -392,9 +392,9 @@ A reviewer who wants to re-derive the Estero answer can check out `provenance.co
 
 [api/routes/_research_workbench.py](api/routes/_research_workbench.py) (581 lines) is a separate comparative-analysis builder library — not its own router — exposed via `POST /api/research/workbench` at [api/routes/research_workflow.py:243](api/routes/research_workflow.py#L243), which calls `build_research_workbench_payload`. It supports date-window presets (`last_5y`, `last_10y`, `full_record`, `custom`), aggregations (`monthly`, `quarterly`, `annual`), and normalizations (`raw`, `delta_from_first`, `z_score`). The workbench produces its own chart payloads and is consumed by [frontend/src/components/ResearchWorkbenchView.jsx](frontend/src/components/ResearchWorkbenchView.jsx). It is independent of the chat/research path and is live; it does not currently emit `claim_citations` or a `structured_response`, which is something the manuscript would need to either explain or extend.
 
-### 7.4 ML forecast pipeline
+### 7.4 Forecasting
 
-[src/ml/](src/ml/) holds the 7-day scikit-learn forecast code and models. It is **not imported by any** `api/` route in the current codebase; it exists as a research capability and a CI entry-point. It is not part of the manuscript argument this document supports.
+No forecast pipeline is currently maintained in the serving repository. Future forecasting work should return as a separate feature with time-aware validation, explicit uncertainty, a served endpoint, and benchmark coverage before it is referenced in user-facing or manuscript-facing claims.
 
 ### 7.5 DuckDuckGo web search (default off)
 
@@ -563,12 +563,12 @@ The first cleanup pass removed code and documents that were not reachable from t
 
 ### 11.3 Gate or delete: DuckDuckGo web search
 
-- **[src/agent/research_agent.py](src/agent/research_agent.py) web-search path.** `ddgs` / `duckduckgo_search` is imported at module load and a `WebSearch` tool is registered with the agent, but the serving configuration sets `use_web_search=False` by default ([api/routes/chat.py:363](api/routes/chat.py#L363)). The web backend is therefore dead in deployment but still adds an import-time dependency and an attack surface. **Action:** one of (a) delete the web-search tool and the `ddgs` dependency from [config/requirements.txt](config/requirements.txt); (b) move the import behind a runtime flag so uninstalled environments don't carry the dependency; (c) keep it and explicitly document that the manuscript is about the KB-only configuration. Option (a) is cleanest — if the manuscript does not rely on web results, the paper is stronger without claiming a capability the system does not exercise.
+**[src/agent/research_agent.py](src/agent/research_agent.py) web-search path.** The optional `ddgs` / `duckduckgo_search` backend is imported only when a `DeepResearchAgent` is constructed with `use_web_search=True`; the serving configuration keeps that off by default ([api/routes/chat.py:363](api/routes/chat.py#L363)). Keep manuscript and demo claims focused on the local-data/local-knowledge configuration unless web search is explicitly enabled and evaluated.
 
-### 11.4 Scoped out: ML forecast pipeline
+### 11.4 Removed: standalone forecast experiment
 
-- Forecasting is now explicitly out of manuscript scope. Unsupported forecast claims, model-quality CI gating, trained model artifacts, and generated forecast outputs were removed from the repository surface used for submission.
-- Any future forecasting work should return only after it has a serving endpoint, rolling-origin validation, and manuscript-ready evaluation.
+- Forecasting is now explicitly out of manuscript scope. Unsupported forecast code, model-quality CI scaffolding, trained model artifacts, and generated forecast outputs were removed from the repository surface used for submission.
+- Any future forecasting work should return only after it has a serving endpoint, rolling-origin validation, uncertainty handling, and manuscript-ready evaluation.
 
 ### 11.5 Clean up: timestamped refresh CSVs
 
@@ -580,7 +580,7 @@ These are not dead, but they are large enough that they hide the architecture th
 
 - **[api/routes/chat.py](api/routes/chat.py) (~2225 lines).** Suggest splitting into: `chat_routes.py` (the FastAPI route handlers), `routing_chain.py` (the site/aquifer/multi/location/network detection wiring), `fallback_wiring.py` (how each routing branch calls `_site_research_fallback` and assembles the payload), `agent_wiring.py` (how the LLM branches call `DeepResearchAgent` and `_agent_chart_hook`), `sse_streaming.py` (the streaming generator + thread-queue bridge).
 - **[api/routes/_site_analysis.py](api/routes/_site_analysis.py) (1501 lines).** Suggest splitting into `_trend.py` (OLS slope, helpers), `_changepoint.py` (`_detect_changepoint`), `_cluster.py` (`_cluster_wells`), `_cross_well.py` (`_cross_well_analysis` orchestrator), `_chart.py` (`_build_chart_payload`, `_build_chart_insights`), and a thin `_site_analysis.py` that re-exports for existing imports.
-- **[src/agent/research_agent.py](src/agent/research_agent.py) (1952 lines).** Suggest splitting the synthesis layer (`_build_evidence_items`, `_parse_structured_response`, `_heuristic_structured_response`, `_render_structured_report`) into a dedicated `src/agent/structured_synthesis.py` so the claim/evidence binding that the paper's argument depends on lives in one small, testable file.
+- **[src/agent/research_agent.py](src/agent/research_agent.py) (~1980 lines).** Suggest splitting the synthesis layer (`_build_evidence_items`, `_parse_structured_response`, `_heuristic_structured_response`, `_render_structured_report`) into a dedicated `src/agent/structured_synthesis.py` so the claim/evidence binding that the paper's argument depends on lives in one small, testable file.
 
 ### 11.7 Remaining cleanup impact
 
@@ -597,7 +597,7 @@ After this pass, the largest remaining items are methodological rather than arch
 | Agent-to-chart join point | [api/routes/_agent_chart_hook.py](api/routes/_agent_chart_hook.py) | 142 lines |
 | Citation integrity, verdicts, trust levels | [api/routes/_citation.py](api/routes/_citation.py) | 224 lines |
 | Research provenance block | [api/routes/_provenance.py](api/routes/_provenance.py) | 143 lines |
-| Chat / research endpoints, routing chain, SSE streaming | [api/routes/chat.py](api/routes/chat.py) | 2225 lines |
+| Chat / research endpoints, routing chain, SSE streaming | [api/routes/chat.py](api/routes/chat.py) | 2345 lines |
 | Knowledge base router | [api/routes/knowledge.py](api/routes/knowledge.py) | 88 lines |
 | Data router | [api/routes/data.py](api/routes/data.py) | 239 lines |
 | Research workflow (plans, runs, drafts, workbench mount) | [api/routes/research_workflow.py](api/routes/research_workflow.py) | 255 lines |
@@ -605,18 +605,18 @@ After this pass, the largest remaining items are methodological rather than arch
 | Site metadata loader | [api/site_metadata.py](api/site_metadata.py) | — |
 | FastAPI app factory | [api/main.py](api/main.py) | 54 lines |
 | Wells listing router | [api/routes/wells.py](api/routes/wells.py) | 176 lines |
-| Deep research agent (phases, budget, evidence registry, structured synthesis) | [src/agent/research_agent.py](src/agent/research_agent.py) | 1952 lines |
-| Agent tool surface | [src/agent/tools.py](src/agent/tools.py) | 1482 lines |
+| Deep research agent (phases, budget, evidence registry, structured synthesis) | [src/agent/research_agent.py](src/agent/research_agent.py) | 1980 lines |
+| Agent tool surface | [src/agent/tools.py](src/agent/tools.py) | 1083 lines |
 | Research optimizer (planner, ranker, reflector, persistence) | [src/agent/research_optimizer.py](src/agent/research_optimizer.py) | 854 lines |
 | Knowledge base loader | [src/agent/knowledge.py](src/agent/knowledge.py) | 760 lines |
-| Source verification (trust levels, category, priority) | [src/agent/source_verification.py](src/agent/source_verification.py) | 664 lines |
+| Source verification (trust levels, category, priority) | [src/agent/source_verification.py](src/agent/source_verification.py) | 658 lines |
 | LLM provider factory | [src/agent/llm_factory.py](src/agent/llm_factory.py) | 180 lines |
 | **Retired:** quick-chat agent path | — | — |
-| **Scoped out:** ML forecast pipeline (§11.4) | [src/ml/](src/ml/) | — |
-| Frontend chat surface | [frontend/src/components/ChatView.jsx](frontend/src/components/ChatView.jsx) | ~800 lines |
+| **Removed:** standalone forecast experiment (§11.4) | — | — |
+| Frontend chat surface | [frontend/src/components/ChatView.jsx](frontend/src/components/ChatView.jsx) | 783 lines |
 | Frontend chart component | [frontend/src/components/AgentChart.jsx](frontend/src/components/AgentChart.jsx) | 225 lines |
 | API client with observable | [frontend/src/api/client.js](frontend/src/api/client.js) | 351 lines |
-| Inline chart regression tests | [tests/unit/test_inline_chart.py](tests/unit/test_inline_chart.py) | ~320 lines |
+| Inline chart regression tests | [tests/unit/test_inline_chart.py](tests/unit/test_inline_chart.py) | 325 lines |
 | Research agent structured-synthesis tests | [tests/unit/test_agent.py](tests/unit/test_agent.py) | — |
 | Chat / research API tests (provenance, structured response) | [tests/unit/test_chat_api.py](tests/unit/test_chat_api.py) | — |
 | Benchmark cases | [tests/benchmark/chat_eval_cases.json](tests/benchmark/chat_eval_cases.json) | 68 cases |
