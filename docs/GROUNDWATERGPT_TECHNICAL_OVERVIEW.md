@@ -1,15 +1,24 @@
-# GroundwaterGPT — Technical Overview for Manuscript Development
+# Data-Grounded Language Agents for Auditable Groundwater Trend Analysis from USGS Monitoring Records
 
-**Document purpose.** This is a low-level, audit-oriented description of the GroundwaterGPT system as it exists in the repository on 2026-04-14. It is intended as source material for a NotebookLM-backed manuscript workflow: every architectural claim, every numeric threshold, every data-flow assertion is tied to concrete files and line ranges in the code so that a downstream author (or reviewer) can verify it without re-reading the codebase from scratch. The document is deliberately exhaustive in places where a paper's Methods section would need that level of fidelity (detection heuristics, chart synthesis, citation scoring) and compressed where a paper would only cite existence (UI chrome, build config).
+**Document purpose.** This is a low-level, audit-oriented description of the GroundwaterGPT system as it exists in the repository on 2026-04-14. It is intended as grounding material for a NotebookLM-backed manuscript workflow. Every architectural claim, numeric threshold, and data-flow assertion is tied to concrete files and line ranges in the code so that a downstream author or reviewer can verify it without re-reading the codebase from scratch.
 
-The document is organized in six parts:
+**Central property the manuscript rests on.** Every user-facing conclusion about groundwater behaviour is emitted by a **deterministic hydrogeologic pipeline** running directly over USGS CSVs. When a language model is invoked, it is bound to that pipeline by typed claim-and-evidence identifiers and cryptographic provenance hashes: the LLM narrates, it does not independently conclude, and any claim whose IDs are not in the deterministic-layer registry is dropped by the parser before the response is emitted. The benchmark passes at 100% without the LLM active at all.
+
+**Document structure.**
 
 1. System purpose and scope
-2. Data substrate and knowledge base
-3. Backend architecture (the deterministic fallback, the LLM research agent, and their join point)
-4. Frontend architecture and the user-visible surface
-5. Evaluation harness, test coverage, and measured behaviour
-6. Strengths, explicit limitations, threats to validity, and open questions
+2. Data substrate: USGS monitoring records, per-site metadata, knowledge base, ML forecast
+3. Deterministic hydrogeologic analysis layer (the reference pipeline)
+4. Language-model synthesis layer and the evidence-ID binding
+5. Join point, provenance block, streaming, citation integrity
+6. Worked example: the Village of Estero question
+7. Auxiliary surfaces (research workflow, workbench, chat agent)
+8. Frontend surface — how auditability reaches the user
+9. Evaluation and measured behaviour
+10. Strengths, limitations, threats to validity
+11. **Cleanup status and remaining work**
+12. Appendix A — File map for citation
+13. Appendix B — Numeric facts worth citing verbatim
 
 ---
 
@@ -17,110 +26,227 @@ The document is organized in six parts:
 
 ### 1.1 What GroundwaterGPT is
 
-GroundwaterGPT is a research-grade, "whitebox" question-answering and visualization platform for Florida groundwater monitoring data. Its domain is a fixed set of **44 USGS groundwater wells** (counted directly from [api/site_metadata.py](api/site_metadata.py) via `len(SITE_METADATA)`) distributed across five Florida counties (Miami-Dade: 15, Lee: 11, Collier: 6, Hendry: 4, Sarasota: 4) and four generic "Florida" entries, with per-well water-level time series stored as CSV under [data/](data/). The site-level hydrogeologic metadata recognizes seven aquifer labels — Biscayne Aquifer (15 wells), Surficial Aquifer (7), Floridan Aquifer System (6), Tamiami Aquifer System (5), Florida Aquifer (4), Intermediate Aquifer System (4), Hawthorn Group (3) — and distinguishes confined vs unconfined settings, aquifer zone depth ranges, and well depths.
+GroundwaterGPT is a research-grade, audit-oriented question-answering and visualization platform for Florida groundwater monitoring data. Its domain is a fixed set of **44 USGS groundwater wells** (counted from [api/site_metadata.py](api/site_metadata.py) via `len(SITE_METADATA)`) distributed across five Florida counties (Miami-Dade: 15, Lee: 11, Collier: 6, Hendry: 4, Sarasota: 4) plus four generic "Florida" entries. Per-well water-level time series are stored as CSV under [data/](data/). Site-level hydrogeologic metadata recognizes seven aquifer labels — Biscayne Aquifer (15), Surficial Aquifer (7), Floridan Aquifer System (6), Tamiami Aquifer System (5), Florida Aquifer (4), Intermediate Aquifer System (4), Hawthorn Group (3) — and distinguishes confined vs unconfined settings, aquifer zone depth ranges, and well depths.
 
 The system answers three broad classes of questions:
 
-- **Descriptive and comparative questions over the USGS record** ("what has been the change in groundwater level in Estero over the last 30 years"; "compare G-3336 and G-5004"; "which wells in Miami-Dade have the steepest decline"). These are answered by a deterministic fallback engine that selects relevant wells, aggregates monthly means, computes per-well linear trends, and emits a cited report plus a Recharts-ready chart payload.
-- **Domain knowledge questions** ("which aquifer supplies Estero"; "what confines the Floridan aquifer"). These retrieve from a ChromaDB-backed knowledge base built from hydrogeology PDFs and per-well USGS summaries, grounded by a source-verification layer.
-- **Open-ended research questions** ("has groundwater in Lee County stabilized since 2015"; "cross-aquifer comparison of Biscayne vs Floridan trends"). These are routed to an LLM-backed `DeepResearchAgent` that plans sub-questions, executes prioritized searches against both the knowledge base and (optionally) the public web, reflects on coverage, and returns a structured report with citation integrity metadata.
+- **Descriptive / comparative questions over the USGS record** ("what has been the change in groundwater level in Estero over the last 30 years"; "compare G-3336 and G-5004"; "which wells in Miami-Dade have the steepest decline"). These go through the deterministic fallback engine.
+- **Domain knowledge questions** ("which aquifer supplies Estero", "what confines the Floridan aquifer"). These retrieve from a local ChromaDB knowledge base grounded by a source-verification layer.
+- **Open-ended research questions** ("has groundwater in Lee County stabilized since 2015", "cross-aquifer comparison of Biscayne vs Floridan trends"). These can be routed to an LLM-backed `DeepResearchAgent` that plans sub-questions, iterates KB retrieval, and synthesizes a structured report — but only after the deterministic layer has produced the numeric conclusions the LLM is allowed to cite.
 
-The governing design goal — stated across the code and the in-repo docs — is **explainability**: every path that produces user-visible text must also produce (a) a list of sources, (b) a per-claim citation record, (c) a verdict and confidence score, and (d) a deterministic, reproducible chart whenever the question can be backed by monitored well data. The system is explicitly built so that the fallback path alone can answer the benchmark suite to a passing score, i.e. the LLM is an **enhancement**, not a **dependency**.
+The design goal, stated across the code and in-repo docs, is **explainability**: every path that produces user-visible text also produces (a) a list of sources, (b) a per-claim citation record, (c) a verdict and confidence score, (d) a deterministic chart whenever the question can be backed by monitored well data, and (e) a reproducibility block (`research_provenance_v1`) with `code_commit`, `response_sha256`, per-CSV `data_snapshot` hashes, and config hashes. The LLM is an **enhancement**, not a **dependency** — the fallback path alone passes the benchmark suite to 68/68.
 
 ### 1.2 What GroundwaterGPT is not
 
-It is not a hydrologic model. It does not solve Darcy's law, does not run groundwater-flow simulations, and does not couple surface-water and groundwater processes. Its "predictions" are a single scikit-learn-based 7-day forecast pipeline (see §2.4) trained on lag and rolling features of the well time series themselves — not a process model.
+It is not a hydrologic model — it does not solve Darcy's law, does not run groundwater-flow simulations, and does not couple surface-water and groundwater processes. The only "prediction" surface is a scikit-learn 7-day forecast pipeline under [src/ml/](src/ml/) that is **not wired into the serving API** in the current deployment (§7.3 Cleanup).
 
-It is not a national or global service. The monitored network is hard-coded to the 44 USGS wells shipped under [api/site_metadata.py](api/site_metadata.py); adding new sites requires editing the metadata file and dropping a matching `usgs_<15-digit-id>.csv` into [data/](data/). There is no dynamic site discovery at request time.
+It is not a national or global service — adding a new site requires editing [api/site_metadata.py](api/site_metadata.py)'s underlying JSON and dropping a matching `usgs_<15-digit>.csv` into [data/](data/). There is no dynamic site discovery.
 
-It is not a general-purpose web-search research agent. The LLM path is gated by an explicit `_NETWORK_WIDE_KEYWORDS` / `_is_aquifer_query` routing policy, and its search budget (web + knowledge base) is capped per request. When the agent is unreachable, every request still produces a valid, grounded answer via the fallback routing chain.
+It is not a web-search research agent. An optional DuckDuckGo backend exists in [src/agent/research_agent.py](src/agent/research_agent.py) but is **off by default** — [api/routes/chat.py:363](api/routes/chat.py#L363) reads `GROUNDWATERGPT_ENABLE_WEB_SEARCH` and passes `use_web_search=False` unless explicitly opted in. In the deployed demo the LLM operates over the local KB and the deterministic-layer output only. The manuscript should not describe this as a web-research tool.
 
 ---
 
-## 2. Data substrate and knowledge base
+## 2. Data substrate
 
 ### 2.1 USGS time-series CSVs
 
-The canonical well data lives in [data/usgs_{15-digit-site-id}.csv](data/). There are 40 canonical files plus several timestamped snapshots (e.g. `*_20260227.csv`, `*_20260315.csv`) that appear to be refresh exports. Each canonical file has the schema `site_no, datetime, value`, where `value` is depth-to-water in feet relative to land surface. Probing 20 random files yields a combined date coverage of **1994-01-01 through 2026-04-05** with ~195k rows across those 20 files alone; several wells begin as early as 2003 and some as early as the mid-1990s. The values are stored as daily observations, though the downstream chart pipeline always resamples to month-start (`MS`) means (see §3.5).
+The canonical well data lives in [data/usgs_{15-digit-site-id}.csv](data/). There are 40 canonical files with schema `site_no, datetime, value`, where `value` is depth-to-water in feet relative to land surface. Combined date coverage across sampled files is **1994-01-01 through 2026-04-05**; some wells begin as early as 2003 and some as early as the mid-1990s. Observations are stored daily and resampled to month-start (`MS`) means inside every analysis path.
 
-The CSVs are loaded lazily and cached in-process by [`_load_site_timeseries`](api/routes/_detection.py) in [api/routes/_detection.py](api/routes/_detection.py) (the module-level `_SITE_SERIES_CACHE`). The loader reads the CSV, coerces `datetime` via `pd.to_datetime(errors="coerce")`, coerces `value` via `pd.to_numeric(errors="coerce")`, drops NaN rows, sorts by datetime, and returns the resulting DataFrame (or `None` if the file is missing or empty). Every downstream analysis path goes through this single loader, so the in-memory schema is a known invariant.
+The CSVs are loaded lazily and cached in-process by [`_load_site_timeseries`](api/routes/_detection.py) in [api/routes/_detection.py](api/routes/_detection.py) (module-level `_SITE_SERIES_CACHE`). The loader reads the CSV, coerces `datetime` via `pd.to_datetime(errors="coerce")`, coerces `value` via `pd.to_numeric(errors="coerce")`, drops NaN rows, sorts by datetime, and returns the resulting DataFrame (or `None` on failure). Every downstream analysis path goes through this single loader — the in-memory schema is an invariant.
+
+The directory also contains several `usgs_<id>_<YYYYMMDD>.csv` snapshot files. `_load_site_timeseries` only reads the canonical `usgs_<id>.csv`, so the snapshots are **inactive** (see §11 Cleanup).
 
 ### 2.2 Site metadata
 
-[api/site_metadata.py](api/site_metadata.py) exposes `SITE_METADATA: dict[str, dict]`, the authoritative per-site metadata table. It is loaded from `config/usgs_sites.json` at import time and, for sites present on disk but missing from that JSON, filled from a best-effort CSV scan. Each entry contains: `id, name, aquifer, aquifer_type, confined, aquifer_zone, aquifer_zone_depth_range_ft, aquifer_description, county, lat, lng, well_depth_ft, depth, description`. The aquifer strings are normalized (Biscayne, Floridan, Surficial, Tamiami, Intermediate, Hawthorn) so that downstream keyword detection is deterministic. This file is the **single source of truth** for the network's membership; everything else — the router, the chart builder, the KB ingestion summaries — derives from it.
+[api/site_metadata.py](api/site_metadata.py) exposes `SITE_METADATA: dict[str, dict]` — the authoritative per-site metadata table. It is loaded from `config/usgs_sites.json` at import time and, for sites present on disk but missing from that JSON, filled from a best-effort CSV scan. Each entry contains: `id, name, aquifer, aquifer_type, confined, aquifer_zone, aquifer_zone_depth_range_ft, aquifer_description, county, lat, lng, well_depth_ft, depth, description`. Aquifer strings are normalized (Biscayne, Floridan, Surficial, Tamiami, Intermediate, Hawthorn) so that downstream keyword detection is deterministic. Everything else — the router, the chart builder, the KB ingestion summaries — derives from this single file.
 
 ### 2.3 Knowledge base
 
-The knowledge base is a ChromaDB persistent store under [knowledge_base/](knowledge_base/) (`chroma.sqlite3`, ~156 MB on disk, with collection subdirectories named by UUID). The embedding model is `BAAI/bge-small-en-v1.5` (384-dimensional) loaded via `sentence-transformers`, configured in [src/agent/knowledge.py](src/agent/knowledge.py) at `EMBEDDING_MODEL_NAME` (line 58) and `CHROMA_DIR` (line 55). Ingestion uses LangChain's `PyPDFLoader` plus `RecursiveCharacterTextSplitter`; all of these are guarded by optional imports so the rest of the system runs even if `chromadb` / `langchain_chroma` are not installed.
+The knowledge base is a ChromaDB persistent store under [knowledge_base/](knowledge_base/) (`chroma.sqlite3`, ≈156 MB). The embedding model is `BAAI/bge-small-en-v1.5` (384-dim) loaded via `sentence-transformers`, configured in [src/agent/knowledge.py](src/agent/knowledge.py) at `EMBEDDING_MODEL_NAME` (line 58) and `CHROMA_DIR` (line 55). Ingestion uses `PyPDFLoader` plus `RecursiveCharacterTextSplitter`; every import is guarded so the rest of the system runs even without `chromadb` / `langchain_chroma`.
 
 The indexed corpus covers three source families:
 
-- **Hydrogeology reference PDFs** shipped in [resources/pdfs/](resources/pdfs/): `a-glossary-of-hydrogeology.pdf`, `age-dating-young-groundwater.pdf`, `a-conceptual-overview-of-surface-and-near-surface-brines-and-evaporite-minerals.pdf`, and two subdirectories (`references/`, `usgs_reports/`) that are `.gitignore`'d for size.
-- **Per-well USGS summaries** generated from the CSV data itself, so that queries like "what is the record length at G-3336" can be answered without re-parsing the CSV at request time.
-- **Domain Q&A corpus** with hand-written short answers for frequent domain questions (aquifer supply sources, confinement, water-budget basics).
+- **Hydrogeology reference PDFs** under [resources/pdfs/](resources/pdfs/): `a-glossary-of-hydrogeology.pdf`, `age-dating-young-groundwater.pdf`, `a-conceptual-overview-of-surface-and-near-surface-brines-and-evaporite-minerals.pdf`, plus two `.gitignore`'d subdirectories (`references/`, `usgs_reports/`).
+- **Per-well USGS summaries** generated from the CSV data itself, so that queries like "what is the record length at G-3336" can be answered without re-parsing the CSV.
+- **Domain Q&A corpus** — hand-written short answers for frequent domain questions (aquifer supply, confinement, water-budget basics).
 
-The [`api/routes/knowledge.py`](api/routes/knowledge.py) router exposes `/api/knowledge/stats` (document and embedding counts), `/api/knowledge/status` (a lightweight readiness check that does not load the embedding model), and `/api/knowledge/ingest` (run-time ingestion of a PDF path with `recursive`, `min_trust`, `force` flags). The runtime check is important because loading the embedding model is the slowest part of cold startup, and the frontend needs a way to tell the user "KB is configured" without paying that cost.
+[`api/routes/knowledge.py`](api/routes/knowledge.py) exposes `/api/knowledge/stats`, `/api/knowledge/status` (lightweight readiness check that does not load the embedding model), and `/api/knowledge/ingest`. The lightweight status check exists because loading the embedding model is the slowest part of cold startup.
 
-### 2.4 ML forecast pipeline
+For the manuscript argument the KB's role is narrow: it supplies aquifer supply / confinement / domain sentences that the deterministic pipeline needs to phrase the "what does this aquifer supply" half of a question like the Estero example. It does not contribute numeric trend values; every numeric conclusion traces back to a USGS CSV via `_load_site_timeseries`.
 
-The ML component is a 7-day water-level forecast built from groundwater-only features (no climate data in the training loop). Training lives under [src/ml/](src/ml/) and produces joblib artifacts under [models/](models/). Features are temporal (day-of-year, cyclical sin/cos) plus lag windows (7, 14, 21, 30, 60 days) plus rolling statistics (7, 14, 30-day means and standard deviations). The test split is 20%. The README claims 93% accuracy; the manuscript should treat that number as a preliminary point estimate — it comes from a self-selected train/test partition and has not been cross-validated across hydrologically independent time windows in the code I could find. This is one of the clearest places where the paper should either add a proper evaluation or soften the claim.
+### 2.4 ML forecast pipeline (separate, not wired to the serving API)
+
+Training lives under [src/ml/](src/ml/) and produces joblib artifacts under [models/](models/). Features are temporal (day-of-year, cyclical sin/cos) plus lag windows (7, 14, 21, 30, 60 days) plus rolling statistics (7, 14, 30-day means and std-devs). The test split is a single 80/20 partition. The README claims 93% accuracy. **This pipeline is not imported by any `api/` route in the current codebase** (a grep for `src.ml` inside `api/` returns nothing); it exists as a research capability and a CI entry-point (`python -m src.ml.train_groundwater` in [.github/workflows/ci.yml](.github/workflows/ci.yml)). The manuscript should not cite the 93% number unqualified (§10 Limitations) and should either properly evaluate the forecast or scope it out.
 
 ---
 
-## 3. Backend architecture
+## 3. Deterministic hydrogeologic analysis layer
 
-The backend is a FastAPI application defined in [api/main.py](api/main.py). Five routers are mounted: `data_router` (`/api/sites`, per-site data and heatmap endpoints in [api/routes/data.py](api/routes/data.py)), `chat_router` ([api/routes/chat.py](api/routes/chat.py), 2081 lines — the heart of the system), `knowledge_router`, `research_workflow_router` ([api/routes/research_workflow.py](api/routes/research_workflow.py), experiment-plan scaffolding), and `wells_router`. CORS is open to `http://localhost:3000` and `http://127.0.0.1:3000` only.
+This is the layer the manuscript should describe as the reference-truth pipeline. It turns USGS CSVs into cited, chart-backed conclusions without any language model in the loop, and it is the sole source of the quantitative claims that downstream LLM synthesis is allowed to cite.
 
-### 3.1 The request lifecycle and routing chain
+### 3.1 FastAPI surface
 
-Every textual question entering the system goes through one of three endpoints — `/api/chat` (quick answer), `/api/research` (deep research, non-streaming), or `/api/research/stream` (deep research over SSE). All three share the same **routing chain** implemented in [api/routes/chat.py](api/routes/chat.py), and that chain is the core contribution of the deterministic layer.
+The backend is a FastAPI application defined in [api/main.py](api/main.py) (55 lines). Five routers are mounted:
 
-The chain executes in this order (all detection regex live in [api/routes/_detection.py](api/routes/_detection.py)):
+- `data_router` — `/api/sites/*` in [api/routes/data.py](api/routes/data.py) (239 lines): per-site data, heatmap, stats.
+- `chat_router` — [api/routes/chat.py](api/routes/chat.py) (≈2100 lines): chat, research, research-stream, routing chain, wiring for the deterministic and LLM paths.
+- `knowledge_router` — [api/routes/knowledge.py](api/routes/knowledge.py) (88 lines): KB stats, status, ingest.
+- `research_workflow_router` — [api/routes/research_workflow.py](api/routes/research_workflow.py) (252 lines): experiment plans, runs, drafts, workbench (covered in §7).
+- `wells_router` — per-well metadata listing.
 
-1. **Site-name detection** (`_detect_site_names`): match `_WELL_NAME_RE = \b([A-Za-z]{1,3})[\s\-]?(\d{3,5})\b` (catches G-3336, C-1224) and `_RAW_SITE_ID_RE = \b(\d{15})\b` (catches raw USGS IDs). If a named site is present, route to the site-fallback branch.
-2. **Aquifer detection** (`_detect_aquifer`): longest-first substring match against `_AQUIFER_DETECTION_MAP`, a hand-curated dict mapping 20+ surface forms (biscayne aquifer, tamiami, upper floridan, surficial, intermediate, hawthorn group, ...) to `(aquifer_key, display_name)`. If hit, route to the aquifer-fallback branch and load the cohort via `_sites_for_aquifer(aquifer_key, max_sites=8)`.
-3. **Multi-location comparison** (`_detect_locations` + `_is_multi_location_compare_query`): if two or more location tokens are present and the query reads like a comparison, load a merged cohort via `_sites_for_multiple_locations`.
-4. **Single-location detection** (`_detect_location`): word-boundary match against `_LOCATION_REFERENCE_POINTS`, a dict of 26+ Florida place names (Estero, Naples, Miami, Cape Coral, Immokalee, ...) each mapping to `(lat, lng, display_name, county_hint)`. If hit, call `_best_sites_near(lat, lng, county_hint, max_sites=10)` and route to the location-fallback branch.
-5. **Network-wide detection** (`_is_network_wide_query`): keyword check against `_NETWORK_WIDE_KEYWORDS` (all wells, every county, network-wide, confined vs unconfined, ...). If hit, load `_all_sites_with_data(max_sites=36)` and route to the network-fallback branch.
-6. **LLM research agent** (the default when nothing above matches and the `/api/research` endpoints are used): invoke `DeepResearchAgent.research(...)`. If the agent is unreachable or returns an empty report, fall back through the chain again as if the keyword filters had fired.
+CORS is open only to `http://localhost:3000` and `http://127.0.0.1:3000`.
 
-Nearest-neighbour selection (`_best_sites_near`) uses a simple scoring rule: Haversine distance plus a `-0.3` bonus for county matches; candidates are sorted by score and truncated to `max_sites`. This is deliberately crude — the paper should note it explicitly as a design choice that favours reproducibility over sophisticated spatial interpolation.
+### 3.2 Routing chain — selecting the cohort for a question
 
-### 3.2 The deterministic fallback — `_site_research_fallback`
+Every textual question enters through one of three endpoints — `/api/chat` (quick answer), `/api/research` (deep research, non-streaming), `/api/research/stream` (deep research over SSE). All three share the same **routing chain** in [api/routes/chat.py](api/routes/chat.py) with detection helpers in [api/routes/_detection.py](api/routes/_detection.py):
 
-The core of the "deterministic, cited response for any USGS site/location query" (the file's own comment) is [`_site_research_fallback`](api/routes/_site_analysis.py) in [api/routes/_site_analysis.py](api/routes/_site_analysis.py). Given a question, a list of selected sites, a location label, and optional lat/lng pins, this function:
+1. **Site-name detection** (`_detect_site_names`): `_WELL_NAME_RE = \b([A-Za-z]{1,3})[\s\-]?(\d{3,5})\b` (catches G-3336, C-1224) and `_RAW_SITE_ID_RE = \b(\d{15})\b`. If hit → site-fallback branch.
+2. **Aquifer detection** (`_detect_aquifer`): longest-first substring match against `_AQUIFER_DETECTION_MAP` (20+ surface forms: biscayne aquifer, tamiami, upper floridan, surficial, intermediate, hawthorn group, …) → `(aquifer_key, display_name)`. If hit → aquifer-fallback branch with `_sites_for_aquifer(aquifer_key, max_sites=8)`.
+3. **Multi-location comparison** (`_detect_locations` + `_is_multi_location_compare_query`): if two or more location tokens and the query reads like a comparison → merged cohort via `_sites_for_multiple_locations`.
+4. **Single-location detection** (`_detect_location`): word-boundary match against `_LOCATION_REFERENCE_POINTS`, a dict of 26+ Florida place names (Estero, Naples, Miami, Cape Coral, Immokalee, …) each mapping to `(lat, lng, display_name, county_hint)`. If hit → `_best_sites_near(lat, lng, county_hint, max_sites=10)` → location-fallback branch.
+5. **Network-wide detection** (`_is_network_wide_query`): keyword check against `_NETWORK_WIDE_KEYWORDS` ("all wells", "every county", "network-wide", "confined vs unconfined", …). If hit → `_all_sites_with_data(max_sites=36)` → network-fallback branch.
+6. **LLM research agent** — the default when `/api/research*` is used and nothing above matches. If the agent is unreachable or empty, the chain falls back through the keyword filters.
 
-- Computes per-site summary statistics (start/end dates, record length, net change in feet, annual rate in ft/yr, trend classification).
-- Runs `_cross_well_analysis` (same file) to build a cohort-level summary: distribution of `rising / falling / stable` trends, cohort mean and standard deviation of annual change, a ranked list of `divergent_pairs` (pairs whose trends disagree most strongly, bounded to the top 3), screened two-segment monthly trend changepoints, deterministic cross-well behaviour clusters, and a cohort `risk_level` in `{low, moderate, high}` driven by the fraction of falling wells and whether the cohort is mostly confined.
-- Assembles a structured report with aquifer-grouped sections, a "cross-aquifer comparison" section when multiple aquifers are present, an explicit period-of-record statement, and (optionally) an LLM synthesis block produced by a separately-controlled `allow_llm_synthesis` flag.
-- Builds a `claim_citations` list: each quantitative or domain claim in the report gets a `claim_id`, the literal claim text, a confidence score, and a list of `{url, verified, trust_level}` citations drawn from the USGS NWIS record URLs plus any KB matches.
-- Calls `_build_claim_verdicts` and `_build_claim_verdict_summary` from [api/routes/_citation.py](api/routes/_citation.py) to turn claim-citations into verdicts (`supported / contradicted / insufficient_evidence` with a `risk_score` in [0, 1]); in the absence of the disagreement engine, the conservative fallback is "citations present → supported (risk 0.3); no citations → insufficient_evidence (risk 0.85)".
-- Calls `_build_citation_integrity` (same citation module) to produce an integrity record with `claim_citation_coverage`, `section_citation_coverage`, and `passed` boolean keyed off two environment-configurable thresholds (`MIN_CLAIM_CITATION_COVERAGE` and `MIN_SECTION_CITATION_COVERAGE`, default 0.90 each).
-- Calls `_build_chart_payload` (same file) to produce the Recharts-ready chart JSON (see §3.5).
+`_best_sites_near` uses Haversine distance plus a `-0.3` score bonus for county matches. It is deliberately crude — the manuscript should describe it as a reproducible proxy-selection rule, not a spatial interpolator.
 
-Every keyword-routed path in the routing chain goes through this function. That is a deliberate architectural decision: it gives the system a single, tested, fully-cited code path for the "safe" subset of queries, and it means the benchmark suite (§5.2) can evaluate the system without requiring an LLM at all.
+### 3.3 `_site_research_fallback` — the reference pipeline
 
-The changepoint screen is intentionally simple: monthly means are fit with one OLS line and compared against the best two-line split with at least 12 monthly bins on each side. A changepoint is reported only when the two-segment fit improves residual error by at least 20%. This is a screening statistic, not a formal hypothesis test. The cross-well clustering is likewise deterministic and local-data-only: annual change, seasonal amplitude, and confinement are standardized and grouped with fixed-initialization k-means. These additions make cohort structure observable without introducing external covariates before the local methodology is stable.
+The core is [`_site_research_fallback`](api/routes/_site_analysis.py) in [api/routes/_site_analysis.py](api/routes/_site_analysis.py) (≈1500 lines after the changepoint + cluster additions). Given a question, a list of selected sites, a location label, and optional lat/lng pins, it:
 
-### 3.3 The LLM research agent
+- Computes per-site summary statistics — start/end dates, record length, net change (ft), annual rate (ft/yr), trend classification.
+- Runs `_cross_well_analysis` to build the cohort summary: `trend_distribution`, `mean_annual_change_ft_yr`, `std_annual_change_ft_yr`, `divergent_pairs` (bounded to top 3), **screened two-segment changepoints**, **standardized-feature behaviour clusters**, and `risk_level ∈ {low, moderate, high}`.
+- Assembles a structured report with aquifer-grouped sections, a cross-aquifer comparison when multiple aquifers are present, and an explicit period-of-record statement.
+- Builds a `claim_citations` list. Each quantitative or domain sentence in the report gets a `claim_id` (e.g. `claim_003`), `claim` text, `claim_type`, `confidence`, `evidence_ids`, and a `citations` list of `{url, verified, trust_level}` entries drawn from USGS NWIS URLs + KB matches.
+- Calls `_build_claim_verdicts` / `_build_claim_verdict_summary` from [api/routes/_citation.py](api/routes/_citation.py) to produce verdicts (`supported / contradicted / insufficient_evidence` with `risk_score ∈ [0, 1]`). When the disagreement engine is disabled, the conservative fallback is "citations present → supported (risk 0.3); no citations → insufficient (risk 0.85)".
+- Calls `_build_citation_integrity` (same citation module) to produce the integrity record: `claim_citation_coverage`, `section_citation_coverage`, `passed` boolean keyed off `MIN_CLAIM_CITATION_COVERAGE` and `MIN_SECTION_CITATION_COVERAGE` env-configurable thresholds (default 0.90).
+- Calls `_build_chart_payload` to produce the Recharts-ready chart JSON (§3.5).
 
-The LLM path is implemented by `DeepResearchAgent` in [src/agent/research_agent.py](src/agent/research_agent.py) (1738 lines). The agent is instantiated once at startup, wired through [api/routes/chat.py](api/routes/chat.py) as `_research_agent`, and reused across requests. Its constructor accepts `max_depth`, `max_results_per_search`, `use_web_search`, `llm_provider`, `auto_learn`, `timeout_seconds` (default 300 s), `enable_planning`, `enable_reflection`, `enable_budget_management`, and `enable_persistence` knobs.
+Every keyword-routed path in the routing chain goes through this function. This is the single, tested, fully-cited code path for the safe subset of queries, and it is what gives the benchmark its 68/68 pass rate without requiring the LLM.
 
-The agent composes five components built in [src/agent/research_optimizer.py](src/agent/research_optimizer.py): `ResearchPlanner`, `PriorityRanker`, `SelfReflectionEvaluator`, `StructuredReportBuilder`, and `ResearchSessionPersistence`. The planner implements the **SmartSearch** style query decomposition (turn the user query into a main question plus sub-questions plus an ordered search priority); the ranker implements **ReSeek** (score-driven prioritization with trust-weighted combined scores); the reflector implements **WebSeer** (gap analysis, follow-up-query generation, confidence/coverage scoring). The "O-Researcher" multi-agent decomposition is referenced in the module docstring but in this codebase is implemented as a single-process iterative loop rather than a multi-agent fan-out.
+### 3.4 Trend, changepoint, and cluster primitives
 
-Each `research(...)` call proceeds through phases — planning, iterative search (KB + web with budget tracking), insight extraction, synthesis, self-reflection, possibly one or more follow-up iterations, and finalization — and these phases are represented explicitly by `ResearchContext.phase_offsets` (planning 0.06, research_loop 0.12, query_optimization 0.18, searching 0.28, extracting_insights 0.42, follow_up_generation 0.56, synthesizing 0.82, learning 0.9, complete 1.0). Progress events are pushed to a caller-supplied `progress_callback(message, progress, snapshot)`; the streaming endpoint uses this to drive SSE updates.
+**Trend slope.** `_linear_trend_values_with_slope` (line 273 of [api/routes/_site_analysis.py](api/routes/_site_analysis.py)) computes an ordinary least-squares fit over the ordered monthly points. It is explicitly named `slope_per_bin` because one regression x-unit is one month; the annual rate is `slope_per_bin × 12`. Per-well annual rates are computed once by `_cross_well_analysis` and pulled from `per_site_metrics[*].annual_change_ft_yr` downstream, so the report text, chart legend, and claim-citation objects all reference the same number. A unit test in [tests/unit/test_inline_chart.py](tests/unit/test_inline_chart.py) asserts every trend legend entry ends in `ft/yr`.
 
-The search budget is a hard limit: `SearchBudget` tracks `max_web_searches = max(3, depth*2+2)`, `max_kb_searches = max(6, depth*4)`, `max_api_calls = max(10, depth*6)`, and a per-query cost model. When the budget is exhausted the agent stops iterating regardless of coverage — a deliberate backstop against runaway loops.
+**Changepoint screen.** `_detect_changepoint` (line ≈190) compares a single-line OLS fit over all monthly bins against the best two-line split with at least 12 bins on each side. A changepoint is reported only when residual error improves by ≥20%. Confidence label is `high ≥ 0.45 / moderate ≥ 0.30 / low ≥ 0.20`. The output records `date`, `pre_annual_change_ft_yr`, `post_annual_change_ft_yr`, `full_period_annual_change_ft_yr`, `improvement_ratio`, `confidence`. This is a **screening statistic, not a formal hypothesis test**; the report wording is conservative ("candidate changepoint"). `test_cross_well_analysis_adds_changepoints_and_clusters` in [tests/unit/test_inline_chart.py](tests/unit/test_inline_chart.py) asserts the screen fires on a synthetic step-change well.
 
-The LLM itself is chosen through [src/agent/llm_factory.py](src/agent/llm_factory.py), which supports five providers: Ollama (local), OpenAI (GPT-4o, GPT-4.1, GPT-4o-mini), Anthropic (Claude 3.5 Sonnet by default, Claude 3 Opus), Google Gemini (2.0 Flash, 1.5 Pro), and Qwen via Alibaba DashScope. Provider and model are read from `LLM_PROVIDER` / `LLM_MODEL` env vars (Anthropic + `claude-3-5-sonnet-20241022` as defaults). Missing credentials raise at construction time so that an operator sees the failure immediately rather than discovering it mid-request. Embeddings also go through the factory (`get_embeddings()`), falling back to the HuggingFace BGE model if a provider-specific embedding is not available.
+**Cross-well clustering.** `_cluster_wells` (line ≈260) groups wells by deterministic local-data features: annual change, seasonal amplitude (from `_seasonal_decomposition`), and a confinement indicator. Features are standardized (zero mean, unit std-dev or 1.0 if degenerate). Wells are assigned to `k=3` (or `k=2` if fewer than six wells) fixed-initialization k-means clusters — initial centroids are chosen deterministically (min / median / max by annual change), the algorithm runs for at most 20 iterations, and each cluster is labelled with a compact descriptor like `"declining seasonal wells"` plus `n_sites`, `site_ids`, `names`, `dominant_aquifer`, `mean_annual_change_ft_yr`, `mean_seasonal_amplitude_ft`.
 
-Web search is provided by DuckDuckGo via the `ddgs` (new) / `duckduckgo_search` (legacy) package, selected at import time. When the `use_web_search=False` flag is set or the package is missing, the agent degrades cleanly to KB-only retrieval.
+**Risk classification.** `_cross_well_analysis` sets `risk_level = high` if ≥66% of wells are falling, `moderate` at ≥33% (or ≥20% in a mostly-confined cohort), else `low`. Thresholds are engineering defaults without empirical calibration (§10 Limitations).
 
-The synthesis step now asks the LLM for structured JSON rather than prose first. The agent builds an evidence registry from `claim_citations`, assigning IDs such as `evidence_001_source_1` to source-backed claims, and the LLM must return `answer`, `claims`, `limitations`, and `recommended_followup` fields where each factual claim cites both `claim_ids` and `evidence_ids`. Python then renders the markdown report from that structured object. If the LLM is unavailable or returns invalid JSON, a deterministic structured fallback is rendered from the same claim/evidence registry. The raw structure is returned as `structured_response`, so downstream manuscript tooling can audit the claim-to-evidence graph without parsing prose.
+**Divergent pairs.** The top divergent pairs are selected as the wells with the most opposite-signed annual rates in the cohort, bounded to 3. They drive the "highlighted" styling in the chart and one of the insight bullets.
 
-### 3.4 The join point — `_agent_chart_hook`
+`_cross_well_analysis` is the structured object that `_site_research_fallback` renders into both the markdown report **and** the `claim_citations` list — the same numbers appear in prose and in the machine-readable audit trail.
 
-There is one subtle but important join point between the two worlds. When the LLM agent returns a result, its output schema (defined in [src/agent/research_agent.py](src/agent/research_agent.py)) includes `report`, `insights`, `sources`, `chart_specs`, `tool_trace`, `claim_citations`, and friends — but **not** a chart payload in the Recharts shape that the frontend expects. Historically that meant the agent path silently emitted no chart even when the agent had clearly identified sites. The fix, in [api/routes/_agent_chart_hook.py](api/routes/_agent_chart_hook.py), is a post-hoc attachment layer:
+### 3.5 `_build_chart_payload` — the single chart builder
+
+`_build_chart_payload` in [api/routes/_site_analysis.py](api/routes/_site_analysis.py) is the deterministic chart builder.
+
+- **Input:** list of site dicts (metadata + pandas time series), a location label, an optional `cross_well` summary.
+- **Output:** a Recharts-ready JSON with `chart_type`, `title`, `x_label`, `y_label`, `series`, `data` (one row per month), `insights` (capped at 5), `cohort_risk_level`.
+
+It resamples every well's time series to month-start means (`df.set_index("datetime")["value"].resample("MS").mean().dropna().round(2)`), unions observed dates, and writes one `data` row per date with a column per site ID. With two or more wells it adds an `"avg"` series (cohort mean, dashed stroke, `highlight=True`). It then computes linear trends on the cohort average and on highlighted wells — a well is highlighted if it is part of `divergent_pairs[0]` or is the fastest-declining / strongest-rising well per `_cross_well_analysis`. Trend series names are interpolated as e.g. `"Cohort Trend (-0.18 ft/yr)"`.
+
+The `insights` block (`_build_chart_insights`) is capped at **five** bullets and leads with `"Highlighted wells mark the most divergent or fastest-changing series ({n} total)."`, followed by cohort trend + risk, fastest decline, strongest rise (if positive), largest-divergence pair. This ordering is load-bearing: it is how a user reading the chart knows why certain lines are thick and the rest are dim.
+
+---
+
+## 4. Language-model synthesis layer and the evidence-ID binding
+
+The LLM layer exists to phrase deterministic findings as a direct answer to a free-form question. It does not independently conclude about hydrogeology. The manuscript should describe it as a **typed-binding narration layer**: whatever it writes is bound back to `claim_id`s and `evidence_id`s produced by §3, and any produced claim whose IDs are not in the registry is dropped by the parser.
+
+### 4.1 `DeepResearchAgent` — phases and budget
+
+`DeepResearchAgent` lives in [src/agent/research_agent.py](src/agent/research_agent.py) (≈2000 lines after the evidence-registry rewrite). The agent is instantiated once at startup, wired through [api/routes/chat.py](api/routes/chat.py) as `_research_agent`, and reused across requests. Constructor knobs: `max_depth`, `max_results_per_search`, `use_web_search`, `llm_provider`, `auto_learn`, `timeout_seconds` (default 300 s), `enable_planning`, `enable_reflection`, `enable_budget_management`, `enable_persistence`.
+
+The agent composes components from [src/agent/research_optimizer.py](src/agent/research_optimizer.py): `ResearchPlanner`, `PriorityRanker`, `SelfReflectionEvaluator`, `StructuredReportBuilder`, `ResearchSessionPersistence`. Each `research(...)` call proceeds through phases explicitly tracked in `ResearchContext.phase_offsets`: `planning 0.06`, `research_loop 0.12`, `query_optimization 0.18`, `searching 0.28`, `extracting_insights 0.42`, `follow_up_generation 0.56`, `synthesizing 0.82`, `learning 0.9`, `complete 1.0`. Progress events are pushed to a caller-supplied `progress_callback(message, progress, snapshot)`; the streaming endpoint uses this to drive SSE updates.
+
+The search budget is a hard limit tracked by `SearchBudget`: `max_web_searches = max(3, depth*2+2)`, `max_kb_searches = max(6, depth*4)`, `max_api_calls = max(10, depth*6)`. When the budget is exhausted the agent stops iterating regardless of coverage — a deliberate backstop against runaway loops.
+
+The LLM itself is chosen through [src/agent/llm_factory.py](src/agent/llm_factory.py), which supports five providers: Ollama (local), OpenAI (GPT-4o, GPT-4.1, GPT-4o-mini), Anthropic (Claude 3.5 Sonnet by default), Google Gemini (2.0 Flash, 1.5 Pro), Qwen via Alibaba DashScope. Provider and model are read from `LLM_PROVIDER` / `LLM_MODEL` env vars (Anthropic + `claude-3-5-sonnet-20241022` as defaults). Missing credentials raise at construction time so operators discover failures immediately. Embeddings also go through the factory (`get_embeddings()`), falling back to the HuggingFace BGE model.
+
+The agent runs **KB-first** against the local ChromaDB store; DuckDuckGo web search is gated by `GROUNDWATERGPT_ENABLE_WEB_SEARCH` (default `False` at [api/routes/chat.py:363](api/routes/chat.py#L363)) and does not run in the deployed demo. The manuscript should describe the LLM layer as operating over the local KB plus the deterministic-layer output.
+
+### 4.2 Evidence registry — `_build_evidence_items`
+
+The key change the manuscript rests on is in the synthesis step. Instead of asking the LLM for prose and hoping it cites correctly, the agent builds an **evidence registry** from `claim_citations` and asks the LLM to return strict JSON whose factual entries cite registered IDs.
+
+`_build_evidence_items` iterates over each `claim_citations[i]` entry (produced either by `_site_research_fallback` or by `_build_claim_citations` from retrieved insights). For each citation it emits:
+
+```python
+{
+  "evidence_id": "evidence_001_source_1",   # from citation or derived from claim_id
+  "claim_id":    "claim_001",
+  "url":         citation.url,
+  "trust_level": citation.trust_level,
+  "verified":    bool(citation.verified),
+}
+```
+
+Every `evidence_id` is a stable handle into a known `{URL, trust level, verification bit}` record. Every `claim_id` is a stable handle into a known factual sentence + confidence score. The registry is passed into the LLM prompt verbatim as `Evidence ID registry:` followed by `json.dumps(evidence_items, indent=2)`.
+
+### 4.3 The structured-JSON prompt — `evidence_response_v1`
+
+The LLM is asked to return ONLY JSON of this shape:
+
+```json
+{
+  "answer": "direct answer in 2-4 sentences",
+  "claims": [
+    {
+      "claim": "one factual or interpretive statement",
+      "claim_type": "trend|metadata|literature|interpretation|limitation",
+      "claim_ids": ["claim_001"],
+      "evidence_ids": ["evidence_001_source_1"],
+      "confidence": 0.0,
+      "is_interpretive": false,
+      "uncertainty": "short caveat"
+    }
+  ],
+  "limitations": ["data or method limitation"],
+  "recommended_followup": ["specific follow-up analysis"]
+}
+```
+
+Hard constraints in the prompt: every factual claim object MUST include at least one `claim_id` and one `evidence_id` from the registry; no quantitative values unless they appear in the evidence-backed claims; caveats go in `limitations` rather than inventing extra factual claims. Contradicted claims are marked `⚠ CONTRADICTED — flag this inline` and the LLM is explicitly instructed to surface them.
+
+### 4.4 Parser sanitization — `_parse_structured_response`
+
+`_parse_structured_response` reads the LLM output, strips any ```json ... ``` fences, locates the outermost `{ ... }`, and `json.loads` it. It then sanitizes:
+
+- `valid_claim_ids = {c.claim_id for c in claim_citations}`
+- `valid_evidence_ids = {e.evidence_id for e in evidence_items}`
+- For each `claims[i]`, `claim_ids` is filtered to the intersection with `valid_claim_ids`, and `evidence_ids` is filtered to the intersection with `valid_evidence_ids`.
+- If **either** list is empty after filtering, the claim is dropped from the response.
+- Confidence is clamped to `[0, 1]`.
+- `limitations` and `recommended_followup` are reduced to trimmed non-empty strings.
+
+If the parser fails (invalid JSON, no surviving claims, unparseable object), the code falls back to `_heuristic_structured_response`, which builds an `evidence_response_v1` object directly from the deterministic claim registry — the first two claims become the answer, each claim gets its `claim_ids` and `evidence_ids`, and uncertainty text is derived from whether a verdict exists. The heuristic response is what ships when the LLM is unavailable, which is why `use_web_search=False` + no LLM still produces a valid structured response.
+
+Either branch produces a `context.structured_response` with `schema_version = "evidence_response_v1"`. This is returned as `payload["structured_response"]`, and [api/routes/chat.py](api/routes/chat.py) sets it as a default on every research payload so downstream code can rely on its presence.
+
+### 4.5 `_render_structured_report` — rendering back to markdown
+
+`_render_structured_report` converts the structured object back into citation-safe markdown for the report body:
+
+- The `answer` is prefixed with the first claim's first `claim_id` in brackets if the answer does not already contain a `CLAIM_REF_RE` match. The regex was widened to `\[claim_\d{3}(?:[;\],\s][^\]]*)?\]` to accept the `[claim_003; evidence: evidence_003_source_1]` form.
+- Each sanitized claim becomes a bullet under `## Evidence-Linked Claims`, rendered as `- {claim} [{claim_ids}; evidence: {evidence_ids}] Uncertainty: {text}`.
+- `limitations` and `recommended_followup` become their own sections.
+
+The final report is a markdown document in which **every factual sentence carries a claim-and-evidence reference** that resolves into the structured response, and the structured response itself is returned on the payload under `structured_response` so manuscript tooling or a reviewer can audit the claim-to-evidence graph without parsing prose.
+
+### 4.6 Claim ingestion from retrieved insights
+
+For LLM-path questions not served by `_site_research_fallback`, the claim-and-evidence registry is built from the agent's retrieved `ResearchInsight` objects via `_build_claim_citations`. Each insight produces one claim with `claim_type = "retrieved_insight"` and `confidence` from the insight, plus one citation entry per source with `evidence_id = f"evidence_{index:03d}_source_{n}"`, `url`, `verified`, and `trust_level` from the insight's verification metadata.
+
+This is the mechanism by which questions routed to the agent (rather than to the deterministic fallback) still end up with a complete evidence registry the LLM synthesis step can cite against.
+
+---
+
+## 5. Join point, provenance, streaming, citation integrity
+
+### 5.1 `_agent_chart_hook` — byte-identical cross-path charts
+
+When the LLM agent returns a result, its output schema includes `report`, `insights`, `sources`, `chart_specs`, `tool_trace`, `claim_citations` — but **not** a chart payload in the Recharts shape the frontend expects. Historically the agent path silently emitted no chart even when it had clearly identified sites. The fix, in [api/routes/_agent_chart_hook.py](api/routes/_agent_chart_hook.py), is a post-hoc attachment layer:
 
 ```python
 def attach_chart_from_agent_result(result):
@@ -135,167 +261,298 @@ def attach_chart_from_agent_result(result):
     return result
 ```
 
-`_extract_site_ids_from_agent_result` walks `chart_specs`, `tool_trace`, `wells`, and `sources` recursively, picking up any 15-digit USGS site ID present in nested dicts, lists, or plain strings, and deduplicates while preserving discovery order. The chart is then synthesized by the **same** `_build_chart_payload` that the fallback uses. This is the architectural guarantee the system trades on: the agent path and the fallback path emit **byte-identical chart schemas** for the same selected cohort, because the chart is built by one function regardless of which path chose the sites.
+`_extract_site_ids_from_agent_result` walks `chart_specs`, `tool_trace`, `wells`, and `sources` recursively, picking up any 15-digit USGS site ID (`_SITE_ID_RE = re.compile(r"\b\d{15}\b")`) and deduplicating in discovery order. The chart is then synthesized by the **same** `_build_chart_payload` the deterministic path uses. That is the architectural guarantee: the agent path and the fallback path emit **byte-identical chart schemas** for the same selected cohort, because the chart comes from one function regardless of which path chose the sites.
 
-Downstream, every chart emission goes through a tiny helper `_chart_from(result, *, path: str)` in [api/routes/chat.py](api/routes/chat.py) that reads `result.get("chart")`, logs a structured `chart_decision path=<label> emitted=<bool>` debug line, and returns the chart or `None`. This helper is called from all ~16 chat/research branches in the file (site, aquifer, multi-location, location, network, research variants of each, agent success, streaming agent success). Centralizing it means the "does this branch emit a chart" question is now observable and un-regressable.
+Downstream, every chart emission is centralized through a helper `_chart_from(result, *, path: str)` in [api/routes/chat.py](api/routes/chat.py) that reads `result.get("chart")`, logs a structured `chart_decision path=<label> emitted=<bool>` debug line, and returns the chart or `None`. This helper is called from all ~16 chat/research branches in the file (site, aquifer, multi-location, location, network, research variants of each, agent success, streaming agent success). Centralizing it means the "does this branch emit a chart" question is now observable and un-regressable.
 
-Every research response is also passed through [api/routes/_provenance.py](api/routes/_provenance.py), which attaches `research_provenance_v1`: current code commit when available, SHA-256 hashes of referenced canonical USGS CSV files, hashes of key config files, a response hash over report/chart/claims/structured output, and methodology flags. The methodology block explicitly records that external covariates are not included yet; that is a deliberate boundary until trend, changepoint, clustering, and validation methods over the local USGS data are stable.
+### 5.2 Provenance block — `research_provenance_v1`
 
-### 3.5 Chart payload synthesis
+Every research response is passed through [api/routes/_provenance.py](api/routes/_provenance.py), which attaches `research_provenance_v1`:
 
-`_build_chart_payload` in [api/routes/_site_analysis.py](api/routes/_site_analysis.py) is the deterministic chart builder. Its contract:
+- `schema_version`: literal `"research_provenance_v1"`.
+- `generated_at`: UTC ISO timestamp.
+- `route_mode`: which branch of the routing chain served the answer.
+- `code_commit`: current git `HEAD` (via `subprocess` with a 2-second timeout), or `null`.
+- `response_sha256`: SHA-256 over a stable-sorted JSON serialization of the report body, chart, claim-citations, structured response, changepoints, and cross-well clusters. Hash changes iff any of those fields changes.
+- `data_snapshot`: list of referenced USGS site IDs plus per-site `{site_id, path, sha256, available}` records for each `data/usgs_<site_id>.csv`, plus a top-level `sha256` over the files block.
+- `config_hashes`: SHA-256 over `config/usgs_sites.json` and `config/water_supply_sources.json`.
+- `methodology`: flags recording `local_data_primary: True`, `trend_method = "monthly_OLS_with_screened_two_segment_changepoints"`, `cluster_method = "deterministic_standardized_kmeans"`, and an `external_covariates` block marked `included: False` with a note that external covariates are excluded until local-data trend, changepoint, clustering, and validation methods are stable.
 
-- Input: list of site dicts (metadata + pandas time series), a location label, an optional `cross_well` summary.
-- Output: a Recharts-ready JSON object with `chart_type`, `title`, `x_label`, `y_label`, a `series` list, a `data` list (one row per month), an `insights` list, and a `cohort_risk_level`.
+The manuscript reproducibility argument rests on this block: given `response_sha256` plus `data_snapshot.sha256` plus `code_commit`, a reviewer can deterministically re-derive the deterministic portion of the answer and verify bit-identical output.
 
-The builder resamples every well's time series to month-start means (`df.set_index("datetime")["value"].resample("MS").mean().dropna().round(2)`), unions the observed dates, and writes one `data` row per date with a column per site ID. When two or more wells are present, it adds a `"avg"` series (cohort mean, dashed stroke) and marks it `highlight=True`. It then computes linear trends on the cohort average and on any **highlighted** wells, where a well is highlighted if it is part of the top `divergent_pairs[0]` or is the fastest-declining / strongest-rising well per `_cross_well_analysis`. Per-well annual rates are pulled from `per_site_metrics[*].annual_change_ft_yr` (already computed by `_cross_well_analysis`) rather than re-derived, so the legend labels stay consistent with the text of the report.
+### 5.3 Streaming (`/api/research/stream`)
 
-Trend slopes are computed via `_linear_trend_values_with_slope` — an ordinary least-squares fit over the ordered monthly points, explicitly named `slope_per_bin` because one regression "x-unit" is one month. The annual rate is then `slope_per_bin * 12` and the trend series name is interpolated as e.g. `"Cohort Trend (-0.18 ft/yr)"`. Every trend legend entry ends in `ft/yr`, and there is a unit test in [tests/unit/test_inline_chart.py](tests/unit/test_inline_chart.py) asserting this exact property.
+The streaming endpoint wraps the research path in an SSE generator. A thread-safe `queue.Queue` collects `{type: progress|result|error, ...}` frames produced by a callback inside the agent (or by the deterministic fallback's progress hooks). The HTTP handler writes each frame as `data: <json>\n\n`. The frontend reader in [frontend/src/api/client.js](frontend/src/api/client.js) uses a `ReadableStream` reader, decodes chunks with a `TextDecoder`, buffers partial events across chunk boundaries, dispatches `onProgress(message, progress, snapshot)` per frame, and resolves with the final `result` frame.
 
-The `insights` block (`_build_chart_insights`) is capped at **five** bullets and lead with a "Highlighted wells mark the most divergent or fastest-changing series ({n} total)" explanation, followed by cohort trend + risk, fastest decline, strongest rise (if positive), and largest-divergence pair. This bullet order is load-bearing: the "highlighted wells" bullet is how a user reading the chart knows why certain lines are thick and the rest are dimmed.
+`test_streaming_agent_path_yields_chart_in_final_event` in [tests/unit/test_inline_chart.py](tests/unit/test_inline_chart.py) exercises the streaming path end-to-end with a stubbed `_research_agent`, splits the SSE body, and asserts the final `result` frame has `chart is not None` with non-empty `series` and `data`. This is the regression backstop for cross-path parity.
 
-### 3.6 Streaming (`/api/research/stream`)
+### 5.4 Citation integrity — `api/routes/_citation.py`
 
-The streaming endpoint wraps the research path in a server-sent-events generator. A thread-safe `queue.Queue` collects `{type: progress|result|error, ...}` frames produced by a callback inside the agent (or by the deterministic fallback's internal progress hooks). The HTTP handler writes each frame as `data: <json>\n\n`. The frontend reader in [frontend/src/api/client.js](frontend/src/api/client.js) uses a `ReadableStream` reader, decodes chunks with a `TextDecoder`, buffers partial events across chunk boundaries, and dispatches `onProgress(message, progress, snapshot)` callbacks per frame. The final `type: result` frame carries the full payload, including `chart` (which, post-hook, now matches the non-streaming path byte-for-byte for the same query).
+The citation scaffolding lives in [api/routes/_citation.py](api/routes/_citation.py) (~224 lines). Trust levels are a ranked enum: `unknown` (0) → `moderate` (1) → `trusted` (2) → `verified` (3). `verify_source` assigns trust by domain: USGS, EPA, NOAA, NASA → verified; other `.gov` → trusted; peer-reviewed DOIs → trusted; universities (`.edu`) → moderate; Wikipedia and general reference → moderate; unknown → unknown. The long-form verifier in [src/agent/source_verification.py](src/agent/source_verification.py) (664 lines) additionally tags each source with a category (`NUMERICAL_DATA`, `RESEARCH_PAPER`, `GOVERNMENT_REPORT`, `ACADEMIC`, `REFERENCE`, `NEWS`, `BLOG`, `UNKNOWN`) and a `priority_score` in `[0, 1]`.
 
-A unit test in [tests/unit/test_inline_chart.py](tests/unit/test_inline_chart.py) — `test_streaming_agent_path_yields_chart_in_final_event` — exercises the streaming path end-to-end with a stubbed `_research_agent`, splits the SSE body, and asserts that the final `result` frame has `chart is not None` and non-empty `series` and `data`. This is the regression backstop for the cross-path parity invariant.
+`_build_claim_verdicts` runs each claim through the `ClaimDisagreementEngine` in [src/claim_disagreement.py](src/claim_disagreement.py) when enabled. The conservative fallback — cited → supported; uncited → insufficient — ships by default. `_build_claim_verdict_summary` aggregates these into `{total_claims, supported, contradicted, insufficient_evidence, high_risk_claim_ids, supported_rate, contradicted_rate, insufficient_rate}`.
 
-### 3.7 Citation integrity
-
-The citation scaffolding lives in [api/routes/_citation.py](api/routes/_citation.py) (~224 lines). Trust levels are a ranked enum — `unknown` (0) → `moderate` (1) → `trusted` (2) → `verified` (3) — with a symmetrical `RANK_TO_TRUST_LEVEL` map. `verify_source` assigns trust based on domain: USGS, EPA, NOAA, NASA → verified; other `.gov` → trusted; peer-reviewed DOIs → trusted; universities (`.edu`) → moderate; Wikipedia and general reference → moderate; unknown → unknown. The long-form verifier (`src/agent/source_verification.py`, 664 lines) additionally tags each source with a category (`NUMERICAL_DATA`, `RESEARCH_PAPER`, `GOVERNMENT_REPORT`, `ACADEMIC`, `REFERENCE`, `NEWS`, `BLOG`, `UNKNOWN`) and a `priority_score` in [0, 1] used by the priority ranker.
-
-`_build_claim_verdicts` runs each claim through the `ClaimDisagreementEngine` in [src/claim_disagreement.py](src/claim_disagreement.py) if available, producing `{verdict, risk_score, evidence_for, counter_evidence, rationale}`. The conservative fallback — cited → supported; uncited → insufficient — is the one that ships when the disagreement engine is disabled or when running in CI. `_build_claim_verdict_summary` aggregates these to `{total_claims, supported, contradicted, insufficient_evidence, high_risk_claim_ids, supported_rate, contradicted_rate, insufficient_rate}`.
-
-`_build_section_confidence_from_claims` groups claims by report section and computes an average confidence per section plus an overall confidence and overall trust level. `_build_citation_integrity` then produces the integrity record: claim coverage (`cited_claims / total_claims`), section coverage (`cited_sections / total_sections`), and a boolean `passed` that is true when both coverages meet the configured thresholds (default 0.90). Every response in the chat/research surface carries the integrity record, so the UI can surface it without re-computing.
-
-### 3.8 Research workflow endpoints
-
-[api/routes/research_workflow.py](api/routes/research_workflow.py) and [api/routes/_research_workbench.py](api/routes/_research_workbench.py) expose a separate surface for **experiment-plan** and **workbench** functionality. This is the scaffolding for turning a research session into something that can be written up: `/api/research/plans` (create and list plans with title, research_question, hypothesis, methodology, datasets, metrics, baselines), `/api/research/plans/{plan_id}/runs` (log a run with config, metrics, findings, reproducibility fields including seed, code_commit, environment, executor, dependency_lock, and artifact hashes), and `/api/research/plans/{plan_id}/draft` (generate a target-venue-aware manuscript draft via the LLM). The workbench endpoint (`/api/research/workbench`) is a separate comparative-analysis surface with presets for date windows (`last_5y`, `last_10y`, `full_record`, `custom`), aggregations (monthly, quarterly, annual), and normalizations (raw, delta_from_first, z-score). The workbench produces its own chart payloads and is independent of the chat/research path.
-
-These endpoints are important for the manuscript narrative because they are where "the system produced an answer" becomes "the system produced a reproducible experiment record" — they are the hooks a peer-reviewed author would use to cite the system's output.
+`_build_section_confidence_from_claims` groups claims by report section and computes average confidence per section plus an overall confidence and trust level. `_build_citation_integrity` produces the integrity record: claim coverage (`cited_claims / total_claims`), section coverage (`cited_sections / total_sections`), and a `passed` boolean true when both meet their configured thresholds. Every response in the chat/research surface carries the integrity record.
 
 ---
 
-## 4. Frontend architecture
+## 6. Worked example: the Village of Estero question
 
-### 4.1 Stack and build
+The canonical manuscript-worthy question is:
 
-The frontend is a React 18.2 + Vite 5 SPA styled with Tailwind 3.3. Charts use `recharts` 2.10 (all inline chart rendering) and `@visactor/react-vchart` 2.0.22 (research workbench). Maps use Leaflet 1.9.4 + `react-leaflet` 4.2.1. Markdown rendering is `react-markdown` 10.1.0. Icons are `lucide-react` 0.294.0. The Vite dev server runs on port 3000 and proxies `/api` to `http://localhost:8000` (configurable via `VITE_API_PROXY_TARGET`). E2E tests use Playwright.
+> *"What are the groundwater sources the Village of Estero uses for water supply and what have been changes in groundwater levels there over the last 30 years?"*
 
-### 4.2 Component graph
+This example exercises **both halves** of the data chain in a single request: the domain-knowledge half ("what does Estero draw from") and the monitored-record half ("what have the wells done since ~1994"). Here is the concrete code path.
 
-The user-visible surface is organized by mode. The top-level `App` mounts a sidebar-driven mode switcher: `Dashboard` (stats overview + map), `ChatView` (the primary question-answering surface, used for both Query mode and Research mode via a header toggle), `AnalysisView` (a per-site / per-cohort analysis panel), `ResearchSessionPanel` (session history and artifacts), `ResearchWorkflowView` (experiment plans, runs, drafts), and `ResearchWorkbenchView` (the comparative workbench).
+### 6.1 Routing
 
-`ChatView.jsx` is by far the largest component (~800 lines) and is where the cross-path parity invariant becomes user-visible. It subscribes to a `backendStatus` observable exported from `client.js`, renders a "Backend unreachable — check uvicorn on `:8000`" banner when the observable is in the `down` state, and auto-dismisses it on the next successful fetch. The chat message list renders an inline `<AgentChart>` whenever `msg.chart` is present (regardless of which backend path emitted it), shows a subtle "No time series available for this query" note when `msg.chart === null` and the user's query looks like a visualization request (the regex `/plot|chart|trend|visuali[sz]e|graph/i`), and otherwise just renders the report markdown plus its divergent-pair bullets and source list. `AgentChart` and `ResearchChartsPanel` are both lazy-loaded via `React.lazy` + `Suspense` with `<div className="h-[320px]" />` fallbacks — this is a deliberate bundle-size optimization because Recharts is the largest single dependency.
+The query contains the token `Estero`. `_detect_location` word-boundary-matches `estero` against `_LOCATION_REFERENCE_POINTS`, which maps it to `(lat, lng, "Estero", county_hint="Lee")`. The routing chain falls through site-name and aquifer detection (no G-####, no aquifer keyword), fails multi-location (one place), and fires on single-location → `_best_sites_near(lat, lng, "Lee", max_sites=10)`. This returns the Lee County USGS wells closest to the Estero coordinates, scored by Haversine plus the `-0.3` county-match bonus. The resulting cohort is typically 6–10 wells including the `C-####` Surficial / Sandstone and `L-####` Lower Tamiami sites in south Lee County.
 
-### 4.3 Chart UX polish
+### 6.2 Deterministic analysis
 
-`AgentChart.jsx` is small (~225 lines) and has a handful of visual choices that deserve to be written up: it renders a risk pill next to the title that is hidden when `cohort_risk_level` is falsy or equal to `'unknown'`; it labels the CSV download button "Monthly CSV" with a tooltip of "Monthly-mean aggregation of all plotted wells" and writes `<slugified-title>-monthly.csv`; and it applies a **conditional legend payload** when the series count exceeds six — in that case, the legend filters to just highlighted wells, trend overlays, and the cohort average, while the underlying `<Line>` elements still render the non-highlighted wells as dim background context. This is the mechanism by which a 10-well cohort remains readable without the legend wrapping over multiple lines.
+`_site_research_fallback(question, sites, location_label="Estero", lat, lng)` is invoked on the cohort.
 
-The Y-axis is **reversed** (`reversed` prop on `<YAxis>`), because `value` in the USGS CSV is depth-to-water — bigger is deeper, and hydrogeologists conventionally draw deeper-water downward. The Y-axis domain is computed from the data with a 5% padding. A `Brush` component is added only when `data.length > 60`, giving multi-year cohorts a zoom handle.
+- Each site's monthly-mean water-level series is computed by resampling its CSV through `_load_site_timeseries`. Many wells start in the mid-1990s, giving the question its "last 30 years" frame.
+- Per-site metrics are computed: `start_date`, `end_date`, `record_length_years`, `net_change_ft`, `annual_change_ft_yr` (from `_linear_trend_values_with_slope`), `trend` label (`rising / falling / stable`), and `changepoint` (from `_detect_changepoint` — usually populated only for wells with ≥36 monthly bins).
+- `_cross_well_analysis` runs over the cohort and returns `trend_distribution` (e.g. 7 falling / 2 stable / 1 rising), `mean_annual_change_ft_yr`, `std_annual_change_ft_yr`, `divergent_pairs`, `risk_level` (likely `moderate` to `high` for a Lee cohort dominated by falling Surficial wells), `changepoints`, and `clusters`.
+- `_cluster_wells` groups the cohort by standardized annual change + seasonal amplitude + confinement. A typical Estero result is something like `"declining seasonal wells"`, `"stable seasonal wells"`, `"muted-seasonality confined wells"` — matching a hydrogeologist's informal reading of the record.
 
-### 4.4 API client
+### 6.3 KB contribution
 
-[frontend/src/api/client.js](frontend/src/api/client.js) is the single entry point for all backend calls. Every fetch goes through `apiFetch(url, options, fallbackMessage)`, which wraps `fetch()` in a `try/catch` and converts any `TypeError` (i.e. `Failed to fetch`) into an `ApiError({kind: 'network'})` while emitting `'down'` on the `backendStatus` observable. On any successful response it emits `'up'`. HTTP errors are converted to `ApiError({kind: 'http', status})`, parse errors to `ApiError({kind: 'parse'})`. The streaming function `sendResearchQueryStreaming` reads the SSE body incrementally, splits on `\n\n`, handles partial frames, forwards `progress` events to an optional callback, stores `result` frames, raises on `error` frames, and resolves with the stored result when the stream closes.
+The "what does Estero use for water supply" half is answered from the local knowledge base. Retrieval surfaces sentences about the Lower Tamiami Aquifer as Lee County's principal municipal supply, about the Sandstone and Mid-Hawthorn aquifer roles, and about the Sandy unit of the Lower Tamiami that the Village of Estero utility and Lee County Utilities have historically drawn from. These sentences are added to `claim_citations` with `claim_type` tags like `"literature"` or `"metadata"` and cited to the corresponding KB source URLs with `trust_level` in `{trusted, moderate}`. The config file `config/water_supply_sources.json` (hashed into `research_provenance_v1.config_hashes`) holds the authoritative water-supply-source mapping.
 
-The observable is ~15 lines — a `Set` of listeners plus `subscribe / getStatus` helpers. It is deliberately not a full store (no Redux/Zustand) because the only cross-cutting state it carries is the up/down status of the backend.
+### 6.4 Report assembly
 
----
+`_site_research_fallback` composes the report as:
 
-## 5. Evaluation and measured behaviour
+1. **Overview** — location, number of wells, period of record, cohort trend distribution, cohort mean annual change.
+2. **Water supply context** — Lower Tamiami / Sandstone / Mid-Hawthorn sentences drawn from the config + KB, each with its own claim-citations.
+3. **Cohort summary** — divergent pairs, candidate changepoints (up to 3), cross-well behaviour clusters, cohort risk level with explanation.
+4. **Aquifer-grouped sections** — one section per aquifer present in the cohort, each listing its wells, annual rates, and net changes.
+5. **Period-of-record statement** — the literal start and end dates across the cohort.
 
-### 5.1 Test coverage
+The chart payload is built by `_build_chart_payload` from the same site list and `cross_well` object: monthly-mean series per well, cohort `"avg"` series, trend overlay series for highlighted wells, five insight bullets leading with the highlighted-wells explanation, and a `cohort_risk_level`.
 
-The repository has **205 unit tests passing** on Python 3.10+ as of 2026-04-14 — [tests/unit/](tests/unit/) contains:
+### 6.5 Claim/evidence binding
 
-- `test_inline_chart.py` (13 tests): chart payload builder invariants, cross-path chart parity, agent-hook attach/leave-alone, streaming SSE result frame, ft/yr unit naming, monthly resampling, empty-input handling, KeyError surfacing when cross-well metrics are malformed.
-- `test_detection.py`: detection chain tests (regex coverage, precedence, edge cases).
-- `test_chat_api.py`: `/api/chat` endpoint tests against the FastAPI TestClient.
-- `test_chart_api.py`: `/api/sites/{id}/chart` and `/api/compare/chart` endpoint tests.
-- `test_knowledge_api.py`: knowledge base stat / status / ingest tests.
-- `test_agent.py`: research agent tests with stubbed LLM.
-- `test_tools.py`: tool invocation tests for the agent's tool surface.
-- `test_claim_disagreement.py`: verdict engine tests.
-- `test_features.py`: ML feature engineering tests.
-- `test_research_workflow_api.py`: plan/run/draft endpoint tests.
-- `test_research_workbench.py`: comparative workbench analysis tests.
+By the time the report is composed, `claim_citations` typically contains 6–12 claim objects per Estero question. Each carries:
 
-A separate benchmark suite ([tests/benchmark/chat_eval_cases.json](tests/benchmark/chat_eval_cases.json)) contains **63 cases** spanning three difficulty levels (L1, L2, L3) across routing modes (`fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`). Each case lists `required_checks` (up to 20 boolean checks per case: `ok_status`, `has_report`, `has_sources`, `has_claim_citations`, `has_date_reference`, `has_well_id`, `has_trend_language`, `has_aquifer_language`, `within_time_budget`, `routes_to_location_fallback`, `reports_net_change_ft`, `reports_annual_rate`, `returns_6plus_wells`, `report_substantial`, `has_aquifer_sections`, `has_cross_aquifer_comparison`, `states_data_period`, `has_proxy_distance`, `response_has_hallucination_guardrail`, `response_has_citation_integrity`) and typed assertions (`expected_mode`, `has_net_change`, `has_annual_rate`, `min_wells`, `min_report_length`, ...). The harness lives in [scripts/run_chat_benchmark.py](scripts/run_chat_benchmark.py).
+- A `claim_id` such as `claim_003`.
+- A `claim_type` such as `"trend"` (per-well annual rate sentences), `"metadata"` (cohort size / period-of-record), `"literature"` (KB-sourced water-supply sentences), `"interpretation"` (cohort risk sentence).
+- A numeric `confidence` and a list of `citations`, each with `evidence_id`, `url`, `trust_level`, `verified`.
 
-### 5.2 Measured performance
+`_build_evidence_items` turns this into the registry the LLM synthesis step sees. If the LLM is enabled, it returns an `evidence_response_v1` JSON whose `answer` addresses both halves of the question and whose `claims` cite only registered IDs. If the LLM is disabled, the heuristic fallback renders the same structure from the registry.
 
-The current [chat_benchmark_report.json](chat_benchmark_report.json) summary (reading from the tracked file on disk):
+### 6.6 Audit output
 
-- **63 / 63 cases passing**, `overall_score = 1.000`.
-- Average citation coverage: **0.986** (threshold: 0.90).
-- Maximum elapsed time on a single case: **12.314 s**.
-- Median elapsed time: **0.085 s**.
-- Thresholds the run was measured against: `min_overall_score=0.85`, `min_case_score=0.80`, `min_avg_citation_coverage=0.90`, `max_response_seconds=120`, `max_median_seconds=5.0`.
-- Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback` (note: the LLM agent path is **not** in the exercised set — the entire benchmark passes on the deterministic routes).
+The final response for the Estero question carries:
 
-The key implication for the manuscript: the system's headline number ("63/63 benchmark pass, 98.6% citation coverage, 85 ms median latency") is a statement about **the deterministic fallback layer**, not about the LLM agent. This is a feature, not a bug — the fallback is what provides the system's reproducibility guarantees — but it needs to be framed that way in the paper so a reviewer does not read "63/63" as evidence for the LLM.
+- `report` — the markdown narrative.
+- `chart` — the deterministic chart payload from `_build_chart_payload`.
+- `claim_citations`, `claim_verdicts`, `claim_verdict_summary`.
+- `citation_integrity` — coverage numbers and a `passed` flag.
+- `structured_response` — the `evidence_response_v1` object with claims bound to registered IDs.
+- `changepoints`, `cross_well_clusters` — raw deterministic outputs.
+- `provenance` — `research_provenance_v1` with `code_commit`, `response_sha256`, `data_snapshot.sha256`, `config_hashes`, `methodology`.
 
-### 5.3 Benchmarks the paper should add
-
-There is no equivalent **LLM-path benchmark** in the repository. A reviewer would want one: same 63 questions, routed through `DeepResearchAgent`, with the same check list applied to the result. This is straightforward to add (it would reuse the check harness) and is probably the single most valuable evaluation work the author could do before submission. Similarly, the 93% ML forecast accuracy deserves a proper rolling-origin cross-validation before it appears in a paper; right now the training script uses a single 80/20 split.
-
-### 5.4 Retrieval precision harness
-
-[scripts/run_retrieval_precision.py](scripts/run_retrieval_precision.py) runs a knowledge-base retrieval precision benchmark with a configurable top-k and a minimum average precision threshold (default 0.90). Its cases live in a companion JSON file. This is the right starting point for a Methods-section claim about KB retrieval quality; the manuscript should report precision@1, precision@5, and (if the KB supports it) MRR across those cases.
+A reviewer who wants to re-derive the Estero answer can check out `provenance.code_commit`, verify `data_snapshot.files[*].sha256` against the CSVs on disk, rerun the request, and confirm `response_sha256` matches bit-for-bit (for the deterministic layer; the LLM layer is stochastic across runs — see §10 Threats).
 
 ---
 
-## 6. Strengths, limitations, threats to validity
+## 7. Auxiliary surfaces
 
-### 6.1 Strengths
+### 7.1 Chat-agent quick path (`_chat_agent`)
 
-- **Single-source-of-truth chart schema.** Every backend path (four deterministic fallbacks, the LLM path, the streaming agent path) emits charts via one function, `_build_chart_payload`. The frontend consumes a single shape. This is cheap to test, cheap to observe, and hard to regress.
-- **Explainability baked into the response contract.** Every response has `report`, `sources`, `claim_citations`, `claim_verdicts`, `claim_verdict_summary`, `citation_summary`, `section_confidence`, `citation_integrity`, `hallucination_guardrail`. There is no "unexplained" answer in the API surface; a reviewer can audit any reply end-to-end without a log trail.
-- **LLM is decoupled from correctness.** The benchmark passes at 1.000 without the LLM active. The agent is a quality-of-life enhancement (better phrasing, open-ended follow-up, richer synthesis), not a correctness dependency. This is a defensible design choice for a domain where factual drift is expensive.
-- **Reproducible data stack.** All time series are local CSVs, metadata is a single JSON, trust levels are an explicit enum, and cache keys are derived from the site ID. Bit-identical reruns are the default.
-- **LLM provider portability.** The same agent code runs against Ollama, OpenAI, Anthropic, Gemini, or Qwen by changing two environment variables. This matters for reproducibility across institutional clusters with different procurement constraints.
-- **Citation integrity as a first-class signal.** Coverage and trust are computed per request and surfaced back through the API, which is stronger than typical "retrieve and show links" designs.
-- **Deterministic routing is testable.** Because routing is keyword-driven and regex-based, the test suite can enumerate routing decisions; the benchmark proves the chain behaves at 100% on 63 representative cases.
+In addition to `DeepResearchAgent`, [api/routes/chat.py](api/routes/chat.py) instantiates a second agent via `create_agent` from [src/agent/groundwater_agent.py](src/agent/groundwater_agent.py). This is a LangChain tool-use agent with a fixed `SYSTEM_PROMPT`. It is used by the `/api/chat` path when the routing chain does not fire a deterministic branch and a quick natural-language reply is appropriate. It is separate from the research agent and its tool surface is [src/agent/tools.py](src/agent/tools.py) (≈1482 lines), which wraps the same site-loading and chart-building helpers as the deterministic layer.
 
-### 6.2 Limitations (stated plainly)
+The chat-agent path is more loosely coupled to the evidence-registry pipeline than the research-agent path, and is a strong candidate for consolidation (§11 Cleanup).
 
-- **Scope is fixed and narrow.** 44 wells, 5 counties, 7 aquifer labels. The system has no way to reason about wells outside `SITE_METADATA`. A reviewer asking "what about the Panhandle" is asking for a config change, not a code change — but the manuscript must state this explicitly or it will read as overclaim.
-- **Keyword routing is brittle at the edges.** `_is_network_wide_query` and `_is_multi_location_compare_query` are keyword checks, not intent classifiers. Questions that use novel phrasings ("across the whole dataset", "pan-aquifer") may miss the network-wide branch. The fallback to the LLM path mitigates this, but the deterministic guarantees disappear whenever the LLM takes over.
-- **Trend methodology is OLS on monthly means.** `_linear_trend_values_with_slope` is an ordinary least-squares fit with no seasonality removal, no serial-correlation correction, and no uncertainty reporting. Reported annual rates are point estimates, not confidence intervals. For a hydrogeology paper, this is the most conspicuous methodological simplification — it should either be replaced with a proper trend estimator (Mann-Kendall + Sen's slope is the genre standard) or disclosed as a limitation.
-- **Changepoints and clusters are screening tools.** The changepoint detector is a deterministic two-segment OLS residual-improvement screen, and the cross-well clusters are standardized-feature k-means groups over annual change, seasonal amplitude, and confinement. They are useful for hypothesis generation but are not yet hydrologic proof of regime shifts or aquifer connectivity.
-- **Risk classification is a heuristic.** `_cross_well_analysis` sets `risk_level` to `high` when ≥66% of wells are falling, `moderate` at ≥33% falling (or ≥20% in a mostly-confined cohort), else `low`. These thresholds are reasonable-sounding and have no empirical calibration in the repo. The paper should either cite a domain source for them or present them as an engineering default.
-- **Cohort "risk_level" and "divergent pairs" are not hydrologically validated.** Divergent pairs are the two wells with the largest opposite-sign annual changes. That is a defensible screening heuristic but not a hydrologic relationship — two wells can diverge for reasons unrelated to the aquifer system (localized pumping, instrumentation error, measurement gaps). The chart marks them as "highlighted" and the text calls them "divergent", which is a presentation choice the paper should be explicit about.
-- **The LLM agent is under-evaluated.** There is no LLM-path benchmark file in the repository. Everything we can say about agent quality is based on ad-hoc testing, progress logs, and the passing of the deterministic 63/63 — none of which is evidence about the agent itself.
-- **ML forecast accuracy is under-evaluated.** A single 80/20 split on a time series is not a sufficient validation. The model may be memorizing seasonal structure that a rolling-origin split would punish. The 93% number should not appear unqualified in a peer-reviewed manuscript.
-- **Knowledge base coverage is small and not described at the page level.** Three hydrogeology PDFs plus per-well summaries plus a domain Q&A corpus is a useful seed but not a comprehensive literature base. A reviewer asking "what does the KB actually cover" is asking a fair question; the paper should answer it with a document-by-document inventory.
-- **Web search is DuckDuckGo only.** There is no Google / Semantic Scholar / Crossref integration. For citation-heavy domain questions this is a meaningful quality ceiling.
-- **Provenance within reports.** Research responses now include `structured_response` and `research_provenance_v1`, so the claim/evidence graph and data/config hashes are machine-auditable. The remaining limitation is statistical rather than architectural: the hashes prove which data were used, not that the trend or changepoint estimator is the final hydrologic choice.
-- **Concurrency and persistence.** The research session store (`ResearchSessionPersistence`) is file-based. The benchmark harness runs cases sequentially; concurrent request behaviour under load has not been measured. The paper should not claim "production" without qualifying that.
-- **Timestamped refresh CSVs coexist with canonical CSVs.** The `data/` directory contains `usgs_<id>.csv` and several `usgs_<id>_<YYYYMMDD>.csv` snapshots with inconsistent content (some snapshots are literal duplicates of the same two rows). The `_load_site_timeseries` function only reads the canonical file, so the snapshots are effectively dead weight — but their presence could mislead a reader who assumes the directory listing reflects the serving data. This should be cleaned up before a reproducibility appendix is generated.
+### 7.2 Research workflow — plans, runs, drafts
 
-### 6.3 Threats to validity (for the manuscript)
+[api/routes/research_workflow.py](api/routes/research_workflow.py) (252 lines) exposes an experiment-plan surface for turning a research session into a reproducible record: `/api/research/plans` (create and list plans with `title`, `research_question`, `hypothesis`, `methodology`, `datasets`, `metrics`, `baselines`), `/api/research/plans/{plan_id}/runs` (log a run with `config`, `metrics`, `findings`, reproducibility fields: `seed`, `code_commit`, `environment`, `executor`, `dependency_lock`, artifact hashes), and `/api/research/plans/{plan_id}/draft` (generate a target-venue-aware manuscript draft via the LLM). This is the hook that a peer-reviewed author would use to cite the system's output alongside a reproducible run record. It is live and served to the frontend.
 
-- **Construct validity.** "Groundwater level" in the USGS schema is depth-to-water, which is conventionally drawn as a negative elevation. Papers sometimes report "water level" in the elevation sense. A reviewer could object to the Y-axis label ("Water Level (ft, monthly mean)") as ambiguous. The axis is reversed in the UI (bigger depth draws downward), which mitigates the confusion, but the paper should be explicit about sign convention.
-- **External validity.** The system is trained and validated on wells that are in a handful of hydrologically related but not identical aquifer systems. Its behaviour on wells outside this set (e.g. Ogallala, Edwards, Central Valley) has not been measured. Claims about generalization should be limited to "the system can be configured to serve a similar-shape dataset" rather than "the system generalizes".
-- **Internal validity of the risk label.** Because the risk heuristic is hand-tuned and the benchmark does not test it directly (the checks are for the presence of risk language, not for calibration), the benchmark cannot rule out miscalibration. An independent validation against a hydrogeologist's labelling of the same cohorts would strengthen any claim tied to `cohort_risk_level`.
-- **Reproducibility of the LLM path.** The LLM is stochastic; a reviewer running the same query twice can get subtly different reports. The deterministic path guarantees reproducibility; the agent path does not. The experiment-plan/run scaffolding (`/api/research/plans/{id}/runs`) is the right tool to pin down a run with a seed + code commit + environment, but the paper will need to actually use it, not just cite it.
+### 7.3 Research workbench
 
-### 6.4 What the paper can confidently claim
+[api/routes/_research_workbench.py](api/routes/_research_workbench.py) (569 lines) is a separate comparative-analysis surface exposed via `/api/research/workbench`. It supports date-window presets (`last_5y`, `last_10y`, `full_record`, `custom`), aggregations (`monthly`, `quarterly`, `annual`), and normalizations (`raw`, `delta_from_first`, `z_score`). The workbench produces its own chart payloads and is consumed by [frontend/src/components/ResearchWorkbenchView.jsx](frontend/src/components/ResearchWorkbenchView.jsx). It is independent of the chat/research path and is live.
 
-- A working, tested pipeline for converting USGS groundwater records into cited, chart-backed answers with citation integrity as a first-class output.
-- A deterministic routing chain that passes a 63-case benchmark at 1.000 on 205 unit tests, with sub-second median latency.
-- A unified chart schema across deterministic and LLM paths, verified by a post-hoc attachment layer and a streaming regression test.
-- An LLM-agent architecture decoupled from correctness, with explicit search-budget, reflection, and verification components — all wireable to five LLM providers.
-- An experiment-plan scaffolding that closes the loop from question to reproducible run record to manuscript draft.
-- A small but curated knowledge base with trust-level-aware verification.
+### 7.4 ML forecast pipeline
 
-### 6.5 What the paper should not claim without additional work
+[src/ml/](src/ml/) holds the 7-day scikit-learn forecast code and models. It is **not imported by any** `api/` route in the current codebase; it exists as a research capability and a CI entry-point. It is not part of the manuscript argument this document supports.
 
-- Accurate 7-day prediction at 93% unless the ML pipeline gets a rolling-origin cross-validation with reported MAE / RMSE / skill-vs-persistence.
-- State-of-the-art trend detection unless `_linear_trend_values_with_slope` is replaced with or augmented by Mann-Kendall + Sen's slope and the reported annual rates come with confidence intervals.
-- Generalization beyond the monitored network unless the site metadata layer is tested against a non-Florida dataset.
-- LLM-agent quality unless an LLM-path benchmark is added and reported.
-- Production readiness unless concurrency and persistence are measured.
+### 7.5 DuckDuckGo web search (default off)
+
+[src/agent/research_agent.py](src/agent/research_agent.py) imports `ddgs` / `duckduckgo_search` at module load time and exposes a `WebSearch` tool to the agent. The tool is **off by default** in the serving configuration: `research_web_search_enabled = _env_flag("GROUNDWATERGPT_ENABLE_WEB_SEARCH", default=False)` at [api/routes/chat.py:363](api/routes/chat.py#L363), and `DeepResearchAgent` is constructed with `use_web_search=research_web_search_enabled`. It does not run in the deployed demo. The manuscript should not describe the system as a web-research agent.
+
+---
+
+## 8. Frontend surface
+
+### 8.1 Stack
+
+The frontend is a React 18.2 + Vite 5 SPA styled with Tailwind 3.3. Charts use `recharts` 2.10 for inline chart rendering and `@visactor/react-vchart` 2.0.22 in the research workbench. Maps use Leaflet 1.9.4 + `react-leaflet` 4.2.1. Markdown rendering is `react-markdown` 10.1.0. The Vite dev server runs on port 3000 and proxies `/api` to `http://localhost:8000`. E2E tests use Playwright.
+
+### 8.2 Component graph
+
+The top-level `App` mounts a sidebar-driven mode switcher with `Dashboard` (stats + map), `ChatView` (Query + Research modes), `AnalysisView` (per-site / per-cohort panel), `ResearchSessionPanel` (session history), `ResearchWorkflowView` (plans, runs, drafts), and `ResearchWorkbenchView` (comparative workbench).
+
+`ChatView.jsx` (~800 lines) is the primary surface. It subscribes to a `backendStatus` observable exported from [frontend/src/api/client.js](frontend/src/api/client.js), renders a "Backend unreachable — check uvicorn on :8000" banner when the observable is `'down'`, and auto-dismisses it on the next successful fetch. The chat message list renders an inline `<AgentChart>` whenever `msg.chart` is present (true whenever the cohort could be resolved, by the cross-path parity invariant). A visualization request whose cohort could not be resolved shows a "No time series available for this query" note (regex `/plot|chart|trend|visuali[sz]e|graph/i`). The report body is rendered as markdown; claim-and-evidence references in square brackets render inline.
+
+`AgentChart` and `ResearchChartsPanel` are lazy-loaded via `React.lazy` + `Suspense` with `<div className="h-[320px]" />` fallbacks — a deliberate bundle-size optimization because Recharts is the largest single dependency.
+
+### 8.3 `AgentChart` — chart UX choices
+
+[frontend/src/components/AgentChart.jsx](frontend/src/components/AgentChart.jsx) (225 lines) has decisions worth naming in the paper:
+
+- Risk pill next to the title, **hidden** when `cohort_risk_level` is falsy or `'unknown'` — the system never shows a risk claim it cannot back.
+- CSV download button labelled **Monthly CSV** with tooltip `"Monthly-mean aggregation of all plotted wells"` and file name `<slugified-title>-monthly.csv`. The CSV is built from the same monthly-mean series the chart renders, so the download and the visual are the same object.
+- **Conditional legend payload** when `series.length > 6`: the legend filters to highlighted wells + trend overlays + cohort average, while the underlying `<Line>` elements still render non-highlighted wells as dim background context. This is how a 10-well cohort stays readable without wrapping the legend.
+- Y-axis is **reversed** (`reversed` prop on `<YAxis>`), because `value` is depth-to-water — bigger means deeper. Y-domain is computed from data with a 5% padding.
+- `Brush` is added only when `data.length > 60`, giving multi-year cohorts a zoom handle.
+- Insight bullets render in a slate card below the chart, capped at five, leading with the highlighted-wells explanation.
+
+### 8.4 API client and backend-status observable
+
+[frontend/src/api/client.js](frontend/src/api/client.js) is the single entry point for all backend calls. Every fetch goes through `apiFetch(url, options, fallbackMessage)`, which wraps `fetch()` in a `try/catch` and converts any `TypeError` (`Failed to fetch`) into an `ApiError({kind: 'network'})` while emitting `'down'` on the `backendStatus` observable. On success it emits `'up'`. HTTP errors become `ApiError({kind: 'http', status})`, parse errors `ApiError({kind: 'parse'})`. `sendResearchQueryStreaming` reads the SSE body incrementally, splits on `\n\n`, handles partial frames, forwards `progress` events, stores `result` frames, raises on `error` frames, and resolves with the stored result on stream close.
+
+The observable is ~15 lines — a `Set` of listeners plus `subscribe` / `getStatus`. Deliberately not a full store (no Redux/Zustand) because the only cross-cutting state it carries is up/down status.
+
+---
+
+## 9. Evaluation and measured behaviour
+
+### 9.1 Test coverage
+
+**210 unit tests passing** on Python 3.13 locally as of 2026-04-14. Key test files:
+
+- `test_inline_chart.py` (13+ tests): chart payload invariants, cross-path parity, agent-hook attach/leave-alone, streaming SSE final frame, ft/yr unit naming, changepoint + cluster presence, empty-input handling, KeyError surfacing when cross-well metrics are malformed.
+- `test_detection.py`: detection chain (regex coverage, precedence, edge cases).
+- `test_chat_api.py`: `/api/chat` + `/api/research` + `/api/research/stream` tests against FastAPI TestClient, including `provenance`, `changepoints`, `cross_well_clusters`, `structured_response` presence and `schema_version` assertions.
+- `test_chart_api.py`: `/api/sites/{id}/chart` and `/api/compare/chart` tests.
+- `test_knowledge_api.py`: KB stat / status / ingest.
+- `test_agent.py`: research-agent tests with stubbed LLM, including `TestStructuredResearchSynthesis` which asserts `_heuristic_structured_response` + `_render_structured_report` preserve claim-and-evidence IDs end-to-end.
+- `test_tools.py`, `test_claim_disagreement.py`, `test_features.py`, `test_research_workflow_api.py`, `test_research_workbench.py`.
+
+The benchmark suite [tests/benchmark/chat_eval_cases.json](tests/benchmark/chat_eval_cases.json) contains **68 cases** spanning three difficulty levels (L1, L2, L3) across routing modes (`fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`). Each case lists up to 20 `required_checks` (`has_report`, `has_sources`, `has_claim_citations`, `reports_net_change_ft`, `reports_annual_rate`, `has_aquifer_sections`, `has_cross_aquifer_comparison`, `states_data_period`, `response_has_citation_integrity`, …) and typed assertions (`expected_mode`, `min_wells`, `min_report_length`, …). The harness is [scripts/run_chat_benchmark.py](scripts/run_chat_benchmark.py).
+
+### 9.2 Current benchmark
+
+Current [chat_benchmark_report.json](chat_benchmark_report.json):
+
+- **68 / 68 cases passing**, `overall_score = 1.000`.
+- Average citation coverage: **1.000** (threshold: 0.90).
+- Average claim-citation coverage: **1.000** (threshold: 0.90).
+- Average section-citation coverage: **1.000** (threshold: 0.90).
+- Average claim-verdict coverage: **1.000** (threshold: 0.95).
+- Average contradicted-claim rate: **0.010** (threshold: ≤0.40).
+- Average high-risk-claim rate: **0.010** (threshold: ≤0.50).
+- Maximum elapsed time: **3.278 s**.
+- Median elapsed time: **1.724 s**.
+- Thresholds: `min_overall_score=0.85`, `min_case_score=0.80`, `min_avg_citation_coverage=0.90`, `max_response_seconds=120`, `max_median_seconds=5.0`.
+- Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`. The **LLM agent path is not in the exercised set**.
+
+The key implication for the manuscript: the headline ("68/68 benchmark pass, 100% citation coverage, 100% claim-verdict coverage, 1.724 s median latency") is a statement about **the deterministic layer**. That is the layer the reproducibility argument rests on. The framing must be explicit.
+
+### 9.3 Benchmarks the paper should add
+
+No equivalent **LLM-path benchmark** exists. A reviewer would want one: same 68 questions, routed through `DeepResearchAgent`, with the same check list applied. Reusing the harness is straightforward. This is probably the single most valuable evaluation work the author could do before submission.
+
+[scripts/run_retrieval_precision.py](scripts/run_retrieval_precision.py) runs a KB retrieval precision benchmark with a configurable top-k and a minimum average precision threshold (default 0.90). Its cases live in a companion JSON file. This is the right starting point for a Methods-section claim about KB retrieval quality; the paper should report precision@1, precision@5, and MRR across those cases.
+
+---
+
+## 10. Strengths, limitations, threats to validity
+
+### 10.1 Strengths
+
+- **Deterministic reference pipeline.** A single function (`_site_research_fallback` + `_cross_well_analysis` + `_build_chart_payload`) converts USGS CSVs into cited, chart-backed conclusions — trend, changepoint, cluster, divergent pairs, risk level — without any language model. It is what the benchmark measures and what the provenance block hashes.
+- **Typed claim-and-evidence binding.** The LLM synthesis layer is required to return JSON whose every factual claim cites `claim_ids` and `evidence_ids` from a registry built by the deterministic layer. The parser sanitizes by intersecting against valid ID sets; unbacked claims are dropped. The response always carries the resulting `structured_response` (`evidence_response_v1`) for downstream auditing.
+- **Cross-path chart parity.** Every routing branch — deterministic, LLM agent, streaming agent — emits charts through one builder, joined by `_agent_chart_hook.attach_chart_from_agent_result`. A regression test asserts the streaming agent path produces byte-identical chart shapes.
+- **Cryptographic provenance.** Every research response carries `research_provenance_v1` with `code_commit`, `response_sha256`, per-CSV `data_snapshot` hashes, `config_hashes`, and methodology flags. A reviewer can deterministically re-derive the deterministic portion of any answer.
+- **Citation integrity as a first-class signal.** Coverage and trust are computed per request and surfaced through the API rather than logged post-hoc.
+- **LLM decoupled from correctness.** The benchmark passes at 1.000 without the LLM active.
+- **LLM provider portability.** Five providers through [src/agent/llm_factory.py](src/agent/llm_factory.py) by env var.
+- **Deterministic routing is testable.** Keyword-driven and regex-based, so the test suite enumerates routing decisions.
+
+### 10.2 Limitations (stated plainly)
+
+- **Trend methodology is OLS on monthly means.** `_linear_trend_values_with_slope` has no seasonality removal, no serial-correlation correction, and no uncertainty reporting. Reported annual rates are point estimates, not confidence intervals. Mann-Kendall + Sen's slope is the genre standard and should replace or augment this.
+- **Changepoints and clusters are screening tools.** The two-segment OLS residual-improvement screen and the standardized-feature k-means grouping are reproducible, but they are **not** formal regime-shift tests or connectivity inferences. The report wording is conservative; the paper should be too.
+- **Risk classification thresholds are engineering defaults.** `high` ≥ 66%, `moderate` ≥ 33% (or ≥ 20% mostly-confined), else `low`. No empirical calibration in the repo.
+- **Divergent pairs are a screening heuristic.** Two wells can diverge for reasons unrelated to the aquifer system.
+- **LLM layer is under-evaluated.** No LLM-path benchmark exists.
+- **Reproducibility of the LLM path.** The LLM is stochastic; running the same query twice produces subtly different phrasing. Structured-response sanitization guarantees no *new* unbacked claims but cannot guarantee identical wording. The deterministic portion **is** reproducible and hash-verifiable.
+- **Scope is fixed and narrow.** 44 wells, 5 counties, 7 aquifer labels. Adding wells requires a metadata edit.
+- **Keyword routing is brittle at the edges.** Novel phrasings may miss a specialized branch and fall to the LLM path, where the deterministic guarantees no longer apply.
+- **Knowledge base coverage is small.** Three hydrogeology PDFs + per-well summaries + hand-written Q&A. A document-level inventory is needed.
+- **ML forecast accuracy is under-evaluated.** Single 80/20 split, not time-aware. And the pipeline is not wired to the serving API.
+- **Concurrency and persistence.** Benchmark runs sequentially; session store is file-based; no concurrency measurement.
+
+### 10.3 Threats to validity
+
+- **Construct validity.** "Groundwater level" in the USGS schema is depth-to-water, conventionally negative-elevation. Other papers report water level in the elevation sense. The UI reverses the Y-axis to mitigate confusion, but the manuscript must state the sign convention.
+- **External validity.** The validated network is Florida-specific across related aquifers. Claims about generalization should be limited to "the system can be configured against a similar-shape dataset".
+- **Internal validity of the risk label.** The heuristic is hand-tuned and the benchmark only tests for risk-language presence, not calibration. A small validation against a hydrogeologist's labelling of the same cohorts would strengthen any claim tied to `cohort_risk_level`.
+
+### 10.4 What the paper can confidently claim
+
+- A deterministic hydrogeologic reference pipeline that converts USGS monitoring records into cited, chart-backed answers with cryptographic provenance.
+- A typed binding between language-model synthesis and that pipeline — every factual sentence in the final report is tied to a registered `claim_id` and `evidence_id`, and unbacked claims are sanitized out by construction.
+- A cross-path chart-parity invariant — a single chart builder serves both deterministic and LLM paths, verified by a streaming regression test.
+- An evaluation harness showing 68/68 cases passing, 100% average citation coverage, 100% claim-verdict coverage, and 1.724 s median latency for the deterministic layer.
+- A reproducibility artefact (`research_provenance_v1`) that lets a reviewer deterministically re-derive the deterministic portion of any answer.
+
+### 10.5 What the paper should not claim without additional work
+
+- Generalization beyond the monitored network.
+- LLM synthesis quality (no LLM-path benchmark).
+- Calibrated risk classification.
+- Confidence-interval-quality trend estimates.
+- Production readiness.
+- Accurate 7-day prediction at 93% — the ML pipeline needs rolling-origin cross-validation first, and is not even in the serving path.
+
+---
+
+## 11. Cleanup status and remaining work
+
+The first cleanup pass removed code and documents that were not reachable from the serving paths described in this overview. The repository surface now more closely matches the manuscript system: FastAPI + React for the live application, the deterministic analysis layer under [api/routes/](api/routes/), the evidence-linked research agent under [src/agent/research_agent.py](src/agent/research_agent.py), and citation/provenance helpers under [api/routes/_citation.py](api/routes/_citation.py) and [api/routes/_provenance.py](api/routes/_provenance.py).
+
+### 11.1 Removed in the cleanup pass
+
+- Superseded Task 2 agent modules: `src/agent/priority_search_engine.py` and `src/agent/groundwater_research_model.py`.
+- Private tests for those modules: `tests/agent/test_priority_search_engine.py` and `tests/agent/test_groundwater_research_model.py`.
+- Superseded Task 2 planning/developer artifacts: `TASK_2_OVERVIEW.md`, `TASK_2_IMPLEMENTATION.md`, `TASK_2_COMPLETION_SUMMARY.md`, `DEVELOPER_GUIDE_AGENTIC_RESEARCH.md`, and `commit_task2.sh`.
+- Legacy Streamlit UI files under `src/ui/` plus the root-level `main.py` CLI entry point.
+- The unused `streamlit` Python dependency from [config/requirements.txt](config/requirements.txt).
+- The deleted agent exports were removed from [src/agent/__init__.py](src/agent/__init__.py), so importing `src.agent` no longer references removed modules.
+
+### 11.2 Refactor or retire: overlapping chat agent
+
+- **[src/agent/groundwater_agent.py](src/agent/groundwater_agent.py)** is the LangChain tool-use agent instantiated as `_chat_agent` in [api/routes/chat.py:402](api/routes/chat.py#L402). It is invoked at [api/routes/chat.py:1300](api/routes/chat.py#L1300) (`_chat_agent.chat(user_query)`) as a last-resort non-research quick-chat path. It is functionally a weaker parallel to `DeepResearchAgent`: fewer guardrails, no claim/evidence registry, no structured-response schema, no provenance binding. **Action (refactor):** either route the `/api/chat` non-deterministic path through `DeepResearchAgent` with a reduced depth, or give `_chat_agent` the same claim-and-evidence binding layer so that every path in the system emits `structured_response`. Either way, the current two-agent split is a redundancy the paper has to explain.
+- **[tests/unit/test_agent.py](tests/unit/test_agent.py)** imports `GroundwaterAgent` directly. If the above refactor retires that class, the tests should be updated to cover `DeepResearchAgent`'s non-research surface instead.
+
+### 11.3 Gate or delete: DuckDuckGo web search
+
+- **[src/agent/research_agent.py](src/agent/research_agent.py) web-search path.** `ddgs` / `duckduckgo_search` is imported at module load and a `WebSearch` tool is registered with the agent, but the serving configuration sets `use_web_search=False` by default ([api/routes/chat.py:363](api/routes/chat.py#L363)). The web backend is therefore dead in deployment but still adds an import-time dependency and an attack surface. **Action:** one of (a) delete the web-search tool and the `ddgs` dependency from [config/requirements.txt](config/requirements.txt); (b) move the import behind a runtime flag so uninstalled environments don't carry the dependency; (c) keep it and explicitly document that the manuscript is about the KB-only configuration. Option (a) is cleanest — if the manuscript does not rely on web results, the paper is stronger without claiming a capability the system does not exercise.
+
+### 11.4 Gate or remove: ML forecast pipeline
+
+- **[src/ml/](src/ml/)** trains a 7-day forecast and writes joblib artifacts under [models/](models/). A grep for `src.ml` inside [api/](api/) returns nothing: **the serving API does not import it**. [.github/workflows/ci.yml](.github/workflows/ci.yml) runs `python -m src.ml.train_groundwater` in CI. **Action:** either scope it out of the manuscript entirely (recommended, since the 80/20 accuracy number is not defensible) or wire it into `/api/` behind a clear `/api/forecast/{site_id}` endpoint with a proper rolling-origin evaluation. Do not ship the 93% claim in the paper as-is.
+
+### 11.5 Clean up: timestamped refresh CSVs
+
+- **[data/](data/)** contains snapshot files named `usgs_<id>_<YYYYMMDD>.csv` alongside the canonical `usgs_<id>.csv`. `_load_site_timeseries` only reads the canonical file, so the snapshots are inactive inputs — some are even literal 2-row duplicates. **Action:** delete the timestamped snapshots (or move them under `data/snapshots/` and `.gitignore` that path). The data directory should reflect exactly what the serving code loads, and the reproducibility appendix should be able to hash the directory listing without stale content.
+
+### 11.6 Refactor: oversized modules
+
+These are not dead, but they are large enough that they hide the architecture the manuscript is trying to describe. Splitting them would make the paper's file references more precise.
+
+- **[api/routes/chat.py](api/routes/chat.py) (~2100 lines).** Suggest splitting into: `chat_routes.py` (the FastAPI route handlers), `routing_chain.py` (the site/aquifer/multi/location/network detection wiring), `fallback_wiring.py` (how each routing branch calls `_site_research_fallback` and assembles the payload), `agent_wiring.py` (how the LLM branches call `DeepResearchAgent` and `_agent_chart_hook`), `sse_streaming.py` (the streaming generator + thread-queue bridge).
+- **[api/routes/_site_analysis.py](api/routes/_site_analysis.py) (~1500 lines).** Suggest splitting into `_trend.py` (OLS slope, helpers), `_changepoint.py` (`_detect_changepoint`), `_cluster.py` (`_cluster_wells`), `_cross_well.py` (`_cross_well_analysis` orchestrator), `_chart.py` (`_build_chart_payload`, `_build_chart_insights`), and a thin `_site_analysis.py` that re-exports for existing imports.
+- **[src/agent/research_agent.py](src/agent/research_agent.py) (~2000 lines).** Suggest splitting the synthesis layer (`_build_evidence_items`, `_parse_structured_response`, `_heuristic_structured_response`, `_render_structured_report`) into a dedicated `src/agent/structured_synthesis.py` so the claim/evidence binding that the paper's argument depends on lives in one small, testable file.
+
+### 11.7 Remaining cleanup impact
+
+After this pass, the most important remaining cleanup items are conceptual rather than purely dead-code removals: consolidate or evidence-bind the quick chat agent, decide whether the DuckDuckGo code path belongs in the manuscript system, and either scope out or properly evaluate the ML forecast pipeline. Those are the next highest-value implementation decisions before submission.
 
 ---
 
@@ -304,52 +561,58 @@ There is no equivalent **LLM-path benchmark** in the repository. A reviewer woul
 | Component | Path | Size |
 |---|---|---|
 | Detection chain (regex, location map, site loader, cohort helpers) | [api/routes/_detection.py](api/routes/_detection.py) | 634 lines |
-| Deterministic analysis (site fallback, cross-well, chart builder, insights, trend) | [api/routes/_site_analysis.py](api/routes/_site_analysis.py) | 1220 lines |
+| Deterministic analysis (site fallback, cross-well, changepoint, cluster, chart builder, insights, trend) | [api/routes/_site_analysis.py](api/routes/_site_analysis.py) | ~1500 lines |
 | Agent-to-chart join point | [api/routes/_agent_chart_hook.py](api/routes/_agent_chart_hook.py) | 146 lines |
 | Citation integrity, verdicts, trust levels | [api/routes/_citation.py](api/routes/_citation.py) | 224 lines |
-| Chat / research endpoints, routing chain, SSE streaming | [api/routes/chat.py](api/routes/chat.py) | 2081 lines |
+| Research provenance block | [api/routes/_provenance.py](api/routes/_provenance.py) | 143 lines |
+| Chat / research endpoints, routing chain, SSE streaming | [api/routes/chat.py](api/routes/chat.py) | ~2100 lines |
 | Knowledge base router | [api/routes/knowledge.py](api/routes/knowledge.py) | 88 lines |
 | Data router | [api/routes/data.py](api/routes/data.py) | 239 lines |
 | Research workflow (plans, runs, drafts) | [api/routes/research_workflow.py](api/routes/research_workflow.py) | 252 lines |
 | Research workbench (comparative panel) | [api/routes/_research_workbench.py](api/routes/_research_workbench.py) | 569 lines |
 | Site metadata loader | [api/site_metadata.py](api/site_metadata.py) | — |
 | FastAPI app factory | [api/main.py](api/main.py) | 55 lines |
-| Deep research agent | [src/agent/research_agent.py](src/agent/research_agent.py) | 1738 lines |
+| Deep research agent (phases, budget, evidence registry, structured synthesis) | [src/agent/research_agent.py](src/agent/research_agent.py) | ~2000 lines |
 | Agent tool surface | [src/agent/tools.py](src/agent/tools.py) | 1482 lines |
 | Research optimizer (planner, ranker, reflector, persistence) | [src/agent/research_optimizer.py](src/agent/research_optimizer.py) | 854 lines |
 | Knowledge base loader | [src/agent/knowledge.py](src/agent/knowledge.py) | 760 lines |
 | Source verification (trust levels, category, priority) | [src/agent/source_verification.py](src/agent/source_verification.py) | 664 lines |
 | LLM provider factory | [src/agent/llm_factory.py](src/agent/llm_factory.py) | 180 lines |
-| Research workflow orchestration (multi-phase loop) | [src/agent/research_workflow.py](src/agent/research_workflow.py) | 502 lines |
-| Priority search engine | [src/agent/priority_search_engine.py](src/agent/priority_search_engine.py) | 536 lines |
-| Groundwater LangGraph agent | [src/agent/groundwater_agent.py](src/agent/groundwater_agent.py) | 440 lines |
-| Domain model and validation | [src/agent/groundwater_research_model.py](src/agent/groundwater_research_model.py) | 673 lines |
+| Chat-agent quick path (to consolidate — §11.2) | [src/agent/groundwater_agent.py](src/agent/groundwater_agent.py) | — |
+| **Scoped out:** ML forecast pipeline (§11.4) | [src/ml/](src/ml/) | — |
 | Frontend chat surface | [frontend/src/components/ChatView.jsx](frontend/src/components/ChatView.jsx) | ~800 lines |
 | Frontend chart component | [frontend/src/components/AgentChart.jsx](frontend/src/components/AgentChart.jsx) | 225 lines |
 | API client with observable | [frontend/src/api/client.js](frontend/src/api/client.js) | 351 lines |
-| Inline chart regression tests | [tests/unit/test_inline_chart.py](tests/unit/test_inline_chart.py) | 289 lines |
-| Benchmark cases | [tests/benchmark/chat_eval_cases.json](tests/benchmark/chat_eval_cases.json) | 63 cases |
+| Inline chart regression tests | [tests/unit/test_inline_chart.py](tests/unit/test_inline_chart.py) | ~320 lines |
+| Research agent structured-synthesis tests | [tests/unit/test_agent.py](tests/unit/test_agent.py) | — |
+| Chat / research API tests (provenance, structured response) | [tests/unit/test_chat_api.py](tests/unit/test_chat_api.py) | — |
+| Benchmark cases | [tests/benchmark/chat_eval_cases.json](tests/benchmark/chat_eval_cases.json) | 68 cases |
 | Benchmark runner | [scripts/run_chat_benchmark.py](scripts/run_chat_benchmark.py) | — |
 | Retrieval precision runner | [scripts/run_retrieval_precision.py](scripts/run_retrieval_precision.py) | — |
-| USGS data verifier | [scripts/verify_usgs_data.py](scripts/verify_usgs_data.py) | — |
+| Demo startup script | [scripts/start_demo.sh](scripts/start_demo.sh) | 103 lines |
+| Makefile targets (demo, benchmark, test, build) | [Makefile](Makefile) | 11 lines |
 
 ## Appendix B — Numeric facts worth citing verbatim
 
 - Monitoring network: **44 wells** (verified from `len(SITE_METADATA)` at import time).
 - County distribution: Miami-Dade 15, Lee 11, Collier 6, Hendry 4, Sarasota 4, generic "Florida" 4.
 - Aquifer distribution: Biscayne 15, Surficial 7, Floridan 6, Tamiami 5, Florida 4, Intermediate 4, Hawthorn 3.
-- USGS data date range across sampled CSVs: **1994-01-01 through 2026-04-05**; 40 canonical CSV files under [data/](data/), daily cadence, ~10k rows per well.
-- Knowledge base: ChromaDB persistent store, BAAI/bge-small-en-v1.5 embeddings (384-dim), `chroma.sqlite3` ≈ 156 MB.
-- Benchmark: **63 / 63 passing**, overall score **1.000**, average citation coverage **0.986**, median latency **0.085 s**, max latency **12.314 s**.
-- Unit tests: **205 passing** as of 2026-04-14.
+- USGS data date range across sampled CSVs: **1994-01-01 through 2026-04-05**; 40 canonical CSV files under [data/](data/), daily cadence.
+- Knowledge base: ChromaDB persistent store, `BAAI/bge-small-en-v1.5` embeddings (384-dim), `chroma.sqlite3` ≈ 156 MB.
+- Benchmark (deterministic layer): **68 / 68 passing**, overall score **1.000**, average citation coverage **1.000**, average claim-citation coverage **1.000**, average section-citation coverage **1.000**, average claim-verdict coverage **1.000**, average contradicted-claim rate **0.010**, average high-risk-claim rate **0.010**, median latency **1.724 s**, max latency **3.278 s**. Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`.
+- Unit tests: **210 passing** as of 2026-04-14.
 - Citation thresholds: `MIN_CLAIM_CITATION_COVERAGE = 0.90`, `MIN_SECTION_CITATION_COVERAGE = 0.90`.
 - Insights bullet cap: 5 (ordered: highlighted wells → cohort trend + risk → fastest decline → strongest rise → largest divergence).
-- Default LLM agent timeout: **300 s**; search budgets: `max(3, depth*2+2)` web searches, `max(6, depth*4)` KB searches, `max(10, depth*6)` API calls.
-- Trend slope unit: feet per monthly bin × 12 → ft/yr; trend series are named e.g. `"Cohort Trend (-0.18 ft/yr)"` with the annual rate pulled from `per_site_metrics[*].annual_change_ft_yr`.
+- Changepoint screen: two-segment OLS, min 12 monthly bins/side, improvement ≥ 20%, confidence labels `high ≥ 0.45 / moderate ≥ 0.30 / low ≥ 0.20`.
+- Cross-well clustering: standardized features (annual change, seasonal amplitude, confinement), fixed-initialization k-means with `k=3` (or `k=2` if < 6 wells), up to 20 iterations.
 - Risk classification thresholds: `high` if ≥66% of wells falling, `moderate` if ≥33% falling (or ≥20% falling in a mostly-confined cohort), `low` otherwise.
-- Frontend bundle: lazy-loaded `AgentChart` and `ResearchChartsPanel` via `React.lazy` + `Suspense` with `<div className="h-[320px]" />` fallbacks.
-- Backend unreachable detection: `TypeError` from `fetch()` → `backendStatus → 'down'`, visible banner, auto-dismiss on next success.
+- Trend slope unit: feet per monthly bin × 12 → ft/yr; trend series are named e.g. `"Cohort Trend (-0.18 ft/yr)"`.
+- Provenance schema: `research_provenance_v1` with `code_commit`, `response_sha256`, `data_snapshot.sha256`, `config_hashes`, `methodology.trend_method = "monthly_OLS_with_screened_two_segment_changepoints"`, `methodology.cluster_method = "deterministic_standardized_kmeans"`, `methodology.external_covariates.included = false`.
+- Structured response schema: `evidence_response_v1` with `answer`, `claims[*] = {claim, claim_type, claim_ids, evidence_ids, confidence, is_interpretive, uncertainty}`, `limitations`, `recommended_followup`, `evidence`.
+- Web search: off by default (`GROUNDWATERGPT_ENABLE_WEB_SEARCH` env flag, default `False` at [api/routes/chat.py:363](api/routes/chat.py#L363)).
+- Default LLM agent timeout: **300 s**; search budgets: `max(3, depth*2+2)` web, `max(6, depth*4)` KB, `max(10, depth*6)` API calls.
+- Frontend bundle: lazy-loaded `AgentChart` and `ResearchChartsPanel` via `React.lazy` + `Suspense`; backend unreachable detection surfaces as a banner via a ~15-line `backendStatus` observable.
 
 ---
 
-*End of document. Intended use: upload to NotebookLM as a grounding source for manuscript drafting. Every numeric claim is verifiable against the cited file path or by running the benchmark harness locally.*
+*End of document. Intended use: upload to NotebookLM as a grounding source for manuscript drafting under the working title* "Data-Grounded Language Agents for Auditable Groundwater Trend Analysis from USGS Monitoring Records." *Every numeric claim is verifiable against the cited file path or by running the benchmark harness locally. Remaining cleanup decisions in §11 should be resolved before submission so that the repository a reviewer sees matches the system the manuscript describes.*

@@ -59,9 +59,6 @@ The system is organized into five layers. Data flows downward for queries and up
 │  ├── ChatView.jsx       — Research chat interface            │
 │  └── Sidebar            — Site selector + mode toggle        │
 │                                                              │
-│  Streamlit Research UI (localhost:8502)                       │
-│  └── research_chat.py   — Query Mode + Deep Research Mode    │
-│                                                              │
 │  FastAPI (localhost:8000)                                     │
 │  ├── GET /api/sites              — List all USGS sites       │
 │  ├── GET /api/sites/{id}/data    — Time series data          │
@@ -177,13 +174,8 @@ GroundwaterGPT/
 │   ├── data/                     #   Data pipelines
 │   │   ├── download_data.py      #     USGS data acquisition
 │   │   └── continuous_learning.py#     Live data collection & KB updates
-│   ├── ml/                       #   Machine learning
-│   │   └── train_groundwater.py  #     Model training & feature engineering
-│   └── ui/                       #   Streamlit UIs (research chat, dashboard)
-│       ├── research_chat.py      #     Deep research chat interface
-│       ├── chat_app.py           #     Simple chat interface
-│       ├── integrated_app.py     #     Full integrated app
-│       └── visualization.py      #     Plotly visualizations
+│   └── ml/                       #   Machine learning
+│       └── train_groundwater.py  #     Model training & feature engineering
 ├── tests/                        # Test suite
 │   ├── unit/                     #   Unit tests (features, chat API)
 │   ├── data/                     #   Data quality & USGS integrity tests
@@ -196,8 +188,7 @@ GroundwaterGPT/
 ├── resources/pdfs/               # Reference documents (hydrogeology)
 ├── knowledge_base/               # ChromaDB persistent vector store
 ├── models/                       # Trained model artifacts (.joblib)
-├── docs/                         # Project documentation
-└── main.py                       # CLI entry point
+└── docs/                         # Project documentation
 ```
 
 ---
@@ -240,13 +231,6 @@ GroundwaterGPT/
 | scikit-learn | ML models (Ridge Regression, Gradient Boosting) |
 | joblib | Model serialization |
 | Plotly | Server-side visualization |
-
-### Streamlit (Legacy/Research UI)
-| Technology | Purpose |
-|------------|---------|
-| Streamlit | Research chat UI (localhost:8502) |
-
----
 
 ## 👤 User Types & Use Cases
 
@@ -577,7 +561,7 @@ Development is organized into focused sessions, each delivering a working increm
 **Goal:** Streamlined pipeline for adding new research documents (PDFs, papers) to the knowledge base, with automatic chunking, embedding, and verification.
 
 **Deliverables:**
-- [x] CLI command: `python main.py ingest --path <file_or_dir>`
+- [x] API endpoint: `POST /api/knowledge/ingest`
 - [x] Automatic PDF parsing, chunking (512 chars), embedding
 - [x] Source verification before ingestion (trust score ≥ 0.7)
 - [x] Metadata extraction (title, author, date, DOI if available)
@@ -591,7 +575,7 @@ Development is organized into focused sessions, each delivering a working increm
 
 **Key Files:**
 - `src/agent/knowledge.py` — Ingest pipeline
-- `main.py` — CLI ingest command
+- `api/routes/knowledge.py` — KB stats, status, and ingest endpoints
 - `resources/pdfs/` — Document drop zone
 
 ---

@@ -78,6 +78,52 @@ def test_contradicted_when_opposite_trends_share_same_site():
     assert verdict_by_id["claim_001"]["counter_evidence"]
 
 
+def test_supported_when_opposite_trends_are_different_wells():
+    engine = ClaimDisagreementEngine()
+    verdicts = engine.evaluate_claims(
+        [
+            {
+                "claim_id": "claim_001",
+                "claim": "Lee L-5667 shows a falling groundwater trend.",
+                "confidence": 0.82,
+                "citations": [{"url": "https://waterdata.usgs.gov/a", "verified": True}],
+            },
+            {
+                "claim_id": "claim_002",
+                "claim": "Lee L-1998 shows a rising groundwater trend.",
+                "confidence": 0.79,
+                "citations": [{"url": "https://waterdata.usgs.gov/b", "verified": True}],
+            },
+        ]
+    )
+    verdict_by_id = {item["claim_id"]: item for item in verdicts}
+    assert verdict_by_id["claim_001"]["verdict"] == "supported"
+    assert verdict_by_id["claim_002"]["verdict"] == "supported"
+
+
+def test_contradicted_when_opposite_trends_share_same_well_name():
+    engine = ClaimDisagreementEngine()
+    verdicts = engine.evaluate_claims(
+        [
+            {
+                "claim_id": "claim_001",
+                "claim": "Lee L-5667 shows a falling groundwater trend.",
+                "confidence": 0.82,
+                "citations": [{"url": "https://waterdata.usgs.gov/a", "verified": True}],
+            },
+            {
+                "claim_id": "claim_002",
+                "claim": "L 5667 shows a rising groundwater trend.",
+                "confidence": 0.79,
+                "citations": [{"url": "https://waterdata.usgs.gov/b", "verified": True}],
+            },
+        ]
+    )
+    verdict_by_id = {item["claim_id"]: item for item in verdicts}
+    assert verdict_by_id["claim_001"]["verdict"] == "contradicted"
+    assert verdict_by_id["claim_002"]["verdict"] == "contradicted"
+
+
 def test_claim_verdict_summary_counts_and_rates():
     engine = ClaimDisagreementEngine()
     verdicts = engine.evaluate_claims(

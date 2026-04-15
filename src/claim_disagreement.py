@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 SITE_ID_RE = re.compile(r"\b\d{15}\b")
+WELL_NAME_RE = re.compile(r"\b(?:HE|G|C|L|S)[\s-]?\d{3,5}[A-Z]?\b", re.IGNORECASE)
 TOKEN_RE = re.compile(r"\b[a-z][a-z0-9_-]{2,}\b", re.IGNORECASE)
 
 UPWARD_TERMS = (
@@ -127,6 +128,14 @@ def _subject_tokens(text: str) -> set[str]:
     return tokens
 
 
+def _well_names(text: str) -> set[str]:
+    """Extract normalized local well identifiers such as G-3336 or L-5667."""
+    names = set()
+    for match in WELL_NAME_RE.findall(text):
+        names.add(re.sub(r"[\s-]+", "", match).upper())
+    return names
+
+
 def _citation_for_view(citation: dict[str, Any]) -> dict[str, Any]:
     """Normalize citation fields for claim verdict outputs."""
     return {
@@ -191,6 +200,7 @@ class ClaimDisagreementEngine:
                     "confidence": clamp_confidence(claim.get("confidence", 0.0)),
                     "citations": _safe_citations(claim.get("citations")),
                     "site_ids": set(SITE_ID_RE.findall(claim_text)),
+                    "well_names": _well_names(claim_text),
                     "trend": _trend_polarity(claim_text),
                     "subject_tokens": _subject_tokens(claim_text),
                 }
@@ -249,10 +259,13 @@ class ClaimDisagreementEngine:
         """Check whether two claims likely describe the same subject."""
         site_ids_a = a["site_ids"]
         site_ids_b = b["site_ids"]
-        if site_ids_a and site_ids_b:
+        if site_ids_a or site_ids_b:
             return bool(site_ids_a & site_ids_b)
-        if site_ids_a != site_ids_b:
-            return False
+
+        well_names_a = a["well_names"]
+        well_names_b = b["well_names"]
+        if well_names_a or well_names_b:
+            return bool(well_names_a & well_names_b)
 
         overlap = a["subject_tokens"] & b["subject_tokens"]
         return len(overlap) >= 2

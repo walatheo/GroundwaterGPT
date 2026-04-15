@@ -4,12 +4,19 @@ Pytest configuration and shared fixtures.
 This module provides common test fixtures used across all test modules.
 """
 
-from datetime import datetime, timedelta
+import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+
+# Unit tests exercise deterministic fallback paths unless a test opts into a
+# stubbed live agent. Keep imports offline-safe so pytest never tries to fetch
+# embedding or LLM artifacts from external services during collection.
+os.environ.setdefault("GROUNDWATERGPT_SKIP_AGENT_INIT", "1")
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 # =============================================================================
 # PATH FIXTURES

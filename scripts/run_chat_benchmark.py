@@ -44,6 +44,15 @@ def parse_args() -> argparse.Namespace:
         help="Output report path",
     )
     parser.add_argument(
+        "--mode",
+        choices=("auto", "fallback", "live", "both"),
+        default="auto",
+        help=(
+            "Benchmark execution mode. 'fallback' disables LLM-backed agents, "
+            "'live' requires normal agent startup, and 'both' writes a combined report."
+        ),
+    )
+    parser.add_argument(
         "--enforce-thresholds",
         action="store_true",
         help="Exit non-zero if benchmark fails configured thresholds",
@@ -56,7 +65,44 @@ def main() -> int:
     from src.evaluation.chat_benchmark import run_chat_benchmark
 
     args = parse_args()
-    report = run_chat_benchmark(cases_path=args.cases, thresholds_path=args.thresholds)
+    if args.mode == "both":
+        live_report = run_chat_benchmark(
+            cases_path=args.cases,
+            thresholds_path=args.thresholds,
+            mode="live",
+        )
+        fallback_report = run_chat_benchmark(
+            cases_path=args.cases,
+            thresholds_path=args.thresholds,
+            mode="fallback",
+        )
+        report = {
+            "metadata": {
+                "cases_path": str(args.cases),
+                "thresholds_path": str(args.thresholds),
+                "mode": "both",
+                "case_count": (
+                    fallback_report.get("metadata", {}).get("case_count", 0)
+                    + live_report.get("metadata", {}).get("case_count", 0)
+                ),
+            },
+            "reports": {
+                "fallback": fallback_report,
+                "live": live_report,
+            },
+            "summary": {
+                "passed": bool(fallback_report.get("summary", {}).get("passed"))
+                and bool(live_report.get("summary", {}).get("passed")),
+                "fallback_passed": bool(fallback_report.get("summary", {}).get("passed")),
+                "live_passed": bool(live_report.get("summary", {}).get("passed")),
+            },
+        }
+    else:
+        report = run_chat_benchmark(
+            cases_path=args.cases,
+            thresholds_path=args.thresholds,
+            mode=args.mode,
+        )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "w") as fh:
@@ -64,6 +110,7 @@ def main() -> int:
 
     summary = report.get("summary", {})
     print("Chat benchmark complete")
+    print(f"- Mode: {args.mode}")
     print(f"- Cases: {report.get('metadata', {}).get('case_count', 0)}")
     print(f"- Overall score: {summary.get('overall_score', 0.0):.3f}")
     print("- Average citation coverage: " f"{summary.get('average_citation_coverage', 0.0):.3f}")

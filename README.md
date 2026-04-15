@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**An AI-powered groundwater research platform with transparent, explainable architecture.**
+**An auditable groundwater research platform that couples deterministic USGS trend analysis with evidence-linked language-model synthesis.**
 
 ---
 
@@ -29,20 +29,20 @@ Build note, 2026-04-14: after lazy-loading chart panels, the initial Vite JS chu
 ## 🎯 Project Overview
 
 GroundwaterGPT is a **whitebox AI system** that combines:
-- **Deep Research Agent**: LLM-powered research with source verification
-- **Continuous Learning**: Auto-growing knowledge base from USGS data
-- **ML Predictions**: 7-day groundwater level forecasts (93% accuracy)
-- **Interactive Dashboard**: Trend visualization
+- **Deterministic USGS Analysis**: Monthly aggregation, trend summaries, cohort comparison, and chart payloads from local monitoring records
+- **Evidence-Linked Synthesis**: Claim IDs, evidence IDs, citation integrity checks, and provenance metadata
+- **Research Workflow**: Plans, reproducible run logging, and manuscript draft scaffolding
+- **Interactive Dashboard**: Map, time-series, heatmap, workbench, and chat/research views
 
 ### Key Features
 
 | Feature | Description |
 |---------|-------------|
-| 📚 **Query Mode** | Instant search of knowledge base (USGS data, PDFs) |
-| 🔬 **Research Mode** | Deep web research with verified sources |
-| 🧠 **Auto-Learning** | Continuously grows knowledge from new data |
-| 📊 **Predictions** | ML models for groundwater level forecasting |
-| ✅ **Whitebox** | All decisions are transparent and explainable |
+| 📚 **Query Mode** | Groundwater Q&A over local data and curated hydrogeology sources |
+| 🔬 **Research Mode** | Structured reports with claim citations, verdicts, and provenance |
+| 📈 **Deterministic Trends** | USGS monthly means, net change, annualized rates, and cohort summaries |
+| 🗺️ **Visual Analysis** | Map, time-series, heatmap, and comparative workbench views |
+| ✅ **Whitebox** | User-facing conclusions carry citations, evidence IDs, and reproducibility metadata |
 
 ---
 
@@ -62,32 +62,26 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Start the Research Interface
+### 2. Start the Demo
 
 ```bash
-# Using main entry point
-python main.py app
-
-# Or directly
-streamlit run src/ui/research_chat.py --server.port 8502
+make demo
 ```
 
-Open http://localhost:8502 to access:
-- **Query Mode**: Fast search of USGS data and hydrogeology documents
-- **Research Mode**: Deep research with web search and auto-learning
+Open http://localhost:3000 to access the React dashboard and research interface.
 
-### 3. Run Continuous Learning
+### 3. Run Benchmarks
 
 ```bash
-python main.py learn
+make benchmark
 ```
 
-Fetches data from 40+ Florida aquifer monitoring sites and adds to knowledge base.
+Runs the deterministic fallback benchmark with threshold enforcement.
 
-### 4. View the Dashboard
+### 4. Run Unit Tests
 
 ```bash
-open plots/dashboard.html
+make test
 ```
 
 ---
@@ -96,9 +90,8 @@ open plots/dashboard.html
 
 ### Groundwater Data
 - **Source:** USGS National Water Information System (NWIS)
-- **Site:** 263314081472201 (Fort Myers, Surficial Aquifer)
-- **Period:** 2014-01-01 to 2023-12-31
-- **Records:** 3,650 daily measurements
+- **Network:** 40 canonical USGS time-series CSVs, with 44 metadata entries available to the site catalogue
+- **Period:** Local records span 1994-01-01 to 2026-04-05 across the shipped dataset
 - **Variable:** Depth to water level (feet below surface)
 
 ### Reference Documents
@@ -113,7 +106,6 @@ Three hydrogeology PDFs are embedded in ChromaDB for future RAG integration:
 
 ```
 GroundwaterGPT/
-├── main.py                   # 🚀 CLI entry point (Streamlit legacy)
 ├── README.md                 # This file
 ├── requirements.txt          # Python dependencies
 │
@@ -139,11 +131,11 @@ GroundwaterGPT/
 │   ├── data/                 # Data processing
 │   │   ├── download_data.py  # USGS fetcher
 │   │   └── continuous_learning.py
-│   └── ml/                   # Machine learning
+│   └── ml/                   # Experimental forecast pipeline (not serving API)
 │       └── train_groundwater.py
 │
 ├── 📊 data/                  # USGS CSV data
-│   └── usgs_*.csv            # 36 monitoring sites
+│   └── usgs_*.csv            # 40 canonical monitoring-site time series
 │
 ├── 📖 resources/             # Reference materials
 │   └── pdfs/                 # Hydrogeology PDFs
@@ -155,7 +147,7 @@ GroundwaterGPT/
 ├── 📈 outputs/               # Generated outputs
 │   └── plots/                # Visualizations
 │
-├── 🧪 tests/                 # Test suite (89+ tests)
+├── 🧪 tests/                 # Test suite (210 unit tests passing locally)
 │   ├── data/                 # Data quality & integrity tests
 │   ├── model/                # ML performance tests
 │   └── unit/                 # Unit tests
@@ -175,35 +167,30 @@ GroundwaterGPT follows **whitebox principles** - all AI decisions are transparen
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    PRESENTATION LAYER                        │
-│  src/ui/research_chat.py (Streamlit UI)                            │
-│  - Query Mode: Fast KB search                               │
-│  - Research Mode: Deep web research                         │
+│  frontend/src (React + Vite)                                │
+│  - Dashboard, map, charts, chat, research workbench         │
+│  - Inline chart rendering from deterministic API payloads   │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
-│                    AGENT LAYER                              │
-│  agent/research_agent.py (Deep Research Agent)              │
-│  - Query optimization                                       │
-│  - Iterative search                                         │
-│  - Insight extraction                                       │
+│                    API + ANALYSIS LAYER                     │
+│  api/routes/chat.py + api/routes/_site_analysis.py          │
+│  - Routing to site/aquifer/location/network cohorts         │
+│  - Monthly means, trends, citations, chart payloads         │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
-│                    KNOWLEDGE LAYER                          │
+│                    KNOWLEDGE + SYNTHESIS LAYER              │
 │  agent/knowledge.py (ChromaDB + Embeddings)                 │
 │  - Vector search (BAAI/bge-small-en-v1.5)                  │
-│  - Document storage                                         │
-│  continuous_learning.py (Data Collection)                   │
-│  - USGS API integration                                     │
-│  - Auto-ingestion                                           │
+│  agent/research_agent.py                                    │
+│  - Evidence-linked LLM narration when available             │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
-│                    VERIFICATION LAYER                       │
-│  agent/source_verification.py                               │
-│  - Trust scoring (0.0 - 1.0)                               │
-│  - Source categorization                                    │
-│  - Approval/rejection logic                                 │
+│                    VERIFICATION + PROVENANCE LAYER          │
+│  api/routes/_citation.py + api/routes/_provenance.py        │
+│  - Claim verdicts, citation integrity, hashes               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -225,28 +212,28 @@ All sources are scored transparently:
 
 ## 🧪 Testing
 
-Run the full test suite:
+Run the deterministic unit suite:
 
 ```bash
-pytest tests/ -v
+make test
 ```
 
-Run with coverage:
+Run the benchmark gate used for manuscript-facing deterministic claims:
 
 ```bash
-pytest tests/ --cov=. --cov-report=html
-open htmlcov/index.html
+make benchmark
 ```
 
 ### Test Categories
 
 | Category | Tests | Purpose |
 |----------|-------|---------|
-| `tests/unit/` | 50+ | Feature engineering, data leakage prevention |
-| `tests/model/` | 10 | Model performance thresholds |
+| `tests/unit/` | 210 passing locally | API contracts, chart payloads, citation integrity, claim verdicts, workbench |
+| `tests/benchmark/` | 68 cases | Deterministic research response checks and threshold enforcement |
 | `tests/data/` | 25+ | Data quality, schema validation, USGS integrity |
+| `tests/model/` | Experimental | Forecast pipeline checks; not part of the serving API manuscript claim |
 
-**Current Status:** 89/89 tests passing ✅
+**Current deterministic status:** 210 unit tests passing; 68/68 fallback benchmark cases passing.
 
 ---
 

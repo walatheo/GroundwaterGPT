@@ -183,6 +183,8 @@ def evaluate_case_response(
     text = response_text_blob(response)
     claim_citations = response.get("claim_citations") or []
     citation_summary = response.get("citation_summary") or {}
+    citation_integrity = response.get("citation_integrity") or {}
+    claim_verdict_summary = response.get("claim_verdict_summary") or {}
     sources = response.get("sources") or []
 
     cited_claims = 0
@@ -191,6 +193,29 @@ def evaluate_case_response(
             cited_claims += 1
     inferred_coverage = float(cited_claims / len(claim_citations)) if claim_citations else 0.0
     citation_coverage = float(citation_summary.get("citation_coverage", inferred_coverage))
+    claim_citation_coverage = float(
+        citation_integrity.get(
+            "claim_citation_coverage",
+            citation_summary.get("citation_coverage", inferred_coverage),
+        )
+    )
+    section_citation_coverage = float(
+        citation_integrity.get(
+            "section_citation_coverage",
+            1.0 if citation_integrity.get("passed") is True else 0.0,
+        )
+    )
+    total_verdict_claims = float(claim_verdict_summary.get("total_claims", 0) or 0)
+    verdict_claims = (
+        float(claim_verdict_summary.get("supported_claims", 0) or 0)
+        + float(claim_verdict_summary.get("contradicted_claims", 0) or 0)
+        + float(claim_verdict_summary.get("insufficient_evidence_claims", 0) or 0)
+    )
+    claim_verdict_coverage = verdict_claims / total_verdict_claims if total_verdict_claims else 0.0
+    contradicted_claim_rate = float(
+        claim_verdict_summary.get("contradicted_claim_rate", 0.0) or 0.0
+    )
+    high_risk_claim_rate = float(claim_verdict_summary.get("high_risk_claim_rate", 0.0) or 0.0)
 
     check_catalog = {
         "ok_status": status_code == 200 and response.get("status") == "ok",
@@ -244,6 +269,11 @@ def evaluate_case_response(
         "failed_checks": failed,
         "checks": check_catalog,
         "citation_coverage": round(citation_coverage, 3),
+        "claim_citation_coverage": round(claim_citation_coverage, 3),
+        "section_citation_coverage": round(section_citation_coverage, 3),
+        "claim_verdict_coverage": round(claim_verdict_coverage, 3),
+        "contradicted_claim_rate": round(contradicted_claim_rate, 3),
+        "high_risk_claim_rate": round(high_risk_claim_rate, 3),
     }
 
 
@@ -256,6 +286,31 @@ def evaluate_thresholds(
     avg_citation_coverage = (
         statistics.mean(r["citation_coverage"] for r in case_results) if case_results else 0.0
     )
+    avg_claim_citation_coverage = (
+        statistics.mean(r.get("claim_citation_coverage", 0.0) for r in case_results)
+        if case_results
+        else 0.0
+    )
+    avg_section_citation_coverage = (
+        statistics.mean(r.get("section_citation_coverage", 0.0) for r in case_results)
+        if case_results
+        else 0.0
+    )
+    avg_claim_verdict_coverage = (
+        statistics.mean(r.get("claim_verdict_coverage", 0.0) for r in case_results)
+        if case_results
+        else 0.0
+    )
+    avg_contradicted_claim_rate = (
+        statistics.mean(r.get("contradicted_claim_rate", 0.0) for r in case_results)
+        if case_results
+        else 0.0
+    )
+    avg_high_risk_claim_rate = (
+        statistics.mean(r.get("high_risk_claim_rate", 0.0) for r in case_results)
+        if case_results
+        else 0.0
+    )
     max_elapsed = max((r["elapsed_seconds"] for r in case_results), default=0.0)
     median_elapsed = (
         statistics.median(r["elapsed_seconds"] for r in case_results) if case_results else 0.0
@@ -264,8 +319,16 @@ def evaluate_thresholds(
     min_overall_score = float(thresholds.get("min_overall_score", 0.0))
     min_case_score = float(thresholds.get("min_case_score", 0.0))
     min_avg_citation_coverage = float(thresholds.get("min_avg_citation_coverage", 0.0))
+    min_avg_claim_citation_coverage = float(thresholds.get("min_avg_claim_citation_coverage", 0.0))
+    min_avg_section_citation_coverage = float(
+        thresholds.get("min_avg_section_citation_coverage", 0.0)
+    )
+    min_avg_claim_verdict_coverage = float(thresholds.get("min_avg_claim_verdict_coverage", 0.0))
+    max_avg_contradicted_claim_rate = float(thresholds.get("max_avg_contradicted_claim_rate", 1.0))
+    max_avg_high_risk_claim_rate = float(thresholds.get("max_avg_high_risk_claim_rate", 1.0))
     max_response_seconds = float(thresholds.get("max_response_seconds", 9999.0))
     max_median_seconds = float(thresholds.get("max_median_seconds", 9999.0))
+    require_live_mode = bool(thresholds.get("require_live_mode", False))
 
     failed_reasons: list[str] = []
     if overall_score < min_overall_score:
@@ -278,6 +341,36 @@ def evaluate_thresholds(
             f"min_avg_citation_coverage={min_avg_citation_coverage:.3f}"
         )
         failed_reasons.append(f"average_citation_coverage={coverage_reason}")
+    if avg_claim_citation_coverage < min_avg_claim_citation_coverage:
+        failed_reasons.append(
+            "average_claim_citation_coverage="
+            f"{avg_claim_citation_coverage:.3f} < "
+            f"min_avg_claim_citation_coverage={min_avg_claim_citation_coverage:.3f}"
+        )
+    if avg_section_citation_coverage < min_avg_section_citation_coverage:
+        failed_reasons.append(
+            "average_section_citation_coverage="
+            f"{avg_section_citation_coverage:.3f} < "
+            f"min_avg_section_citation_coverage={min_avg_section_citation_coverage:.3f}"
+        )
+    if avg_claim_verdict_coverage < min_avg_claim_verdict_coverage:
+        failed_reasons.append(
+            "average_claim_verdict_coverage="
+            f"{avg_claim_verdict_coverage:.3f} < "
+            f"min_avg_claim_verdict_coverage={min_avg_claim_verdict_coverage:.3f}"
+        )
+    if avg_contradicted_claim_rate > max_avg_contradicted_claim_rate:
+        failed_reasons.append(
+            "average_contradicted_claim_rate="
+            f"{avg_contradicted_claim_rate:.3f} > "
+            f"max_avg_contradicted_claim_rate={max_avg_contradicted_claim_rate:.3f}"
+        )
+    if avg_high_risk_claim_rate > max_avg_high_risk_claim_rate:
+        failed_reasons.append(
+            "average_high_risk_claim_rate="
+            f"{avg_high_risk_claim_rate:.3f} > "
+            f"max_avg_high_risk_claim_rate={max_avg_high_risk_claim_rate:.3f}"
+        )
 
     low_cases = [r["case_id"] for r in case_results if r["score"] < min_case_score]
     if low_cases:
@@ -294,11 +387,26 @@ def evaluate_thresholds(
             f"median_elapsed={median_elapsed:.3f}s > "
             f"max_median_seconds={max_median_seconds:.3f}s"
         )
+    if require_live_mode:
+        fallback_cases = [
+            r["case_id"] for r in case_results if "fallback" in str(r.get("mode", "")).lower()
+        ]
+        if fallback_cases:
+            failed_reasons.append(
+                "require_live_mode=true but fallback responses were returned: "
+                + ", ".join(fallback_cases[:10])
+                + (" ..." if len(fallback_cases) > 10 else "")
+            )
 
     return {
         "passed": not failed_reasons,
         "overall_score": round(overall_score, 3),
         "average_citation_coverage": round(avg_citation_coverage, 3),
+        "average_claim_citation_coverage": round(avg_claim_citation_coverage, 3),
+        "average_section_citation_coverage": round(avg_section_citation_coverage, 3),
+        "average_claim_verdict_coverage": round(avg_claim_verdict_coverage, 3),
+        "average_contradicted_claim_rate": round(avg_contradicted_claim_rate, 3),
+        "average_high_risk_claim_rate": round(avg_high_risk_claim_rate, 3),
         "max_elapsed_seconds": round(max_elapsed, 3),
         "median_elapsed_seconds": round(median_elapsed, 3),
         "failed_reasons": failed_reasons,
@@ -306,8 +414,14 @@ def evaluate_thresholds(
             "min_overall_score": min_overall_score,
             "min_case_score": min_case_score,
             "min_avg_citation_coverage": min_avg_citation_coverage,
+            "min_avg_claim_citation_coverage": min_avg_claim_citation_coverage,
+            "min_avg_section_citation_coverage": min_avg_section_citation_coverage,
+            "min_avg_claim_verdict_coverage": min_avg_claim_verdict_coverage,
+            "max_avg_contradicted_claim_rate": max_avg_contradicted_claim_rate,
+            "max_avg_high_risk_claim_rate": max_avg_high_risk_claim_rate,
             "max_response_seconds": max_response_seconds,
             "max_median_seconds": max_median_seconds,
+            "require_live_mode": require_live_mode,
         },
     }
 
@@ -315,6 +429,7 @@ def evaluate_thresholds(
 def run_chat_benchmark(
     cases_path: Path = DEFAULT_CASES_PATH,
     thresholds_path: Path = DEFAULT_THRESHOLDS_PATH,
+    mode: str = "auto",
 ) -> dict[str, Any]:
     """Execute the benchmark suite by calling the local FastAPI app."""
     cases = load_json_file(cases_path)
@@ -323,9 +438,20 @@ def run_chat_benchmark(
         raise ValueError("Benchmark cases file must contain a JSON array.")
     if not isinstance(thresholds, dict):
         raise ValueError("Benchmark thresholds file must contain a JSON object.")
+    if mode not in {"auto", "fallback", "live"}:
+        raise ValueError("mode must be one of: auto, fallback, live")
+
+    thresholds = dict(thresholds)
+    if mode == "fallback":
+        thresholds["force_fallback_mode"] = True
+        thresholds["require_live_mode"] = False
+    elif mode == "live":
+        thresholds["force_fallback_mode"] = False
 
     if bool(thresholds.get("force_fallback_mode", False)):
         os.environ["GROUNDWATERGPT_SKIP_AGENT_INIT"] = "1"
+    elif mode == "live":
+        os.environ.pop("GROUNDWATERGPT_SKIP_AGENT_INIT", None)
 
     from api.main import app
 
@@ -375,6 +501,7 @@ def run_chat_benchmark(
         "metadata": {
             "cases_path": str(cases_path),
             "thresholds_path": str(thresholds_path),
+            "mode": mode,
             "case_count": len(case_results),
         },
         "results": case_results,

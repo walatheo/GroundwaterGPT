@@ -24,7 +24,6 @@ langgraph>=0.0.1
 chromadb>=0.4.0
 
 # UI & Visualization
-streamlit>=1.28.0
 plotly>=5.17.0
 
 # Web & API

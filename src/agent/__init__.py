@@ -14,11 +14,17 @@ Source Priority:
 
 # LLM factory and source verification have no heavy optional deps — always safe.
 from .llm_factory import LLMProvider, get_llm
-from .source_verification import (SourceCategory, TrustLevel,
-                                  filter_by_category, get_high_value_sources,
-                                  is_source_approved, prioritize_sources,
-                                  verify_document, verify_source,
-                                  verify_usgs_data)
+from .source_verification import (
+    SourceCategory,
+    TrustLevel,
+    filter_by_category,
+    get_high_value_sources,
+    is_source_approved,
+    prioritize_sources,
+    verify_document,
+    verify_source,
+    verify_usgs_data,
+)
 
 # The remaining modules require chromadb / sentence-transformers / onnxruntime.
 # Wrap them so the package can still be imported when those deps are missing
@@ -26,20 +32,13 @@ from .source_verification import (SourceCategory, TrustLevel,
 # set to None when unavailable; callers that need it should check first.
 try:
     from .groundwater_agent import GroundwaterAgent
-    from .groundwater_research_model import (AnomalyDetection, AquiferProperties,
-                                             AquiferType, DomainQueryExpander,
-                                             GroundwaterResearchModel,
-                                             SeasonalPattern,
-                                             expand_groundwater_query,
-                                             get_groundwater_model,
-                                             validate_groundwater_data)
-    from .priority_search_engine import (MultiSourceSearchEngine, QueryPrioritizer,
-                                         SearchPipeline, SearchQuery, SearchResult,
-                                         SearchSourceType)
     from .research_agent import DeepResearchAgent, deep_research
-    from .research_workflow import (GroundwaterResearchContext,
-                                    GroundwaterResearchWorkflow,
-                                    conduct_groundwater_research, research_async)
+    from .research_workflow import (
+        GroundwaterResearchContext,
+        GroundwaterResearchWorkflow,
+        conduct_groundwater_research,
+        research_async,
+    )
 except ImportError:
     # Heavy deps unavailable — set symbols to None so partial imports don't crash.
     GroundwaterAgent = None  # type: ignore[assignment,misc]
@@ -49,21 +48,6 @@ except ImportError:
     GroundwaterResearchContext = None  # type: ignore[assignment,misc]
     conduct_groundwater_research = None  # type: ignore[assignment]
     research_async = None  # type: ignore[assignment]
-    GroundwaterResearchModel = None  # type: ignore[assignment,misc]
-    DomainQueryExpander = None  # type: ignore[assignment,misc]
-    AquiferType = None  # type: ignore[assignment,misc]
-    AquiferProperties = None  # type: ignore[assignment,misc]
-    SeasonalPattern = None  # type: ignore[assignment,misc]
-    AnomalyDetection = None  # type: ignore[assignment,misc]
-    get_groundwater_model = None  # type: ignore[assignment]
-    expand_groundwater_query = None  # type: ignore[assignment]
-    validate_groundwater_data = None  # type: ignore[assignment]
-    SearchPipeline = None  # type: ignore[assignment,misc]
-    MultiSourceSearchEngine = None  # type: ignore[assignment,misc]
-    QueryPrioritizer = None  # type: ignore[assignment,misc]
-    SearchQuery = None  # type: ignore[assignment,misc]
-    SearchResult = None  # type: ignore[assignment,misc]
-    SearchSourceType = None  # type: ignore[assignment,misc]
 
 __all__ = [
     # Agent systems
@@ -74,23 +58,6 @@ __all__ = [
     "GroundwaterResearchContext",
     "conduct_groundwater_research",
     "research_async",
-    # Domain model
-    "GroundwaterResearchModel",
-    "DomainQueryExpander",
-    "AquiferType",
-    "AquiferProperties",
-    "SeasonalPattern",
-    "AnomalyDetection",
-    "get_groundwater_model",
-    "expand_groundwater_query",
-    "validate_groundwater_data",
-    # Search engine
-    "SearchPipeline",
-    "MultiSourceSearchEngine",
-    "QueryPrioritizer",
-    "SearchQuery",
-    "SearchResult",
-    "SearchSourceType",
     # LLM factory
     "get_llm",
     "LLMProvider",

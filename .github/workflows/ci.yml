@@ -53,7 +53,10 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov
 
-      - name: Run tests
+      - name: Run deterministic unit tests
+        run: GROUNDWATERGPT_SKIP_AGENT_INIT=1 pytest tests/unit/ -q
+
+      - name: Run full test suite with coverage (diagnostic)
         run: pytest tests/ -v --cov=. --cov-report=xml --cov-report=term-missing
         continue-on-error: true  # Until tests are fully set up
 
@@ -142,7 +145,8 @@ jobs:
           mkdir -p artifacts
           python scripts/run_chat_benchmark.py \
             --mode fallback \
-            --output artifacts/chat_benchmark_fallback_report.json
+            --output artifacts/chat_benchmark_fallback_report.json \
+            --enforce-thresholds
 
       - name: Run live-agent benchmark (diagnostic)
         run: |
