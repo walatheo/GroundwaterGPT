@@ -1664,6 +1664,38 @@ If the research seems complete, respond with: COMPLETE"""
         evidence_items: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """Parse and validate the LLM's evidence-ID JSON response."""
+
+        def _clean_text(value: Any, *, max_len: int = 400) -> str:
+            return str(value or "").strip()[:max_len].strip()
+
+        def _safe_confidence(value: Any, *, default: float = 0.5) -> float:
+            try:
+                confidence = float(value)
+            except (TypeError, ValueError):
+                confidence = default
+            return max(0.0, min(1.0, confidence))
+
+        def _dedupe_ids(
+            values: Any,
+            *,
+            valid_ids: set[str],
+            max_items: int = 8,
+        ) -> list[str]:
+            if not isinstance(values, list):
+                return []
+
+            deduped: list[str] = []
+            seen: set[str] = set()
+            for value in values:
+                text = str(value).strip()
+                if not text or text in seen or text not in valid_ids:
+                    continue
+                deduped.append(text)
+                seen.add(text)
+                if len(deduped) >= max_items:
+                    break
+            return deduped
+
         text = raw_response.strip()
         fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
         if fenced:
@@ -1684,27 +1716,23 @@ If the research seems complete, respond with: COMPLETE"""
         for item in parsed.get("claims", []):
             if not isinstance(item, dict):
                 continue
-            claim_ids = [
-                str(claim_id)
-                for claim_id in item.get("claim_ids", [])
-                if str(claim_id) in valid_claim_ids
-            ]
-            evidence_ids = [
-                str(evidence_id)
-                for evidence_id in item.get("evidence_ids", [])
-                if str(evidence_id) in valid_evidence_ids
-            ]
+            claim_text = _clean_text(item.get("claim", ""), max_len=500)
+            claim_ids = _dedupe_ids(item.get("claim_ids", []), valid_ids=valid_claim_ids)
+            evidence_ids = _dedupe_ids(item.get("evidence_ids", []), valid_ids=valid_evidence_ids)
             if not claim_ids or not evidence_ids:
+                continue
+            if not claim_text:
                 continue
             sanitized_claims.append(
                 {
-                    "claim": str(item.get("claim", "")).strip(),
-                    "claim_type": str(item.get("claim_type", "interpretation")),
+                    "claim": claim_text,
+                    "claim_type": _clean_text(item.get("claim_type", "interpretation"), max_len=64)
+                    or "interpretation",
                     "claim_ids": claim_ids,
                     "evidence_ids": evidence_ids,
-                    "confidence": max(0.0, min(1.0, float(item.get("confidence", 0.5)))),
+                    "confidence": _safe_confidence(item.get("confidence", 0.5)),
                     "is_interpretive": bool(item.get("is_interpretive", False)),
-                    "uncertainty": str(item.get("uncertainty", "")).strip(),
+                    "uncertainty": _clean_text(item.get("uncertainty", "")),
                 }
             )
 
@@ -1719,15 +1747,15 @@ If the research seems complete, respond with: COMPLETE"""
         return {
             "schema_version": "evidence_response_v1",
             "question": question,
-            "answer": str(parsed.get("answer", "")).strip(),
+            "answer": _clean_text(parsed.get("answer", ""), max_len=700),
             "claims": sanitized_claims,
             "limitations": [
-                str(item).strip() for item in parsed.get("limitations", []) if str(item).strip()
+                _clean_text(item) for item in parsed.get("limitations", []) if _clean_text(item)
             ],
             "recommended_followup": [
-                str(item).strip()
+                _clean_text(item)
                 for item in parsed.get("recommended_followup", [])
-                if str(item).strip()
+                if _clean_text(item)
             ],
             "evidence": evidence_items,
         }

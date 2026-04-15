@@ -52,7 +52,7 @@ The system is organized into five layers. Data flows downward for queries and up
 │                   1. PRESENTATION LAYER                      │
 │                                                              │
 │  React Dashboard (localhost:3000)                            │
-│  ├── MapView.jsx        — Leaflet interactive map (36 sites) │
+│  ├── MapView.jsx        — Leaflet interactive map (40 canonical files) │
 │  ├── TimeSeriesChart    — Recharts with trend lines          │
 │  ├── HeatmapChart       — Monthly/yearly patterns            │
 │  ├── AnalysisView       — Statistics & seasonal analysis     │
@@ -80,20 +80,15 @@ The system is organized into five layers. Data flows downward for queries and up
 │  ├── Insight extraction with confidence scoring              │
 │  └── Follow-up query generation + report synthesis           │
 │                                                              │
-│  groundwater_agent.py — Conversational Agent                 │
-│  ├── Intent detection (prediction, seasonal, quality, etc.)  │
-│  ├── Simple RAG mode (small models) / ReAct mode (GPT-4+)   │
-│  └── Streaming chat with history                             │
-│                                                              │
 │  llm_factory.py — Swappable LLM Providers                   │
 │  └── Ollama (local) | OpenAI | Anthropic | Gemini            │
 │                                                              │
 │  tools.py — Groundwater Analysis Tools                       │
-│  ├── query_groundwater_data()     — USGS data querying       │
-│  ├── get_water_level_prediction() — ML-based forecasts       │
-│  ├── analyze_seasonal_patterns()  — Wet/dry season analysis  │
-│  ├── detect_anomalies()           — Z-score outlier detection │
-│  └── get_data_quality_report()    — Completeness & gaps      │
+│  ├── list_available_sites()       — Discover site metadata   │
+│  ├── query_site_data()            — Per-site well cards      │
+│  ├── generate_time_series_plot()  — Site chart payloads      │
+│  ├── generate_comparison_chart()  — Multi-site charts        │
+│  └── research workflow tools      — Plans, runs, drafts      │
 └──────────────────────────┬───────────────────────────────────┘
                            │
 ┌──────────────────────────▼───────────────────────────────────┐
@@ -132,20 +127,15 @@ The system is organized into five layers. Data flows downward for queries and up
 └──────────────────────────┬───────────────────────────────────┘
                            │
 ┌──────────────────────────▼───────────────────────────────────┐
-│                 5. DATA & ML LAYER                            │
+│                    5. DATA LAYER                              │
 │                                                              │
 │  USGS NWIS API (live)                                        │
 │  ├── 36 monitoring sites across 5 Florida counties           │
 │  ├── 106,628 verified records                                │
 │  └── Direct API queries for real-time data                   │
 │                                                              │
-│  ML Models (scikit-learn)                                    │
-│  ├── 7-day water level prediction (R² = 0.93)               │
-│  ├── Feature engineering with leakage prevention             │
-│  └── Seasonal pattern analysis                               │
-│                                                              │
-│  Data files: data/usgs_*.csv (36 sites)                      │
-│  Models: models/*.joblib                                     │
+│  Data files: data/usgs_*.csv (36+ canonical site series)     │
+│  Historical forecasting code is out of manuscript scope      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -166,7 +156,6 @@ GroundwaterGPT/
 ├── src/                          # Python source code
 │   ├── agent/                    #   AI agent layer
 │   │   ├── research_agent.py     #     Deep Research Agent (iterative search)
-│   │   ├── groundwater_agent.py  #     Conversational agent (RAG + ReAct)
 │   │   ├── llm_factory.py        #     LLM provider factory (Ollama/OpenAI/etc.)
 │   │   ├── tools.py              #     Groundwater analysis tools
 │   │   ├── knowledge.py          #     ChromaDB knowledge base
@@ -174,12 +163,10 @@ GroundwaterGPT/
 │   ├── data/                     #   Data pipelines
 │   │   ├── download_data.py      #     USGS data acquisition
 │   │   └── continuous_learning.py#     Live data collection & KB updates
-│   └── ml/                       #   Machine learning
-│       └── train_groundwater.py  #     Model training & feature engineering
+│   └── ml/                       #   Historical experimental code (scoped out)
 ├── tests/                        # Test suite
-│   ├── unit/                     #   Unit tests (features, chat API)
+│   ├── unit/                     #   Unit tests (chat API, structured synthesis)
 │   ├── data/                     #   Data quality & USGS integrity tests
-│   ├── model/                    #   ML performance tests
 │   └── knowledge/                #   Florida accuracy ground truth tests
 ├── config/                       # Configuration
 │   ├── config.py                 #   App configuration
@@ -187,7 +174,6 @@ GroundwaterGPT/
 │   └── .env.example              #   Environment variable template
 ├── resources/pdfs/               # Reference documents (hydrogeology)
 ├── knowledge_base/               # ChromaDB persistent vector store
-├── models/                       # Trained model artifacts (.joblib)
 └── docs/                         # Project documentation
 ```
 
@@ -226,7 +212,7 @@ GroundwaterGPT/
 ### Data & ML
 | Technology | Purpose |
 |------------|---------|
-| USGS NWIS API | Live groundwater data source (36 sites) |
+| USGS NWIS API | Live groundwater data source (40 canonical files; 44 metadata entries) |
 | pandas | Data processing & analysis |
 | scikit-learn | ML models (Ridge Regression, Gradient Boosting) |
 | joblib | Model serialization |
@@ -360,7 +346,7 @@ Four key roles ensure comprehensive coverage from data to deployment.
 - Model versioning and performance monitoring
 - Benchmarking against ground truth
 
-**Key Files:** `src/ml/`, `src/agent/tools.py` (prediction tools), `tests/model/`
+**Key Files:** `src/agent/research_agent.py`, `src/agent/tools.py`, `tests/unit/`
 
 **Quality Gates:**
 - [ ] R² ≥ 0.80 on test set (7-day ahead)
@@ -376,7 +362,7 @@ Four key roles ensure comprehensive coverage from data to deployment.
 
 **Key Responsibilities:**
 - Maintain layered architecture (separation of concerns)
-- Design agent orchestration (research_agent, groundwater_agent)
+- Design evidence-bound agent orchestration (`research_agent`)
 - FastAPI endpoint design and React component architecture
 - Write and maintain tests across all layers
 - CI/CD pipeline and pre-commit hooks
@@ -420,8 +406,8 @@ Development is organized into focused sessions, each delivering a working increm
 
 | Session | Focus | Status | Key Deliverables |
 |---------|-------|--------|------------------|
-| **S1** | Data Pipeline & Foundation | ✅ Done | USGS download, 36 sites, 106K records |
-| **S2** | ML Models & Prediction | ✅ Done | R²=0.93 (7-day), feature engineering |
+| **S1** | Data Pipeline & Foundation | ✅ Done | USGS download, 40 canonical files, 100K+ records |
+| **S2** | Research Workflow & Provenance | ✅ Done | Plans, runs, citations, manuscript scaffolding |
 | **S3** | Quality Infrastructure | ✅ Done | CI/CD, 89 tests, pre-commit hooks |
 | **S4** | React Dashboard | ✅ Done | Map, time series, heatmap, sidebar |
 | **S5** | Knowledge Base & RAG | ✅ Done | ChromaDB, 1,901 chunks, PDF ingestion |
@@ -533,7 +519,7 @@ Development is organized into focused sessions, each delivering a working increm
 **Key Files:**
 - `tests/knowledge/ground_truth_florida.json` — Expand ground truth
 - `tests/benchmark/` — New benchmark runner
-- `tests/model/test_performance.py` — Holdout backtesting
+- Historical forecast backtesting examples are out of manuscript scope
 
 ---
 
@@ -721,31 +707,29 @@ S1─S2─S3─S4 ─────── S7 ──── S8
 
 ```python
 # Use type hints for all functions
-def predict_groundwater(
-    model: Pipeline,
-    features: pd.DataFrame,
-    horizon_days: int = 7
-) -> np.ndarray:
+def summarize_site_trend(
+    monthly_values: pd.Series,
+    site_id: str,
+) -> dict[str, float | str]:
     """
-    Predict groundwater levels for given features.
+    Summarize a monitored site's deterministic groundwater trend.
 
     Args:
-        model: Trained sklearn Pipeline
-        features: DataFrame with required feature columns
-        horizon_days: Prediction horizon (default 7)
+        monthly_values: Month-start depth-to-water means.
+        site_id: USGS monitoring site identifier.
 
     Returns:
-        Array of predicted water levels in feet
+        Trend metrics including annualized rate and direction.
 
     Raises:
-        ValueError: If features missing required columns
+        ValueError: If too few observations are available.
 
     Example:
-        >>> predictions = predict_groundwater(model, test_features)
-        >>> print(f"Next 7 days: {predictions[:7]}")
+        >>> summary = summarize_site_trend(monthly_values, "262724081260701")
+        >>> print(summary["annual_change_ft_yr"])
     """
     # Implementation
-    pass
+    return {}
 ```
 
 ### Naming Conventions
@@ -755,7 +739,7 @@ def predict_groundwater(
 | Files | `snake_case.py` | `train_groundwater.py` |
 | Classes | `PascalCase` | `GroundwaterProcessor` |
 | Functions | `snake_case` | `load_usgs_data()` |
-| Constants | `UPPER_SNAKE` | `FORECAST_HORIZON` |
+| Constants | `UPPER_SNAKE` | `MIN_OBSERVATIONS` |
 | Private | `_leading_underscore` | `_validate_dates()` |
 
 ### Code Organization
@@ -767,11 +751,11 @@ src/
 │   ├── usgs.py     # USGS API interactions
 │   ├── processors.py
 │   └── validators.py
-├── models/         # ML model code
+├── analysis/       # Deterministic analysis code
 │   ├── __init__.py
-│   ├── features.py # Feature engineering
-│   ├── train.py    # Training logic
-│   └── predict.py  # Inference logic
+│   ├── trends.py   # Trend and changepoint logic
+│   ├── cohorts.py  # Cross-well summaries
+│   └── charts.py   # Chart payload builders
 ├── visualization/  # Plotting and dashboards
 │   ├── __init__.py
 │   └── dashboard.py
@@ -1007,7 +991,7 @@ def validate_groundwater_data(df: pd.DataFrame) -> DataQualityReport:
 | **Unit** | Individual functions | 90% |
 | **Integration** | Component interactions (API ↔ Agent ↔ KB) | 80% |
 | **Data** | Data quality, schema, USGS integrity | 100% of pipelines |
-| **Model** | ML performance metrics | Key thresholds |
+| **Benchmark** | Deterministic answer quality and audit fields | Key thresholds |
 | **Knowledge** | Agent accuracy vs ground truth | Benchmark suite |
 | **Regression** | Prevent regressions | Critical paths |
 
@@ -1017,91 +1001,28 @@ def validate_groundwater_data(df: pd.DataFrame) -> DataQualityReport:
 tests/
 ├── conftest.py              # Shared fixtures
 ├── unit/
-│   ├── test_features.py     # Feature engineering
-│   ├── test_data_loading.py
-│   └── test_utils.py
-├── integration/
-│   ├── test_pipeline.py     # End-to-end pipeline
-│   └── test_model_training.py
+│   ├── test_chat_api.py
+│   ├── test_inline_chart.py
+│   └── test_tools.py
 ├── data/
-│   ├── test_data_quality.py
-│   └── test_schema.py
-└── model/
-    ├── test_predictions.py
-    └── test_metrics.py
+│   ├── test_quality.py
+│   └── test_usgs_data_integrity.py
+└── benchmark/
+    ├── test_chat_benchmark.py
+    └── chat_eval_cases.json
 ```
 
 ### Example Tests
 
 ```python
-# tests/unit/test_features.py
-import pytest
-import pandas as pd
-import numpy as np
-from train_groundwater import create_features, FORECAST_HORIZON
+# tests/unit/test_inline_chart.py
+def test_chart_trend_labels_include_annual_units():
+    """Trend overlays should report annualized groundwater rates."""
+    chart = _build_chart_payload(sites, "Test Area", cross_well=cross_well)
+    trend_names = [series["name"] for series in chart["series"] if "Trend" in series["name"]]
+    assert trend_names
+    assert all("ft/yr" in name for name in trend_names)
 
-class TestFeatureEngineering:
-    """Test feature engineering functions."""
-
-    @pytest.fixture
-    def sample_data(self):
-        """Create sample groundwater data."""
-        dates = pd.date_range('2020-01-01', periods=100, freq='D')
-        return pd.DataFrame({
-            'date': dates,
-            'water_level': np.random.normal(5, 1, 100)
-        })
-
-    def test_no_data_leakage(self, sample_data):
-        """Verify features don't use future data."""
-        features = create_features(sample_data)
-
-        # For any row, all feature values should be computable
-        # using only data from FORECAST_HORIZON+ days before
-        for i in range(FORECAST_HORIZON + 30, len(features)):
-            row = features.iloc[i]
-            # lag_7d should equal value from FORECAST_HORIZON + 7 days ago
-            expected = sample_data.iloc[i - FORECAST_HORIZON - 7]['water_level']
-            assert row['level_lag_7d'] == pytest.approx(expected)
-
-    def test_feature_completeness(self, sample_data):
-        """Verify no NaN in output features."""
-        features = create_features(sample_data)
-        assert not features.isnull().any().any()
-
-    def test_temporal_features_cyclical(self, sample_data):
-        """Verify sin/cos encoding is bounded [-1, 1]."""
-        features = create_features(sample_data)
-
-        assert features['month_sin'].between(-1, 1).all()
-        assert features['month_cos'].between(-1, 1).all()
-
-
-# tests/model/test_metrics.py
-class TestModelPerformance:
-    """Test model meets minimum performance standards."""
-
-    @pytest.fixture
-    def trained_model(self):
-        """Load or train model."""
-        from joblib import load
-        return load('models/best_gradient_boosting.joblib')
-
-    def test_r2_minimum(self, trained_model, test_data):
-        """Model must achieve R² >= 0.80 on test data."""
-        X_test, y_test = test_data
-        y_pred = trained_model.predict(X_test)
-        r2 = r2_score(y_test, y_pred)
-
-        assert r2 >= 0.80, f"R² {r2:.4f} below threshold 0.80"
-
-    def test_rmse_maximum(self, trained_model, test_data):
-        """RMSE must be <= 0.5 feet."""
-        X_test, y_test = test_data
-        y_pred = trained_model.predict(X_test)
-        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-
-        assert rmse <= 0.5, f"RMSE {rmse:.4f} exceeds threshold 0.5"
 ```
 
 ### Running Tests
@@ -1115,10 +1036,10 @@ pytest tests/ --cov=. --cov-report=html
 
 # Run specific category
 pytest tests/unit/ -v
-pytest tests/model/ -v
+pytest tests/benchmark/ -v
 
 # Run tests matching pattern
-pytest -k "test_feature" -v
+pytest -k "structured_response" -v
 ```
 
 ---
@@ -1318,9 +1239,9 @@ python dashboard.py
 
 ## Documentation
 
-- [Development Guide](DEVELOPMENT_GUIDE.md)
-- [API Reference](docs/api.md)
-- [Contributing](CONTRIBUTING.md)
+- [README.md](README.md)
+- [docs/README.md](docs/README.md)
+- [GROUNDWATERGPT_TECHNICAL_OVERVIEW.md](GROUNDWATERGPT_TECHNICAL_OVERVIEW.md)
 
 ## License
 

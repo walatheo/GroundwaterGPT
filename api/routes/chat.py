@@ -351,7 +351,6 @@ def _sites_for_multiple_locations(
 # Try to initialise real agents (graceful fallback on import/init failure)
 # ---------------------------------------------------------------------------
 
-_chat_agent = None
 _research_agent = None
 _agent_boot_errors: list[str] = []
 _runtime_error_state: dict[str, dict[str, Optional[str]]] = {
@@ -381,10 +380,11 @@ def _build_degraded_reasons() -> list[str]:
     reasons = list(_agent_boot_errors)
     if skip_agent_init:
         reasons.append("LLM agent initialization disabled by GROUNDWATERGPT_SKIP_AGENT_INIT.")
-    if _chat_agent is None:
-        reasons.append("Conversational chat agent is unavailable; fallback mode will be used.")
     if _research_agent is None:
-        reasons.append("Deep research agent is unavailable; fallback mode will be used.")
+        reasons.append(
+            "Evidence-linked synthesis agent is unavailable; "
+            "deterministic fallback mode will be used."
+        )
 
     chat_error = _runtime_error_state["chat"]["message"]
     if chat_error:
@@ -399,15 +399,7 @@ if skip_agent_init:
     logger.info("Skipping LLM-backed agent initialization (GROUNDWATERGPT_SKIP_AGENT_INIT set)")
 else:
     try:
-        from src.agent.groundwater_agent import create_agent as _create_chat_agent
         from src.agent.research_agent import DeepResearchAgent
-
-        try:
-            _chat_agent = _create_chat_agent(verbose=False)
-        except Exception as exc:
-            _agent_boot_errors.append(f"Chat agent initialization failed: {exc}")
-            logger.warning("Chat agent initialization failed: %s", exc)
-            _chat_agent = None
 
         try:
             _research_agent = DeepResearchAgent(
@@ -426,17 +418,16 @@ else:
             logger.warning("Research agent initialization failed: %s", exc)
             _research_agent = None
 
-        if _chat_agent or _research_agent:
-            logger.info("LLM-backed agents initialised with runtime safeguards")
+        if _research_agent:
+            logger.info("Evidence-linked synthesis agent initialised with runtime safeguards")
         else:
-            logger.warning("No LLM-backed agents available after initialization")
+            logger.warning("No evidence-linked synthesis agent available after initialization")
     except Exception as exc:
         _agent_boot_errors.append(f"Agent import bootstrap failed: {exc}")
         logger.warning(
             "Could not initialise LLM agents -- " "falling back to rule-based chat. Reason: %s",
             exc,
         )
-        _chat_agent = None
         _research_agent = None
 
 
@@ -848,6 +839,46 @@ def _build_structured_evidence_items(
     return evidence_items
 
 
+def _clean_structured_text(value: Any, *, max_len: int = 400) -> str:
+    """Trim and cap free-text values emitted in structured responses."""
+    text = str(value or "").strip()
+    return text[:max_len].strip()
+
+
+def _dedupe_string_list(
+    values: Any,
+    *,
+    valid_values: Optional[set[str]] = None,
+    max_items: int = 8,
+) -> list[str]:
+    """Normalize, validate, and deduplicate a list of string identifiers."""
+    if not isinstance(values, list):
+        return []
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value).strip()
+        if not text or text in seen:
+            continue
+        if valid_values is not None and text not in valid_values:
+            continue
+        deduped.append(text)
+        seen.add(text)
+        if len(deduped) >= max_items:
+            break
+    return deduped
+
+
+def _safe_confidence(value: Any, *, default: float = 0.5) -> float:
+    """Coerce confidence-like values to a bounded float."""
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        confidence = default
+    return max(0.0, min(1.0, confidence))
+
+
 def _build_structured_response_from_claims(
     question: str,
     claim_citations: list[dict[str, Any]],
@@ -868,8 +899,15 @@ def _build_structured_response_from_claims(
     omitted_uncited_claims = 0
     for claim in claim_citations[:8]:
         claim_id = str(claim.get("claim_id", "claim_unknown"))
-        evidence_ids = evidence_by_claim.get(claim_id, [])
+        claim_text = _clean_structured_text(claim.get("claim", ""), max_len=500)
+        evidence_ids = _dedupe_string_list(
+            evidence_by_claim.get(claim_id, []),
+            max_items=8,
+        )
         if not evidence_ids:
+            omitted_uncited_claims += 1
+            continue
+        if not claim_text:
             omitted_uncited_claims += 1
             continue
 
@@ -882,11 +920,15 @@ def _build_structured_response_from_claims(
 
         structured_claims.append(
             {
-                "claim": str(claim.get("claim", "")).strip(),
-                "claim_type": str(claim.get("claim_type", "retrieved_insight")),
+                "claim": claim_text,
+                "claim_type": _clean_structured_text(
+                    claim.get("claim_type", "retrieved_insight"),
+                    max_len=64,
+                )
+                or "retrieved_insight",
                 "claim_ids": [claim_id],
                 "evidence_ids": evidence_ids,
-                "confidence": max(0.0, min(1.0, float(claim.get("confidence", 0.5)))),
+                "confidence": _safe_confidence(claim.get("confidence", 0.5)),
                 "is_interpretive": str(claim.get("claim_type", "")).lower() == "interpretation",
                 "uncertainty": uncertainty,
             }
@@ -914,14 +956,20 @@ def _build_structured_response_from_claims(
         "question": question,
         "answer": answer,
         "claims": structured_claims,
-        "limitations": limitations,
+        "limitations": _dedupe_string_list(limitations, max_items=6),
         "recommended_followup": [
             (
                 "Review the cited evidence registry and deterministic cohort "
                 "metrics before drafting manuscript conclusions."
             ),
         ],
-        "evidence": evidence_items,
+        "evidence": [
+            item
+            for item in evidence_items
+            if _clean_structured_text(item.get("claim_id"), max_len=32)
+            and _clean_structured_text(item.get("evidence_id"), max_len=64)
+            and _clean_structured_text(item.get("url"), max_len=500)
+        ],
     }
 
 
@@ -1062,6 +1110,39 @@ def _build_chat_payload(
     }
 
 
+def _augment_chat_payload(payload: dict[str, Any], *, question: str) -> dict[str, Any]:
+    """Attach manuscript-safe structured response and provenance to chat outputs."""
+    claim_citations = payload.get("claim_citations", [])
+    claim_verdicts = payload.get("claim_verdicts") or _build_claim_verdicts(claim_citations)
+    payload["claim_verdicts"] = claim_verdicts
+    payload["claim_verdict_summary"] = payload.get(
+        "claim_verdict_summary"
+    ) or _build_claim_verdict_summary(claim_verdicts)
+    payload["citation_summary"] = payload.get("citation_summary") or _build_citation_summary(
+        claim_citations
+    )
+    payload["section_confidence"] = payload.get(
+        "section_confidence"
+    ) or _build_section_confidence_from_claims(claim_citations)
+    payload["citation_integrity"] = payload.get("citation_integrity") or _build_citation_integrity(
+        claim_citations,
+        payload["section_confidence"],
+    )
+    payload["structured_response"] = payload.get(
+        "structured_response"
+    ) or _build_structured_response_from_claims(
+        question,
+        claim_citations,
+        claim_verdicts,
+    )
+    payload["provenance"] = build_research_provenance(
+        payload,
+        question=question,
+        route_mode=payload.get("mode", "chat"),
+    )
+    return payload
+
+
 def _chart_from(result: Optional[dict], *, path: str) -> Optional[dict]:
     """Single source of truth for extracting chart payloads from result dicts."""
     chart = None if not result else result.get("chart")
@@ -1107,8 +1188,8 @@ def _ground_fallback_chat_response(fallback: dict[str, Any]) -> dict[str, Any]:
 def chat_endpoint(query: dict):
     """AI chat endpoint for groundwater questions.
 
-    Uses the GroundwaterAgent when available; falls back to rule-based
-    KB when the LLM provider is not configured or unreachable.
+    Uses deterministic routing first, then the evidence-bound research
+    agent for open-ended narration, and finally a rule-based KB fallback.
 
     Request body: ``{ "message": "..." }``
     """
@@ -1116,6 +1197,10 @@ def chat_endpoint(query: dict):
     user_query = raw_message.strip() if isinstance(raw_message, str) else ""
     if not user_query:
         raise HTTPException(status_code=400, detail="Message is required")
+
+    def _finalize(response_payload: dict[str, Any]) -> dict[str, Any]:
+        enriched = _enrich_with_usgs_data(user_query, response_payload)
+        return _augment_chat_payload(enriched, question=user_query)
 
     # --- Site-name fast path: explicit well names / site IDs (most specific) ---
     named_sites = _detect_site_names(user_query)
@@ -1125,28 +1210,29 @@ def chat_endpoint(query: dict):
             user_query,
             named_sites,
             label,
-            allow_llm_synthesis=False,
         )
-        return _build_chat_payload(
-            response_text=ns_result["report"],
-            context=_get_site_context(named_sites[0].get("county")),
-            sources=ns_result["sources"],
-            chart=_chart_from(ns_result, path="chat.site_fallback"),
-            mode="site_fallback",
-            wells=_build_wells_payload(named_sites),
-            divergent_pairs=ns_result.get("divergent_pairs", []),
-            cohort_risk_level=ns_result.get("cohort_risk_level"),
-            llm_synthesis=ns_result.get("llm_synthesis"),
-            hallucination_guardrail=ns_result.get("hallucination_guardrail"),
-            claim_citations=ns_result.get("claim_citations", []),
-            claim_verdicts=ns_result.get("claim_verdicts"),
-            claim_verdict_summary=ns_result.get("claim_verdict_summary"),
-            citation_summary=ns_result.get("citation_summary"),
-            section_confidence=ns_result.get("section_confidence", {}),
-            citation_integrity=_build_citation_integrity(
-                ns_result["claim_citations"],
-                ns_result.get("section_confidence", {}),
-            ),
+        return _finalize(
+            _build_chat_payload(
+                response_text=ns_result["report"],
+                context=_get_site_context(named_sites[0].get("county")),
+                sources=ns_result["sources"],
+                chart=_chart_from(ns_result, path="chat.site_fallback"),
+                mode="site_fallback",
+                wells=_build_wells_payload(named_sites),
+                divergent_pairs=ns_result.get("divergent_pairs", []),
+                cohort_risk_level=ns_result.get("cohort_risk_level"),
+                llm_synthesis=ns_result.get("llm_synthesis"),
+                hallucination_guardrail=ns_result.get("hallucination_guardrail"),
+                claim_citations=ns_result.get("claim_citations", []),
+                claim_verdicts=ns_result.get("claim_verdicts"),
+                claim_verdict_summary=ns_result.get("claim_verdict_summary"),
+                citation_summary=ns_result.get("citation_summary"),
+                section_confidence=ns_result.get("section_confidence", {}),
+                citation_integrity=_build_citation_integrity(
+                    ns_result["claim_citations"],
+                    ns_result.get("section_confidence", {}),
+                ),
+            )
         )
 
     # --- Aquifer fast path: named aquifer -> all cohort sites (runs before location) ---
@@ -1158,29 +1244,30 @@ def chat_endpoint(query: dict):
             user_query,
             aq_sites,
             aq_display_name,
-            allow_llm_synthesis=False,
         )
-        return _build_chat_payload(
-            response_text=aq_result["report"],
-            context=_get_site_context(),
-            sources=aq_result["sources"],
-            chart=_chart_from(aq_result, path="chat.aquifer_fallback"),
-            mode="aquifer_fallback",
-            wells=_build_wells_payload(aq_sites),
-            aquifer_info=_build_aquifer_info(aq_display_name),
-            divergent_pairs=aq_result.get("divergent_pairs", []),
-            cohort_risk_level=aq_result.get("cohort_risk_level"),
-            llm_synthesis=aq_result.get("llm_synthesis"),
-            hallucination_guardrail=aq_result.get("hallucination_guardrail"),
-            claim_citations=aq_result.get("claim_citations", []),
-            claim_verdicts=aq_result.get("claim_verdicts"),
-            claim_verdict_summary=aq_result.get("claim_verdict_summary"),
-            citation_summary=aq_result.get("citation_summary"),
-            section_confidence=aq_result.get("section_confidence", {}),
-            citation_integrity=_build_citation_integrity(
-                aq_result["claim_citations"],
-                aq_result.get("section_confidence", {}),
-            ),
+        return _finalize(
+            _build_chat_payload(
+                response_text=aq_result["report"],
+                context=_get_site_context(),
+                sources=aq_result["sources"],
+                chart=_chart_from(aq_result, path="chat.aquifer_fallback"),
+                mode="aquifer_fallback",
+                wells=_build_wells_payload(aq_sites),
+                aquifer_info=_build_aquifer_info(aq_display_name),
+                divergent_pairs=aq_result.get("divergent_pairs", []),
+                cohort_risk_level=aq_result.get("cohort_risk_level"),
+                llm_synthesis=aq_result.get("llm_synthesis"),
+                hallucination_guardrail=aq_result.get("hallucination_guardrail"),
+                claim_citations=aq_result.get("claim_citations", []),
+                claim_verdicts=aq_result.get("claim_verdicts"),
+                claim_verdict_summary=aq_result.get("claim_verdict_summary"),
+                citation_summary=aq_result.get("citation_summary"),
+                section_confidence=aq_result.get("section_confidence", {}),
+                citation_integrity=_build_citation_integrity(
+                    aq_result["claim_citations"],
+                    aq_result.get("section_confidence", {}),
+                ),
+            )
         )
 
     # --- Multi-location comparison fast path: compare counties/areas in one answer ---
@@ -1194,28 +1281,29 @@ def chat_endpoint(query: dict):
                 user_query,
                 multi_sites,
                 multi_label,
-                allow_llm_synthesis=False,
             )
-            return _build_chat_payload(
-                response_text=multi_result["report"],
-                context=_get_site_context(),
-                sources=multi_result["sources"],
-                chart=_chart_from(multi_result, path="chat.multi_location_fallback"),
-                mode="network_fallback",
-                wells=_build_wells_payload(multi_sites),
-                divergent_pairs=multi_result.get("divergent_pairs", []),
-                cohort_risk_level=multi_result.get("cohort_risk_level"),
-                llm_synthesis=multi_result.get("llm_synthesis"),
-                hallucination_guardrail=multi_result.get("hallucination_guardrail"),
-                claim_citations=multi_result.get("claim_citations", []),
-                claim_verdicts=multi_result.get("claim_verdicts"),
-                claim_verdict_summary=multi_result.get("claim_verdict_summary"),
-                citation_summary=multi_result.get("citation_summary"),
-                section_confidence=multi_result.get("section_confidence", {}),
-                citation_integrity=_build_citation_integrity(
-                    multi_result["claim_citations"],
-                    multi_result.get("section_confidence", {}),
-                ),
+            return _finalize(
+                _build_chat_payload(
+                    response_text=multi_result["report"],
+                    context=_get_site_context(),
+                    sources=multi_result["sources"],
+                    chart=_chart_from(multi_result, path="chat.multi_location_fallback"),
+                    mode="network_fallback",
+                    wells=_build_wells_payload(multi_sites),
+                    divergent_pairs=multi_result.get("divergent_pairs", []),
+                    cohort_risk_level=multi_result.get("cohort_risk_level"),
+                    llm_synthesis=multi_result.get("llm_synthesis"),
+                    hallucination_guardrail=multi_result.get("hallucination_guardrail"),
+                    claim_citations=multi_result.get("claim_citations", []),
+                    claim_verdicts=multi_result.get("claim_verdicts"),
+                    claim_verdict_summary=multi_result.get("claim_verdict_summary"),
+                    citation_summary=multi_result.get("citation_summary"),
+                    section_confidence=multi_result.get("section_confidence", {}),
+                    citation_integrity=_build_citation_integrity(
+                        multi_result["claim_citations"],
+                        multi_result.get("section_confidence", {}),
+                    ),
+                )
             )
 
     # --- Location fast path: return deterministic USGS-backed answer immediately ---
@@ -1229,7 +1317,6 @@ def chat_endpoint(query: dict):
             loc_name,
             ref_lat=ref_lat,
             ref_lng=ref_lng,
-            allow_llm_synthesis=False,
         )
         wells_payload = _build_wells_payload(sites)
         response_dict = _build_chat_payload(
@@ -1255,7 +1342,7 @@ def chat_endpoint(query: dict):
         )
         if _is_aquifer_query(user_query) and wells_payload:
             response_dict["aquifer_info"] = _build_aquifer_info(wells_payload[0]["aquifer"])
-        return response_dict
+        return _finalize(response_dict)
 
     # --- Network-wide fast path: all-wells / all-county / confined-vs-unconfined queries ---
     if _is_network_wide_query(user_query):
@@ -1265,66 +1352,100 @@ def chat_endpoint(query: dict):
                 user_query,
                 nw_sites,
                 "Florida monitoring network",
-                allow_llm_synthesis=False,
             )
-            return _build_chat_payload(
-                response_text=nw_result["report"],
-                context=_get_site_context(),
-                sources=nw_result["sources"],
-                chart=_chart_from(nw_result, path="chat.network_fallback"),
-                mode="network_fallback",
-                wells=_build_wells_payload(nw_sites),
-                divergent_pairs=nw_result.get("divergent_pairs", []),
-                cohort_risk_level=nw_result.get("cohort_risk_level"),
-                llm_synthesis=nw_result.get("llm_synthesis"),
-                hallucination_guardrail=nw_result.get("hallucination_guardrail"),
-                claim_citations=nw_result.get("claim_citations", []),
-                claim_verdicts=nw_result.get("claim_verdicts"),
-                claim_verdict_summary=nw_result.get("claim_verdict_summary"),
-                citation_summary=nw_result.get("citation_summary"),
-                section_confidence=nw_result.get("section_confidence", {}),
-                citation_integrity=_build_citation_integrity(
-                    nw_result["claim_citations"],
-                    nw_result.get("section_confidence", {}),
-                ),
+            return _finalize(
+                _build_chat_payload(
+                    response_text=nw_result["report"],
+                    context=_get_site_context(),
+                    sources=nw_result["sources"],
+                    chart=_chart_from(nw_result, path="chat.network_fallback"),
+                    mode="network_fallback",
+                    wells=_build_wells_payload(nw_sites),
+                    divergent_pairs=nw_result.get("divergent_pairs", []),
+                    cohort_risk_level=nw_result.get("cohort_risk_level"),
+                    llm_synthesis=nw_result.get("llm_synthesis"),
+                    hallucination_guardrail=nw_result.get("hallucination_guardrail"),
+                    claim_citations=nw_result.get("claim_citations", []),
+                    claim_verdicts=nw_result.get("claim_verdicts"),
+                    claim_verdict_summary=nw_result.get("claim_verdict_summary"),
+                    citation_summary=nw_result.get("citation_summary"),
+                    section_confidence=nw_result.get("section_confidence", {}),
+                    citation_integrity=_build_citation_integrity(
+                        nw_result["claim_citations"],
+                        nw_result.get("section_confidence", {}),
+                    ),
+                )
             )
 
     # --- Groundwater KB fast path: keep lightweight chat queries deterministic ---
     if _kb_topic_matches(user_query):
-        return _enrich_with_usgs_data(
-            user_query,
-            _ground_fallback_chat_response(_fallback_response(user_query)),
-        )
+        return _finalize(_ground_fallback_chat_response(_fallback_response(user_query)))
 
-    # --- Try real agent first ---
-    if _chat_agent is not None:
+    # --- Evidence-bound synthesis path for generic open-ended questions ---
+    if _research_agent is not None:
         try:
-            response_text = _chat_agent.chat(user_query)
-            _clear_runtime_error("chat")
-            result = _build_chat_payload(
-                response_text=response_text,
-                context=_get_site_context(),
-                sources=["Florida Aquifer Analysis Agent (LLM-backed)"],
-                chart=None,
-                mode="agent",
-                hallucination_guardrail={
-                    "strategy": "llm_agent_response",
-                    "removed_uncited_factual_sentences": 0,
-                    "all_factual_claims_cited": False,
-                    "has_llm_synthesis": True,
-                },
+            result = _research_agent.research(
+                query=user_query,
+                max_depth=1,
+                timeout=45,
             )
-            return _enrich_with_usgs_data(user_query, result)
+            result = attach_chart_from_agent_result(result)
+            response_text = str(result.get("report", "")).strip()
+            if not response_text or "No insights were gathered" in response_text:
+                raise ValueError("Research agent returned no meaningful insights")
+
+            claim_citations = result.get("claim_citations", [])
+            claim_verdicts = result.get("claim_verdicts", _build_claim_verdicts(claim_citations))
+            section_confidence = result.get(
+                "section_confidence",
+                _build_section_confidence_from_claims(claim_citations),
+            )
+            _clear_runtime_error("chat")
+            return _finalize(
+                _build_chat_payload(
+                    response_text=response_text,
+                    context=_get_site_context(),
+                    sources=result.get("sources", []),
+                    chart=_chart_from(result, path="chat.evidence_bound_research"),
+                    mode="research_chat",
+                    wells=result.get("wells", []),
+                    aquifer_info=result.get("aquifer_info"),
+                    divergent_pairs=result.get("divergent_pairs", []),
+                    cohort_risk_level=result.get("cohort_risk_level"),
+                    llm_synthesis=result.get("llm_synthesis"),
+                    hallucination_guardrail=result.get(
+                        "hallucination_guardrail",
+                        {
+                            "strategy": "evidence_bound_research_chat",
+                            "removed_uncited_factual_sentences": 0,
+                            "all_factual_claims_cited": True,
+                            "has_llm_synthesis": bool(getattr(_research_agent, "llm", None)),
+                        },
+                    ),
+                    claim_citations=claim_citations,
+                    claim_verdicts=claim_verdicts,
+                    claim_verdict_summary=result.get(
+                        "claim_verdict_summary",
+                        _build_claim_verdict_summary(claim_verdicts),
+                    ),
+                    citation_summary=result.get(
+                        "citation_summary",
+                        _build_citation_summary(claim_citations),
+                    ),
+                    section_confidence=section_confidence,
+                    citation_integrity=result.get(
+                        "citation_integrity",
+                        _build_citation_integrity(claim_citations, section_confidence),
+                    ),
+                ),
+            )
         except Exception as exc:
-            logger.error("Agent chat error: %s", exc)
+            logger.error("Evidence-bound chat synthesis error: %s", exc)
             _set_runtime_error("chat", exc)
             # Fall through to rule-based fallback
 
     # --- Fallback ---
-    return _enrich_with_usgs_data(
-        user_query,
-        _ground_fallback_chat_response(_fallback_response(user_query)),
-    )
+    return _finalize(_ground_fallback_chat_response(_fallback_response(user_query)))
 
 
 # ---------------------------------------------------------------------------
@@ -2187,38 +2308,37 @@ def research_stream_endpoint(query: dict):
 def chat_status():
     """Get AI chat and research system status."""
     degraded_reasons = _build_degraded_reasons()
-    agent_available = _chat_agent is not None
-    research_available = _research_agent is not None
+    synthesis_available = _research_agent is not None
     return {
-        "status": "ok" if (agent_available and not degraded_reasons) else "fallback",
+        "status": "ok" if (synthesis_available and not degraded_reasons) else "fallback",
         "version": "1.0.0",
-        "agent_available": agent_available,
-        "research_available": research_available,
+        "agent_available": synthesis_available,
+        "research_available": synthesis_available,
         "degraded_reasons": degraded_reasons,
         "runtime_checks": {
             "skip_agent_init": skip_agent_init,
             "web_search_enabled": research_web_search_enabled,
-            "chat_agent_initialized": agent_available,
-            "research_agent_initialized": research_available,
+            "chat_agent_initialized": synthesis_available,
+            "research_agent_initialized": synthesis_available,
             "last_chat_error": _runtime_error_state["chat"],
             "last_research_error": _runtime_error_state["research"],
         },
         "features": (
             [
-                "Conversational groundwater Q&A",
-                "RAG with hydrogeology documents",
-                "Seasonal pattern analysis",
-                "Anomaly detection",
-                "Data quality reports",
+                "Deterministic groundwater Q&A",
+                "Evidence-linked research synthesis",
+                "Hydrogeology document grounding",
+                "Structured responses with claim and evidence IDs",
+                "Reproducibility metadata and provenance hashes",
                 "Deep research with iterative search",
-                "Section-level confidence/trust metadata",
+                "Section-level confidence and trust metadata",
             ]
-            if agent_available
+            if synthesis_available
             else [
-                "Rule-based groundwater Q&A (fallback mode)",
-                "Irrigation planning advice",
-                "Crop water requirements",
-                "Seasonal patterns",
+                "Deterministic groundwater Q&A (fallback mode)",
+                "Evidence-linked cited responses",
+                "USGS well and aquifer context",
+                "Research provenance metadata",
                 "Aquifer information",
             ]
         ),

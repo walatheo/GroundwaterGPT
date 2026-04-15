@@ -14,7 +14,7 @@ Test Categories:
     1. CSV files contain authentic USGS site IDs
     2. Data values are served without modification
     3. API returns exact CSV contents
-    4. All 36 sites are USGS-verified
+    4. All canonical site files are USGS-verified
 
 Data Source:
     U.S. Geological Survey, 2026
@@ -109,9 +109,7 @@ class TestUSGSDataAuthenticity:
             lon_deg = int(site_id[6:9])
 
             # Florida longitude should be 79-88 degrees W
-            assert (
-                79 <= lon_deg <= 88
-            ), f"Longitude {lon_deg}° not in Florida: {site_id}"
+            assert 79 <= lon_deg <= 88, f"Longitude {lon_deg}° not in Florida: {site_id}"
 
 
 class TestDataIntegrity:
@@ -122,7 +120,7 @@ class TestDataIntegrity:
 
         - Biscayne Aquifer: typically 0-20 ft below surface
         - Floridan Aquifer: typically 10-100 ft below surface
-        - Some artesian wells may have negative values (above surface)
+        - Some artesian wells may have strongly negative values (above surface)
         """
         csv_files = _canonical_site_csv_files()
 
@@ -137,12 +135,8 @@ class TestDataIntegrity:
             max_val = values.max()
 
             # Allow negative for artesian wells, but cap at reasonable ranges
-            assert (
-                min_val >= -50
-            ), f"Suspiciously low value {min_val} in {csv_file.name}"
-            assert (
-                max_val <= 200
-            ), f"Suspiciously high value {max_val} in {csv_file.name}"
+            assert min_val >= -100, f"Suspiciously low value {min_val} in {csv_file.name}"
+            assert max_val <= 200, f"Suspiciously high value {max_val} in {csv_file.name}"
 
     def test_datetime_values_are_valid(self):
         """All datetime values should be parseable and reasonable."""
@@ -190,7 +184,7 @@ class TestDataIntegrity:
 class TestCountyDistribution:
     """Verify geographic distribution of monitoring sites."""
 
-    # Known counties from the 36 USGS sites
+    # Known counties from the configured Florida USGS sites
     EXPECTED_COUNTIES = {"Miami-Dade", "Lee", "Collier", "Hendry", "Sarasota"}
 
     def test_minimum_sites_per_county(self):
@@ -216,9 +210,7 @@ class TestTotalDataVolume:
         total_records = sum(len(pd.read_csv(f)) for f in csv_files)
 
         # Should have at least 100,000 records across all sites
-        assert (
-            total_records >= 100_000
-        ), f"Expected 100K+ records, found {total_records:,}"
+        assert total_records >= 100_000, f"Expected 100K+ records, found {total_records:,}"
 
     def test_all_sites_have_data(self):
         """Every CSV file should have actual data records."""

@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**An auditable groundwater research platform that couples deterministic USGS trend analysis with evidence-linked language-model synthesis.**
+**An auditable groundwater research platform that turns public USGS records into usable trend analysis, visual summaries, and reproducible outputs, with language models limited to evidence-linked assistance.**
 
 ---
 
@@ -28,9 +28,9 @@ Build note, 2026-04-14: after lazy-loading chart panels, the initial Vite JS chu
 
 ## 🎯 Project Overview
 
-GroundwaterGPT is a **whitebox AI system** that combines:
+GroundwaterGPT is a **research-facing whitebox application** that combines:
 - **Deterministic USGS Analysis**: Monthly aggregation, trend summaries, cohort comparison, and chart payloads from local monitoring records
-- **Evidence-Linked Synthesis**: Claim IDs, evidence IDs, citation integrity checks, and provenance metadata
+- **Evidence-Linked Assistance**: Claim IDs, evidence IDs, citation integrity checks, and provenance metadata
 - **Research Workflow**: Plans, reproducible run logging, and manuscript draft scaffolding
 - **Interactive Dashboard**: Map, time-series, heatmap, workbench, and chat/research views
 
@@ -110,10 +110,12 @@ GroundwaterGPT/
 ├── requirements.txt          # Python dependencies
 │
 ├── 📚 docs/                  # Documentation
-│   ├── ROLES.md              # Team responsibilities
-│   ├── DEVELOPMENT_GUIDE.md  # Coding standards
-│   ├── ENGINEERING_STANDARDS.md  # Software engineering standards
-│   └── CHECKLIST.md          # Review checklist
+│   ├── README.md             # Documentation index
+│   ├── GROUNDWATERGPT_TECHNICAL_OVERVIEW.md
+│   ├── MANUSCRIPT_DRAFT.md
+│   ├── DEVELOPMENT_GUIDE.md
+│   ├── ENGINEERING_STANDARDS.md
+│   └── DEMO_RUNBOOK.md
 │
 ├── 🖥️ api/                   # FastAPI Backend
 │   └── main.py               # REST API server (port 8000)
@@ -131,8 +133,6 @@ GroundwaterGPT/
 │   ├── data/                 # Data processing
 │   │   ├── download_data.py  # USGS fetcher
 │   │   └── continuous_learning.py
-│   └── ml/                   # Experimental forecast pipeline (not serving API)
-│       └── train_groundwater.py
 │
 ├── 📊 data/                  # USGS CSV data
 │   └── usgs_*.csv            # 40 canonical monitoring-site time series
@@ -142,14 +142,11 @@ GroundwaterGPT/
 │
 ├── 🧠 knowledge_base/        # ChromaDB vector store
 │
-├── 🎯 models/                # Trained ML models
-│
 ├── 📈 outputs/               # Generated outputs
 │   └── plots/                # Visualizations
 │
-├── 🧪 tests/                 # Test suite (210 unit tests passing locally)
+├── 🧪 tests/                 # Test suite (181 unit tests passing locally)
 │   ├── data/                 # Data quality & integrity tests
-│   ├── model/                # ML performance tests
 │   └── unit/                 # Unit tests
 │
 └── 🔧 config/                # Configuration
@@ -228,12 +225,10 @@ make benchmark
 
 | Category | Tests | Purpose |
 |----------|-------|---------|
-| `tests/unit/` | 210 passing locally | API contracts, chart payloads, citation integrity, claim verdicts, workbench |
+| `tests/unit/` | 181 passing locally | API contracts, chart payloads, citation integrity, claim verdicts, workbench |
 | `tests/benchmark/` | 68 cases | Deterministic research response checks and threshold enforcement |
 | `tests/data/` | 25+ | Data quality, schema validation, USGS integrity |
-| `tests/model/` | Experimental | Forecast pipeline checks; not part of the serving API manuscript claim |
-
-**Current deterministic status:** 210 unit tests passing; 68/68 fallback benchmark cases passing.
+**Current deterministic status:** manuscript-facing unit tests and the 68/68 fallback benchmark pass locally.
 
 ---
 
@@ -271,22 +266,12 @@ feature/your-feature
 
 | Phase | Status | Focus |
 |-------|--------|-------|
-| 1. Foundation | ✅ Complete | Data pipeline, ML model, dashboard |
+| 1. Foundation | ✅ Complete | Data pipeline, dashboard, baseline research interface |
 | 2. Quality | ✅ Complete | CI/CD, testing, documentation |
 | 3. Enhancement | ✅ Complete | Multi-site expansion, React frontend |
-| 4. Dashboard | ✅ Complete | AI Chat (Beta), 36 USGS sites, interactive maps |
-| 5. Research | 🔄 Current | AI Research Integration, advanced analytics |
+| 4. Dashboard | ✅ Complete | AI Chat (Beta), 40 canonical USGS time-series files, interactive maps |
+| 5. Research | 🔄 Current | Research utility, provenance, and manuscript-safe analysis |
 | 6. Production | 📋 Planned | API, web hosting, alerts |
-
-### Current Implementation Plan
-
-1. **Operational Hardening (Now)**: runtime dependency checks, KB health endpoints, graceful 503 fallbacks.
-2. **Workflow Productization**: researcher-facing experiment planning, run logging, manuscript drafting UX.
-3. **Quality & Citation Integrity**: automated evaluation harness and claim-to-source output structure.
-4. **Multi-Agent Scaling**: orchestrator-worker architecture for deep research tasks.
-5. **Production Readiness**: deployment, observability, and reliability controls.
-
-See [CHECKLIST.md](docs/CHECKLIST.md) for detailed status.
 
 ---
 
@@ -294,10 +279,12 @@ See [CHECKLIST.md](docs/CHECKLIST.md) for detailed status.
 
 | Document | Purpose |
 |----------|---------|
-| **[CHECKLIST.md](docs/CHECKLIST.md)** | Active tasks, phase goals, sprint tracking |
-| **[DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)** | Architecture, roles, coding standards |
-| **[ENGINEERING_STANDARDS.md](docs/ENGINEERING_STANDARDS.md)** | Testing philosophy, code quality rules |
-| **[SPONSOR_SUMMARY.md](docs/SPONSOR_SUMMARY.md)** | Executive overview for stakeholders |
+| **[docs/README.md](docs/README.md)** | Documentation index for the maintained guide set |
+| **[GROUNDWATERGPT_TECHNICAL_OVERVIEW.md](docs/GROUNDWATERGPT_TECHNICAL_OVERVIEW.md)** | Manuscript-grounding technical description |
+| **[MANUSCRIPT_DRAFT.md](docs/MANUSCRIPT_DRAFT.md)** | Submission-oriented draft centered on the actual novelty |
+| **[DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)** | Architecture and developer workflow |
+| **[ENGINEERING_STANDARDS.md](docs/ENGINEERING_STANDARDS.md)** | Testing philosophy and code quality rules |
+| **[DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md)** | Deterministic demo and benchmark walkthrough |
 
 ---
 

@@ -274,6 +274,9 @@ def evaluate_case_response(
         "claim_verdict_coverage": round(claim_verdict_coverage, 3),
         "contradicted_claim_rate": round(contradicted_claim_rate, 3),
         "high_risk_claim_rate": round(high_risk_claim_rate, 3),
+        "structured_response_present": bool(response.get("structured_response")),
+        "provenance_present": bool(response.get("provenance")),
+        "llm_synthesis_present": bool(response.get("llm_synthesis")),
     }
 
 
@@ -450,8 +453,10 @@ def run_chat_benchmark(
 
     if bool(thresholds.get("force_fallback_mode", False)):
         os.environ["GROUNDWATERGPT_SKIP_AGENT_INIT"] = "1"
+        os.environ["GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS"] = "1"
     elif mode == "live":
         os.environ.pop("GROUNDWATERGPT_SKIP_AGENT_INIT", None)
+        os.environ.pop("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", None)
 
     from api.main import app
 
@@ -460,7 +465,6 @@ def run_chat_benchmark(
         from api.routes import chat as chat_routes
 
         chat_routes._research_agent = None
-        chat_routes._chat_agent = None
 
     client = TestClient(app)
     case_results: list[dict[str, Any]] = []

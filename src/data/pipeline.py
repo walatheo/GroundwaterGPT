@@ -2,7 +2,7 @@
 """Canonical USGS Groundwater Data Pipeline.
 
 This module provides the single source of truth for downloading, validating,
-and organizing groundwater data from 36 USGS monitoring sites across Florida.
+and organizing groundwater data from 40 configured USGS monitoring sites across Florida.
 
 Architecture:
     - Centralized orchestration via run_pipeline()
@@ -14,7 +14,7 @@ Architecture:
 Usage:
     from src.data.pipeline import run_pipeline
 
-    # Fetch all 36 sites
+    # Fetch all configured sites
     results = run_pipeline()
 
     # Fetch specific sites
@@ -43,7 +43,7 @@ Returns:
     Dict[site_id, Path] mapping each site to its output CSV file
 
 Success Metrics:
-    - All 36 sites fetched in < 30 minutes
+    - All configured sites fetched in < 30 minutes
     - 100% schema validation pass rate on known sites
     - 0 data corruption or leakage
     - Complete audit trail in manifest.json
@@ -216,7 +216,7 @@ def setup_logging(log_dir: Path = LOG_DIR) -> Path:
 
 
 def get_all_site_ids() -> List[str]:
-    """Extract all 36 USGS site IDs from configuration.
+    """Extract all configured USGS site IDs from configuration.
 
     Returns:
         List of 15-digit USGS site IDs
@@ -530,7 +530,7 @@ def run_pipeline(
 
     This is the canonical entry point for all data fetching operations.
     It orchestrates the complete pipeline:
-    1. Load site list (all 36 or specified subset)
+    1. Load site list (all configured sites or specified subset)
     2. Fetch data from USGS API (with retries)
     3. Validate schema and values
     4. Engineer features (optional)
@@ -538,7 +538,7 @@ def run_pipeline(
     6. Generate manifest with audit trail
 
     Args:
-        sites: List of site IDs to process. If None, processes all 36.
+        sites: List of site IDs to process. If None, processes all configured sites.
         start_date: Start date (YYYY-MM-DD). Default: 1994-01-01
         end_date: End date (YYYY-MM-DD). Default: today
         output_format: Output format (currently only 'csv' supported)
@@ -922,7 +922,7 @@ if __name__ == "__main__":
     # Usage: python -m src.data.pipeline
     try:
         results = run_pipeline(parallel=True)
-        print(f"\n✓ Pipeline complete: {len(results)}/36 sites processed")
+        print(f"\n✓ Pipeline complete: {len(results)}/{len(get_all_site_ids())} sites processed")
         sys.exit(0)
     except Exception as e:
         print(f"\n✗ Pipeline failed: {e}")

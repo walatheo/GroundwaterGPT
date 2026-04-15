@@ -35,12 +35,6 @@ def data_dir(project_root):
     return project_root / "data"
 
 
-@pytest.fixture
-def models_dir(project_root):
-    """Return models directory path."""
-    return project_root / "models"
-
-
 # =============================================================================
 # DATA FIXTURES
 # =============================================================================
@@ -70,14 +64,6 @@ def sample_groundwater_data():
 
 
 @pytest.fixture
-def sample_features(sample_groundwater_data):
-    """Generate sample feature data from groundwater data."""
-    from train_groundwater import create_features
-
-    return create_features(sample_groundwater_data)
-
-
-@pytest.fixture
 def minimal_data():
     """Minimal valid dataset for quick tests."""
     return pd.DataFrame(
@@ -86,26 +72,6 @@ def minimal_data():
             "water_level": np.random.normal(5, 1, 100),
         }
     )
-
-
-# =============================================================================
-# MODEL FIXTURES
-# =============================================================================
-
-
-@pytest.fixture
-def trained_model(models_dir):
-    """
-    Load trained model if available, otherwise skip test.
-    """
-    model_path = models_dir / "best_gradient_boosting.joblib"
-
-    if not model_path.exists():
-        pytest.skip("Trained model not available")
-
-    from joblib import load
-
-    return load(model_path)
 
 
 # =============================================================================

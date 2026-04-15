@@ -1,4 +1,4 @@
-"""Tests for agent tools — data querying, site listing, chart generation.
+"""Tests for researcher-facing agent tools.
 
 Validates all ``@tool`` functions in ``src/agent/tools.py`` can be invoked
 and return reasonable results when data files are present on disk.
@@ -15,23 +15,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import src.agent.tools as tools_module  # noqa: E402
 from src.agent.tools import _load_site_csv  # noqa: E402
-from src.agent.tools import (GROUNDWATER_TOOLS, _load_site_metadata,
-                             analyze_seasonal_patterns,
-                             create_research_experiment_plan, detect_anomalies,
-                             draft_research_paper, generate_comparison_chart,
-                             generate_time_series_plot,
-                             get_data_quality_report,
-                             get_water_level_prediction, list_available_sites,
-                             list_research_experiment_plans,
-                             log_experiment_run, query_groundwater_data,
-                             query_site_data)
+from src.agent.tools import (  # noqa: E402
+    GROUNDWATER_TOOLS,
+    _load_site_metadata,
+    create_research_experiment_plan,
+    draft_research_paper,
+    generate_comparison_chart,
+    generate_time_series_plot,
+    list_available_sites,
+    list_research_experiment_plans,
+    log_experiment_run,
+    query_site_data,
+)
 
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
-
-
-def _has_consolidated_data() -> bool:
-    """Check if groundwater.csv exists."""
-    return (DATA_DIR / "groundwater.csv").exists()
 
 
 def _first_site_id() -> str:
@@ -53,7 +50,7 @@ class TestToolRegistry:
 
     def test_tool_count(self):
         """All registered tools should be present."""
-        assert len(GROUNDWATER_TOOLS) == 13
+        assert len(GROUNDWATER_TOOLS) == 8
 
     def test_all_tools_have_names(self):
         """Each tool has a non-empty name attribute."""
@@ -69,11 +66,6 @@ class TestToolRegistry:
         """Check the expected tool names are present."""
         names = {t.name for t in GROUNDWATER_TOOLS}
         expected = {
-            "query_groundwater_data",
-            "get_water_level_prediction",
-            "analyze_seasonal_patterns",
-            "detect_anomalies",
-            "get_data_quality_report",
             "generate_time_series_plot",
             "generate_comparison_chart",
             "list_available_sites",
@@ -176,50 +168,8 @@ class TestQuerySiteData:
 
     def test_unknown_site(self):
         """Unknown site returns error message (not exception)."""
-        result = query_site_data.invoke(
-            {"site_id": "000000000000000", "stat_type": "summary"}
-        )
+        result = query_site_data.invoke({"site_id": "000000000000000", "stat_type": "summary"})
         assert "No data" in result or "not found" in result.lower()
-
-
-# ===================================================================
-# Consolidated data tools
-# ===================================================================
-
-
-@pytest.mark.skipif(not _has_consolidated_data(), reason="groundwater.csv not on disk")
-class TestConsolidatedTools:
-    """Test tools that operate on groundwater.csv."""
-
-    def test_query_summary(self):
-        """query_groundwater_data summary returns stats."""
-        result = query_groundwater_data.invoke({"stat_type": "summary"})
-        assert "Water Level" in result or "water_level" in result.lower()
-
-    def test_query_monthly(self):
-        """query_groundwater_data monthly returns month rows."""
-        result = query_groundwater_data.invoke({"stat_type": "monthly"})
-        assert "Monthly" in result
-
-    def test_seasonal_patterns(self):
-        """analyze_seasonal_patterns returns season data."""
-        result = analyze_seasonal_patterns.invoke({})
-        assert "Wet" in result and "Dry" in result
-
-    def test_anomalies(self):
-        """detect_anomalies returns a report."""
-        result = detect_anomalies.invoke({"threshold": 2.0})
-        assert "Anomaly" in result
-
-    def test_data_quality(self):
-        """get_data_quality_report returns a report."""
-        result = get_data_quality_report.invoke({})
-        assert "Quality" in result or "quality" in result.lower()
-
-    def test_prediction(self):
-        """get_water_level_prediction returns a forecast."""
-        result = get_water_level_prediction.invoke({"days_ahead": 3})
-        assert "Prediction" in result or "Forecast" in result
 
 
 # ===================================================================
@@ -297,9 +247,7 @@ class TestResearchWorkflowTools:
 
     def _redirect_research_dirs(self, tmp_path, monkeypatch):
         monkeypatch.setattr(tools_module, "OUTPUTS_DIR", tmp_path / "outputs")
-        monkeypatch.setattr(
-            tools_module, "RESEARCH_DIR", tmp_path / "outputs" / "research"
-        )
+        monkeypatch.setattr(tools_module, "RESEARCH_DIR", tmp_path / "outputs" / "research")
         monkeypatch.setattr(
             tools_module,
             "EXPERIMENTS_DIR",
@@ -342,8 +290,6 @@ class TestResearchWorkflowTools:
         )
         assert "Run Logged" in logged
 
-        drafted = draft_research_paper.invoke(
-            {"plan_id": plan_id, "target_venue": "NeurIPS"}
-        )
+        drafted = draft_research_paper.invoke({"plan_id": plan_id, "target_venue": "NeurIPS"})
         assert "Draft saved to" in drafted
         assert "## Abstract (Draft)" in drafted

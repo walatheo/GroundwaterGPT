@@ -3,7 +3,7 @@
 Session 7 — Agent ↔ API Integration tests.
 Validates:
  • Rule-based fallback KB structure and matching
- • POST /api/chat  (agent + fallback path)
+ • POST /api/chat  (research-assisted + fallback path)
  • POST /api/research (deep research + fallback path)
  • GET  /api/chat/status
  • Input validation (empty / missing fields → 400)
@@ -166,7 +166,7 @@ class TestChatEndpoint:
         assert "response" in body
         assert "sources" in body
         assert "mode" in body
-        assert body["mode"] in ("agent", "fallback")
+        assert body["mode"] in ("research_chat", "fallback")
 
     def test_chat_empty_message_returns_400(self):
         """Empty message string must return 400."""
@@ -202,15 +202,15 @@ class TestChatEndpoint:
         assert isinstance(body["citation_integrity"], dict)
         assert "passed" in body["citation_integrity"]
 
-    def test_chat_kb_query_skips_agent_for_fast_fallback(self, monkeypatch):
-        """KB-matched chat queries should not invoke the slower LLM agent path."""
+    def test_chat_kb_query_skips_research_agent_for_fast_fallback(self, monkeypatch):
+        """KB-matched chat queries should not invoke the slower research-agent path."""
         from api.routes import chat as chat_routes
 
         class _BoomAgent:
-            def chat(self, _query):
-                raise AssertionError("chat agent should not be called for KB fast path")
+            def research(self, **_kwargs):
+                raise AssertionError("research agent should not be called for KB fast path")
 
-        monkeypatch.setattr(chat_routes, "_chat_agent", _BoomAgent())
+        monkeypatch.setattr(chat_routes, "_research_agent", _BoomAgent())
         resp = client.post(
             "/api/chat",
             json={"message": "When is the best time to plant considering groundwater?"},
@@ -219,14 +219,31 @@ class TestChatEndpoint:
         body = resp.json()
         assert body["mode"] == "fallback"
 
-    def test_chat_site_analysis_disables_llm_synthesis(self, monkeypatch):
-        """Chat site-analysis fast paths should stay deterministic and skip synthesis."""
+    def test_chat_includes_structured_response_and_provenance(self):
+        """Chat responses should expose the same audit fields as research responses."""
+        resp = client.post("/api/chat", json={"message": "Estero trends"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "structured_response" in body
+        assert "provenance" in body
+        assert body["structured_response"]["schema_version"] == "evidence_response_v1"
+        assert body["provenance"]["schema_version"] == "research_provenance_v1"
+        assert body["structured_response"]["question"] == "Estero trends"
+        assert "response_sha256" in body["provenance"]
+
+    def test_chat_site_analysis_allows_llm_synthesis_by_default(self, monkeypatch):
+        """Chat site-analysis paths must leave hybrid LLM synthesis enabled.
+
+        The benchmark suppresses it via GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS,
+        but the live demo path should default to the hybrid hydrogeologist
+        narration so the deterministic findings get a natural-language layer.
+        """
         from api.routes import chat as chat_routes
 
         captured: dict[str, object] = {}
 
         def _fake_site_fallback(*args, **kwargs):
-            captured["allow_llm_synthesis"] = kwargs.get("allow_llm_synthesis")
+            captured["allow_llm_synthesis"] = kwargs.get("allow_llm_synthesis", True)
             return {
                 "report": "Synthetic site analysis",
                 "sources": ["https://example.com/usgs"],
@@ -245,7 +262,7 @@ class TestChatEndpoint:
             json={"message": "Assess Estero groundwater source reliability."},
         )
         assert resp.status_code == 200
-        assert captured["allow_llm_synthesis"] is False
+        assert captured["allow_llm_synthesis"] is not False
 
     def test_chat_typo_aquifer_query_fuzzy_matches(self):
         """Common aquifer misspellings should still route to the right deterministic answer."""
@@ -582,10 +599,10 @@ class TestChatStatus:
         from api.routes import chat as chat_routes
 
         class _BoomAgent:
-            def chat(self, _query):
+            def research(self, **_kwargs):
                 raise RuntimeError("simulated chat failure")
 
-        monkeypatch.setattr(chat_routes, "_chat_agent", _BoomAgent())
+        monkeypatch.setattr(chat_routes, "_research_agent", _BoomAgent())
         resp = client.post("/api/chat", json={"message": "test runtime failure path"})
         assert resp.status_code == 200
         body = client.get("/api/chat/status").json()

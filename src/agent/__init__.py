@@ -31,7 +31,6 @@ from .source_verification import (
 # (e.g. Python 3.13 where onnxruntime has no wheel yet).  Each attribute is
 # set to None when unavailable; callers that need it should check first.
 try:
-    from .groundwater_agent import GroundwaterAgent
     from .research_agent import DeepResearchAgent, deep_research
     from .research_workflow import (
         GroundwaterResearchContext,
@@ -41,7 +40,6 @@ try:
     )
 except ImportError:
     # Heavy deps unavailable — set symbols to None so partial imports don't crash.
-    GroundwaterAgent = None  # type: ignore[assignment,misc]
     DeepResearchAgent = None  # type: ignore[assignment,misc]
     deep_research = None  # type: ignore[assignment]
     GroundwaterResearchWorkflow = None  # type: ignore[assignment,misc]
@@ -51,7 +49,6 @@ except ImportError:
 
 __all__ = [
     # Agent systems
-    "GroundwaterAgent",
     "DeepResearchAgent",
     "deep_research",
     "GroundwaterResearchWorkflow",

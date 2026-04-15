@@ -1,6 +1,6 @@
 # GroundwaterGPT Demo Runbook
 
-**Last Updated:** April 6, 2026
+**Last Updated:** April 15, 2026
 
 ## 1. Demo Goals
 
@@ -147,4 +147,4 @@ python3 scripts/run_chat_benchmark.py --output /tmp/chat_benchmark_report.json
 cat /tmp/chat_benchmark_report.json | jq '.summary'
 ```
 
-This runs all 63 benchmark cases across 40 USGS sites and demonstrates objective scoring and threshold checks.
+This runs all 68 benchmark cases across 40 canonical USGS time-series files and demonstrates objective scoring and threshold checks.

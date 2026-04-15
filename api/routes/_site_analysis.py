@@ -85,6 +85,16 @@ _SYNTHESIS_TRIGGER_RE = re.compile(
 )
 
 
+def _llm_synthesis_enabled() -> bool:
+    """Return True unless GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS is set.
+
+    Lets benchmarks force pure-deterministic output while leaving the
+    hybrid hydrogeologist narration on for the live demo.
+    """
+    raw = os.environ.get("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", "").strip().lower()
+    return raw not in {"1", "true", "yes", "on"}
+
+
 # ---------------------------------------------------------------------------
 # Trend helpers
 # ---------------------------------------------------------------------------
@@ -1374,8 +1384,10 @@ def _site_research_fallback(
 
     # --- LLM synthesis (hybrid mode) ---
     synthesis_section = ""
-    needs_synthesis = allow_llm_synthesis and (
-        is_supply_query or bool(_SYNTHESIS_TRIGGER_RE.search(question))
+    needs_synthesis = (
+        allow_llm_synthesis
+        and _llm_synthesis_enabled()
+        and (is_supply_query or bool(_SYNTHESIS_TRIGGER_RE.search(question)))
     )
     if needs_synthesis:
         synthesis_data = {
