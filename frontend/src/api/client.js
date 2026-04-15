@@ -1,5 +1,5 @@
 /**
- * API client for GroundwaterGPT backend
+ * API client for the EAGLE backend
  */
 
 const API_BASE = '/api'

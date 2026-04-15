@@ -1,4 +1,4 @@
-"""Continuous Learning Module for GroundwaterGPT.
+"""Continuous Learning Module for EAGLE.
 
 This module enables the knowledge base to continuously grow by:
 1. Fetching new USGS groundwater data from multiple sites
@@ -45,8 +45,8 @@ ROOT_DIR = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 sys.path.insert(0, str(ROOT_DIR / "src"))
 
-from src.agent.knowledge import add_document, get_knowledge_stats
-from src.agent.source_verification import verify_source
+from src.agent.knowledge import add_document, get_knowledge_stats  # noqa: E402
+from src.agent.source_verification import verify_source  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,7 +61,9 @@ logger = logging.getLogger(__name__)
 FLORIDA_AQUIFER_SITES = {
     # Floridan Aquifer System (largest in Florida)
     "floridan_aquifer": {
-        "description": "Floridan Aquifer System - Primary drinking water source for most of Florida",
+        "description": (
+            "Floridan Aquifer System - Primary drinking water source for most of Florida"
+        ),
         "sites": [
             {
                 "site_no": "262724081260701",
@@ -298,7 +300,8 @@ Site Number: {site_info['site_no']}
 County: {site_info.get('county', 'Unknown')}
 Aquifer: {aquifer_name.replace('_', ' ').title()}
 
-Data Period: {df['datetime'].min().strftime('%Y-%m-%d')} to {df['datetime'].max().strftime('%Y-%m-%d')}
+Data Period: {df['datetime'].min().strftime('%Y-%m-%d')} to """
+        summary += f"""{df['datetime'].max().strftime('%Y-%m-%d')}
 Total Records: {len(df)}
 
 Statistics:
@@ -346,7 +349,7 @@ Annual Averages:
             )
             if success:
                 added += 1
-                logger.info(f"  📚 Added summary to knowledge base")
+                logger.info("  📚 Added summary to knowledge base")
         except Exception as e:
             logger.error(f"  ❌ Failed to add to KB: {e}")
 
@@ -368,9 +371,7 @@ Annual Averages:
             logger.info(f"\n📍 {aquifer_info['description']}")
 
             for site in aquifer_info["sites"]:
-                df = self.fetch_usgs_site_data(
-                    site["site_no"], site["name"], aquifer_name
-                )
+                df = self.fetch_usgs_site_data(site["site_no"], site["name"], aquifer_name)
 
                 if df is not None and len(df) > 0:
                     # Save to CSV
@@ -378,9 +379,7 @@ Annual Averages:
                     df.to_csv(csv_path, index=False)
 
                     # Add to knowledge base
-                    docs_added = self.add_usgs_data_to_knowledge_base(
-                        df, site, aquifer_name
-                    )
+                    docs_added = self.add_usgs_data_to_knowledge_base(df, site, aquifer_name)
 
                     self.stats.documents_added += docs_added
                     self.stats.usgs_records_added += len(df)
@@ -461,12 +460,8 @@ Keywords: {', '.join(paper.get('keywords', []))}
         return {
             "knowledge_base": kb_stats,
             "configured_aquifers": len(FLORIDA_AQUIFER_SITES),
-            "configured_sites": sum(
-                len(a["sites"]) for a in FLORIDA_AQUIFER_SITES.values()
-            ),
-            "last_update": (
-                self.stats.end_time.isoformat() if self.stats.end_time else None
-            ),
+            "configured_sites": sum(len(a["sites"]) for a in FLORIDA_AQUIFER_SITES.values()),
+            "last_update": (self.stats.end_time.isoformat() if self.stats.end_time else None),
         }
 
 
@@ -507,18 +502,10 @@ def run_continuous_learning(
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Continuous Learning for GroundwaterGPT"
-    )
-    parser.add_argument(
-        "--usgs", action="store_true", default=True, help="Fetch USGS data"
-    )
-    parser.add_argument(
-        "--days", type=int, default=3650, help="Days of history to fetch"
-    )
-    parser.add_argument(
-        "--status", action="store_true", help="Show current learning status"
-    )
+    parser = argparse.ArgumentParser(description="Continuous Learning for EAGLE")
+    parser.add_argument("--usgs", action="store_true", default=True, help="Fetch USGS data")
+    parser.add_argument("--days", type=int, default=3650, help="Days of history to fetch")
+    parser.add_argument("--status", action="store_true", help="Show current learning status")
 
     args = parser.parse_args()
 
@@ -544,6 +531,5 @@ if __name__ == "__main__":
             print(f"Records Added: {results['usgs']['usgs_records_added']:,}")
             print(f"Documents Added: {results['usgs']['documents_added']}")
 
-        print(
-            f"\nKnowledge Base Total: {results['final_status']['knowledge_base'].get('total_documents', 0):,} documents"
-        )
+        total_documents = results["final_status"]["knowledge_base"].get("total_documents", 0)
+        print(f"\nKnowledge Base Total: {total_documents:,} documents")

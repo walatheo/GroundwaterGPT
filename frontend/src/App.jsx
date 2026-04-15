@@ -94,7 +94,7 @@ function App() {
       <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(20,184,166,0.18),_transparent_38%),linear-gradient(180deg,_#f6fbfb_0%,_#edf4f7_100%)] px-6">
         <div className="text-center rounded-[28px] border border-white/70 bg-white/85 px-10 py-12 shadow-[0_30px_80px_rgba(15,23,42,0.12)] backdrop-blur">
           <div className="mx-auto mb-5 h-14 w-14 animate-spin rounded-full border-4 border-teal-100 border-t-teal-600" />
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-teal-700">GroundwaterGPT</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-teal-700">EAGLE</p>
           <p className="mt-2 text-lg text-slate-700">Loading monitoring sites and groundwater context…</p>
         </div>
       </div>

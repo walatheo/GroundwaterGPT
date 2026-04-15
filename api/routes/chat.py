@@ -252,7 +252,7 @@ def _fallback_response(query: str) -> dict:
             "workspace, so I should not invent groundwater levels there. If you want, "
             "I can help with Florida wells, aquifers, seasonal patterns, or site-level USGS trends."
         )
-        sources = ["GroundwaterGPT Florida monitoring scope"]
+        sources = ["EAGLE Florida monitoring scope"]
     elif query_lower.strip() in {"water", "groundwater"}:
         response_text = (
             "Groundwater questions work best when you include a Florida location, aquifer, "
@@ -260,7 +260,7 @@ def _fallback_response(query: str) -> dict:
             "seasonal wet-vs-dry behavior, irrigation implications, saltwater-intrusion risk, "
             "and monitored trends from USGS wells across Florida counties."
         )
-        sources = ["GroundwaterGPT quick-start guidance"]
+        sources = ["EAGLE quick-start guidance"]
     elif matches:
         topic_lines = [
             f"- **{topic.replace('_', ' ').title()}**: {info}" for topic, info in matches[:3]

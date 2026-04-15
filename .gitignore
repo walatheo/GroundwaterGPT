@@ -31,6 +31,10 @@ data/*.csv
 /chat_benchmark_report.json
 /frontend/test-results/
 
+# Manuscript closeout pins these benchmark reports for reproducibility.
+!chat_benchmark_report.json
+!agent_benchmark_report.json
+
 # Model files (regenerate with train_groundwater.py)
 models/*.joblib
 

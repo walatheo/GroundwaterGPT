@@ -37,7 +37,7 @@ export default function Sidebar({
             <Droplets className="h-6 w-6 text-teal-200" />
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-[0.3em] text-teal-200/80">GroundwaterGPT</p>
+            <p className="text-[11px] uppercase tracking-[0.3em] text-teal-200/80">EAGLE</p>
             <h1 className="mt-1 text-lg font-semibold text-white">Florida Aquifer Analysis</h1>
             <p className="mt-1 text-sm leading-relaxed text-slate-300">
               Monitoring, interpretation, and groundwater research workflows in one place.

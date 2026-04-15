@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -80,7 +81,35 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exit non-zero if benchmark fails configured thresholds",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Run only the first N benchmark cases; 0 means all cases.",
+    )
     return parser.parse_args()
+
+
+def _limited_cases_path(cases_path: Path, limit: int) -> tuple[Path, Path | None]:
+    """Return a cases path, optionally backed by a temporary limited case file."""
+    if limit <= 0:
+        return cases_path, None
+
+    with open(cases_path) as fh:
+        cases = json.load(fh)
+    if not isinstance(cases, list):
+        raise ValueError("Benchmark cases file must contain a JSON array.")
+
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".json",
+        prefix="eagle_agent_cases_",
+        delete=False,
+    )
+    json.dump(cases[:limit], tmp, indent=2)
+    tmp.flush()
+    tmp.close()
+    return Path(tmp.name), Path(tmp.name)
 
 
 def _summarise_agent_path(case_results: list[dict]) -> dict:
@@ -115,15 +144,22 @@ def main() -> int:
     # the local provider.
     from src.evaluation.chat_benchmark import run_chat_benchmark
 
-    report = run_chat_benchmark(
-        cases_path=args.cases,
-        thresholds_path=args.thresholds,
-        mode="live",
-    )
+    limited_cases_path, limited_cases_cleanup = _limited_cases_path(args.cases, args.limit)
+    try:
+        report = run_chat_benchmark(
+            cases_path=limited_cases_path,
+            thresholds_path=args.thresholds,
+            mode="live",
+        )
+    finally:
+        if limited_cases_cleanup is not None:
+            limited_cases_cleanup.unlink(missing_ok=True)
 
     report["agent_path_summary"] = _summarise_agent_path(report.get("results", []))
+    report["metadata"]["cases_path"] = str(args.cases)
     report["metadata"]["llm_provider"] = args.provider
     report["metadata"]["llm_model"] = args.model
+    report["metadata"]["case_limit"] = args.limit or None
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "w") as fh:

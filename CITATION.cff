@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use EAGLE, please cite this software."
+title: "EAGLE — Evidence-Aligned Groundwater Level Explorer"
+version: "0.1.0"
+date-released: "2026-04-15"
+repository-code: "https://github.com/walatheo/GroundwaterGPT"
+authors:
+  - family-names: "TODO"
+    given-names: "TODO"
+keywords:
+  - groundwater
+  - USGS
+  - Florida
+  - hydrology
+  - evidence-bound
+  - language models
+  - reproducibility
+license: MIT

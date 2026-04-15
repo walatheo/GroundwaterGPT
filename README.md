@@ -1,10 +1,10 @@
-# GroundwaterGPT
+# EAGLE — Evidence-Aligned Groundwater Level Explorer
 
 [![CI Pipeline](https://github.com/walatheo/GroundwaterGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/walatheo/GroundwaterGPT/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**An auditable groundwater research platform that turns public USGS records into usable trend analysis, visual summaries, and reproducible outputs, with language models limited to evidence-linked assistance.**
+**EAGLE is an auditable groundwater research platform that turns public USGS records for 44 Florida monitoring wells into usable trend analysis, visual summaries, and reproducible outputs, with language models limited to evidence-linked assistance over a deterministic analysis pipeline.**
 
 ---
 
@@ -28,7 +28,7 @@ Build note, 2026-04-14: after lazy-loading chart panels, the initial Vite JS chu
 
 ## 🎯 Project Overview
 
-GroundwaterGPT is a **research-facing whitebox application** that combines:
+EAGLE is a **research-facing whitebox application** that combines:
 - **Deterministic USGS Analysis**: Monthly aggregation, trend summaries, cohort comparison, and chart payloads from local monitoring records
 - **Evidence-Linked Assistance**: Claim IDs, evidence IDs, citation integrity checks, and provenance metadata
 - **Research Workflow**: Plans, reproducible run logging, and manuscript draft scaffolding
@@ -105,13 +105,13 @@ Three hydrogeology PDFs are embedded in ChromaDB for future RAG integration:
 ## 📁 Project Structure
 
 ```
-GroundwaterGPT/
+EAGLE/
 ├── README.md                 # This file
 ├── requirements.txt          # Python dependencies
 │
 ├── 📚 docs/                  # Documentation
 │   ├── README.md             # Documentation index
-│   ├── GROUNDWATERGPT_TECHNICAL_OVERVIEW.md
+│   ├── EAGLE_TECHNICAL_OVERVIEW.md
 │   ├── MANUSCRIPT_DRAFT.md
 │   ├── DEVELOPMENT_GUIDE.md
 │   ├── ENGINEERING_STANDARDS.md
@@ -157,7 +157,7 @@ GroundwaterGPT/
 
 ## 🏗️ Whitebox Architecture
 
-GroundwaterGPT follows **whitebox principles** - all AI decisions are transparent and explainable.
+EAGLE follows **whitebox principles** — all AI-surfaced conclusions are traceable to deterministic routines over the local USGS monitoring archive.
 
 ### System Components
 
@@ -280,7 +280,7 @@ feature/your-feature
 | Document | Purpose |
 |----------|---------|
 | **[docs/README.md](docs/README.md)** | Documentation index for the maintained guide set |
-| **[GROUNDWATERGPT_TECHNICAL_OVERVIEW.md](docs/GROUNDWATERGPT_TECHNICAL_OVERVIEW.md)** | Manuscript-grounding technical description |
+| **[EAGLE_TECHNICAL_OVERVIEW.md](docs/EAGLE_TECHNICAL_OVERVIEW.md)** | Manuscript-grounding technical description |
 | **[MANUSCRIPT_DRAFT.md](docs/MANUSCRIPT_DRAFT.md)** | Submission-oriented draft centered on the actual novelty |
 | **[DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)** | Architecture and developer workflow |
 | **[ENGINEERING_STANDARDS.md](docs/ENGINEERING_STANDARDS.md)** | Testing philosophy and code quality rules |

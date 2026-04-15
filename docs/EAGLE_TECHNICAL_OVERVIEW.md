@@ -1,8 +1,10 @@
-# Data-Grounded Language Agents for Auditable Groundwater Trend Analysis from USGS Monitoring Records
+# EAGLE Technical Overview
 
-**Document purpose.** This is a low-level, audit-oriented description of the GroundwaterGPT system as it exists in the repository on 2026-04-14. It is intended as grounding material for a NotebookLM-backed manuscript workflow. Every architectural claim, numeric threshold, and data-flow assertion is tied to concrete files and line ranges in the code so that a downstream author or reviewer can verify it without re-reading the codebase from scratch.
+**Document purpose.** This is a low-level, audit-oriented description of EAGLE (Evidence-Aligned Groundwater Level Explorer) as it exists in the repository on 2026-04-15. It is intended as grounding material for a manuscript workflow. Every architectural claim, numeric threshold, and data-flow assertion is tied to concrete files and line ranges in the code so that a downstream author or reviewer can verify it without re-reading the codebase from scratch.
 
-**Central property the manuscript rests on.** GroundwaterGPT is primarily a **research utility for public groundwater data**, not an LLM demonstration. Every user-facing conclusion about groundwater behaviour is emitted by a **deterministic hydrogeologic pipeline** running directly over USGS CSVs. When a language model is invoked, it is bound to that pipeline by typed claim-and-evidence identifiers and cryptographic provenance hashes: the LLM narrates, it does not independently conclude, and any claim whose IDs are not in the deterministic-layer registry is dropped by the parser before the response is emitted. The benchmark passes at 100% without the LLM active at all.
+> Naming note: the repository directory, Python module names, and `GROUNDWATERGPT_*` environment-variable prefix predate the EAGLE rename and are intentionally preserved as stable interfaces. "EAGLE" is the user-facing system name; file paths and env vars in this document still read `GROUNDWATERGPT_*` because they do on disk.
+
+**Central property the manuscript rests on.** EAGLE is primarily a **research utility for public Florida groundwater data**, not an LLM demonstration. Every user-facing conclusion about groundwater behaviour is emitted by a **deterministic hydrogeologic pipeline** running directly over USGS CSVs. When a language model is invoked, it is bound to that pipeline by typed claim-and-evidence identifiers and cryptographic provenance hashes: the LLM narrates, it does not independently conclude, and any claim whose IDs are not in the deterministic-layer registry is dropped by the parser before the response is emitted. The benchmark passes at 100% without the LLM active at all.
 
 **Document structure.**
 
@@ -24,9 +26,9 @@
 
 ## 1. System purpose and scope
 
-### 1.1 What GroundwaterGPT is
+### 1.1 What EAGLE is
 
-GroundwaterGPT is a research-grade, audit-oriented question-answering and visualization platform for Florida groundwater monitoring data. Its domain is a fixed set of **44 USGS groundwater wells** (counted from [api/site_metadata.py](api/site_metadata.py) via `len(SITE_METADATA)`) distributed across five Florida counties (Miami-Dade: 15, Lee: 11, Collier: 6, Hendry: 4, Sarasota: 4) plus four generic "Florida" entries. Per-well water-level time series are stored as CSV under [data/](data/). Site-level hydrogeologic metadata recognizes seven aquifer labels — Biscayne Aquifer (15), Surficial Aquifer (7), Floridan Aquifer System (6), Tamiami Aquifer System (5), Florida Aquifer (4), Intermediate Aquifer System (4), Hawthorn Group (3) — and distinguishes confined vs unconfined settings, aquifer zone depth ranges, and well depths.
+EAGLE is a research-grade, audit-oriented question-answering and visualization platform for Florida groundwater monitoring data. Its domain is a fixed set of **44 USGS groundwater wells** (counted from [api/site_metadata.py](api/site_metadata.py) via `len(SITE_METADATA)`) distributed across five Florida counties (Miami-Dade: 15, Lee: 11, Collier: 6, Hendry: 4, Sarasota: 4) plus four generic "Florida" entries. Per-well water-level time series are stored as CSV under [data/](data/). Site-level hydrogeologic metadata recognizes seven aquifer labels — Biscayne Aquifer (15), Surficial Aquifer (7), Floridan Aquifer System (6), Tamiami Aquifer System (5), Florida Aquifer (4), Intermediate Aquifer System (4), Hawthorn Group (3) — and distinguishes confined vs unconfined settings, aquifer zone depth ranges, and well depths.
 
 The system answers three broad classes of questions:
 
@@ -36,7 +38,7 @@ The system answers three broad classes of questions:
 
 The design goal, stated across the code and in-repo docs, is **explainability**: every path that produces user-visible text also produces (a) a list of sources, (b) a per-claim citation record, (c) a verdict and confidence score, (d) a deterministic chart whenever the question can be backed by monitored well data, and (e) a reproducibility block (`research_provenance_v1`) with `code_commit`, `response_sha256`, per-CSV `data_snapshot` hashes, and config hashes. The LLM is an **enhancement**, not a **dependency** — the fallback path alone passes the benchmark suite to 68/68.
 
-### 1.2 What GroundwaterGPT is not
+### 1.2 What EAGLE is not
 
 It is not a hydrologic model — it does not solve Darcy's law, does not run groundwater-flow simulations, and does not couple surface-water and groundwater processes. Historical forecast code may still exist under [src/ml/](src/ml/), but it is explicitly **out of manuscript scope** and not wired into the serving API.
 
@@ -153,6 +155,13 @@ The `insights` block (`_build_chart_insights`) is capped at **five** bullets and
 ## 4. Language-model synthesis layer and the evidence-ID binding
 
 The LLM layer exists to phrase deterministic findings as a direct answer to a free-form question. It does not independently conclude about hydrogeology. The manuscript should describe it as a **typed-binding narration layer**: whatever it writes is bound back to `claim_id`s and `evidence_id`s produced by §3, and any produced claim whose IDs are not in the registry is dropped by the parser.
+
+The layer has two entry points, both active in the live demo:
+
+1. **Hybrid in-process narration** inside `_site_research_fallback`. Every keyword-routed chat branch (site / aquifer / multi-location / single-location / network-wide) now defaults `allow_llm_synthesis=True`, and the fallback posts a scoped hydrogeologist prompt to a local Ollama server (default `llama3.2` at `http://localhost:11434`) that narrates the deterministic numbers the pipeline has already produced. The narration is gated by `_llm_synthesis_enabled()` at [api/routes/_site_analysis.py](api/routes/_site_analysis.py), which reads the `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS` env var — set it to `1` and the response reverts to pure-deterministic output. The deterministic benchmark (`force_fallback_mode`) sets this flag; the live demo leaves it unset.
+2. **`DeepResearchAgent`** for open-ended `/api/research*` questions. This is the full evidence-bound research path described in §4.1–§4.6.
+
+Both entry points write through the same `claim_citations` and `evidence_items` registries and are sanitized by the same parser, so the claim-to-evidence invariant holds regardless of which side served the question.
 
 ### 4.1 `DeepResearchAgent` — phases and budget
 
@@ -373,7 +382,7 @@ A reviewer who wants to re-derive the Estero answer can check out `provenance.co
 
 ### 7.1 Chat surface
 
-`POST /api/chat` now routes through the same manuscript-safe contract as the research surface. Deterministic site / aquifer / location / network paths still execute first, but the previous separate quick-chat agent has been retired. For open-ended chat prompts, the route now uses the evidence-bound `DeepResearchAgent` at reduced depth and then emits the same `structured_response` and `provenance` blocks that the research endpoint returns. This keeps the conversational UI while avoiding a second, weaker narrative path.
+`POST /api/chat` routes through the same manuscript-safe contract as the research surface. The six keyword-routed branches (site / aquifer / multi-location / single-location / network-wide / KB fallback) each delegate to `_site_research_fallback(..., allow_llm_synthesis=True)`, which runs the deterministic pipeline and then — unless `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS` is set — hands the structured findings to a local Ollama model (`llama3.2` by default) for a short hydrogeologist narration. The previous separate quick-chat agent class has been retired; `/api/chat` and `/api/research` now share the same evidence registry and provenance envelope, differing only in whether the LLM layer is the lightweight in-process narrator or the full `DeepResearchAgent` phase loop. Every chat response carries `claim_citations`, `claim_verdicts`, `citation_integrity`, and `structured_response` regardless of which side served it.
 
 ### 7.2 Research workflow — plans, runs, drafts
 
@@ -442,28 +451,41 @@ The observable is ~15 lines — a `Set` of listeners plus `subscribe` / `getStat
 
 The benchmark suite [tests/benchmark/chat_eval_cases.json](tests/benchmark/chat_eval_cases.json) contains **68 cases** spanning three difficulty levels (L1, L2, L3) across routing modes (`fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`). Each case lists up to 20 `required_checks` (`has_report`, `has_sources`, `has_claim_citations`, `reports_net_change_ft`, `reports_annual_rate`, `has_aquifer_sections`, `has_cross_aquifer_comparison`, `states_data_period`, `response_has_citation_integrity`, …) and typed assertions (`expected_mode`, `min_wells`, `min_report_length`, …). The harness is [scripts/run_chat_benchmark.py](scripts/run_chat_benchmark.py).
 
-### 9.2 Current benchmark
+### 9.2 Current benchmark (deterministic column)
 
-Current [chat_benchmark_report.json](chat_benchmark_report.json):
+Current [chat_benchmark_report.json](chat_benchmark_report.json) with `force_fallback_mode=true` (hybrid narration disabled via `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS=1`):
 
 - **68 / 68 cases passing**, `overall_score = 1.000`.
 - Average citation coverage: **1.000** (threshold: 0.90).
 - Average claim-citation coverage: **1.000** (threshold: 0.90).
 - Average section-citation coverage: **1.000** (threshold: 0.90).
 - Average claim-verdict coverage: **1.000** (threshold: 0.95).
-- Average contradicted-claim rate: **0.010** (threshold: ≤0.40).
-- Average high-risk-claim rate: **0.010** (threshold: ≤0.50).
-- Maximum elapsed time: **3.412 s**.
-- Median elapsed time: **1.810 s**.
+- Average contradicted-claim rate: ≈ 0.010 (threshold: ≤0.40).
+- Average high-risk-claim rate: ≈ 0.010 (threshold: ≤0.50).
+- Median elapsed time: **4.173 s**.
+- Maximum elapsed time: **8.070 s**.
 - Latency measurement context: FastAPI in-process `TestClient`; deployed client-server latency will be higher and should be measured separately.
 - Thresholds: `min_overall_score=0.85`, `min_case_score=0.80`, `min_avg_citation_coverage=0.90`, `max_response_seconds=120`, `max_median_seconds=5.0`.
-- Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`. The **LLM agent path is not in the exercised set**.
+- Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`. With `force_fallback_mode` set, the LLM synthesis layer is skipped by design so the reproducibility argument rests only on the deterministic layer.
 
-The key implication for the manuscript: the headline ("68/68 benchmark pass, 100% citation coverage, 100% claim-verdict coverage, 1.810 s median latency") is a statement about **the deterministic layer**. That is the layer the reproducibility argument rests on. The framing must be explicit.
+The key implication for the manuscript: the headline ("68/68 benchmark pass, 100% citation coverage, 100% claim-verdict coverage, ~4.17 s median latency") is a statement about **the deterministic layer**. That is the layer the reproducibility argument rests on. The framing must be explicit.
 
-### 9.3 Benchmarks the paper should add
+### 9.3 Current live-agent smoke benchmark
 
-The repository now includes [scripts/run_agent_benchmark.py](scripts/run_agent_benchmark.py), which routes the same 68 questions through `DeepResearchAgent` using the live-agent threshold file. Stable full-suite LLM-path results have not been established yet. A reviewer would want that table reported separately from the deterministic benchmark: same questions, same check list, plus agent-routed rate, structured-response coverage, provenance coverage, citation coverage, and latency. This is probably the single most valuable evaluation work the author could do before making strong claims about language-model synthesis quality.
+The repository now includes [scripts/run_agent_benchmark.py](scripts/run_agent_benchmark.py), which routes the same benchmark case format through `DeepResearchAgent` using the live-agent threshold file. A bounded local smoke run was cached in [agent_benchmark_report.json](agent_benchmark_report.json) using Ollama `llama3.2` and `--limit 1`.
+
+- Cases: **1 / 68** shared benchmark cases, routed through `deep_research`.
+- Agent-routed rate: **1.000**.
+- Structured-response coverage: **1.000**.
+- Provenance coverage: **1.000**.
+- Citation coverage and claim-verdict coverage: **1.000**.
+- Overall score: **0.300**.
+- Median / max latency: **495.294 s**.
+- Threshold pass: **false** (`overall_score < 0.850`, case score below threshold, max latency above 8 s).
+
+This smoke result is useful as an architectural check: the live `DeepResearchAgent` path can emit the typed audit envelope. It is not a manuscript-quality LLM-performance claim. Stable full-suite LLM-path results have not been established yet and should be reported separately from the deterministic benchmark if the paper later makes strong claims about language-model synthesis quality.
+
+### 9.4 Benchmarks the paper should add
 
 [scripts/run_retrieval_precision.py](scripts/run_retrieval_precision.py) runs a KB retrieval precision benchmark with a configurable top-k and a minimum average precision threshold (default 0.90). Its cases live in a companion JSON file. This is the right starting point for a Methods-section claim about KB retrieval quality; the paper should report precision@1, precision@5, and MRR across those cases.
 
@@ -488,7 +510,7 @@ The repository now includes [scripts/run_agent_benchmark.py](scripts/run_agent_b
 - **Changepoints and clusters are screening tools.** The two-segment OLS residual-improvement screen and the standardized-feature k-means grouping are reproducible, but they are **not** formal regime-shift tests or connectivity inferences. The report wording is conservative; the paper should be too.
 - **Risk classification thresholds are engineering defaults.** `high` ≥ 66%, `moderate` ≥ 33% (or ≥ 20% mostly-confined), else `low`. No empirical calibration in the repo.
 - **Divergent pairs are a screening heuristic.** Two wells can diverge for reasons unrelated to the aquifer system.
-- **LLM layer is under-evaluated.** The runner exists, but no stable full-suite LLM-path benchmark has been reported.
+- **LLM layer is under-evaluated.** The runner exists and a one-case live smoke has been cached, but no stable full-suite LLM-path benchmark has been reported.
 - **Reproducibility of the LLM path.** The LLM is stochastic; running the same query twice produces subtly different phrasing. Structured-response sanitization guarantees no *new* unbacked claims but cannot guarantee identical wording. The deterministic portion **is** reproducible and hash-verifiable.
 - **Scope is fixed and narrow.** 44 wells, 5 counties, 7 aquifer labels. Adding wells requires a metadata edit.
 - **Keyword routing is brittle at the edges.** Novel phrasings may miss a specialized branch and fall to the LLM path, where the deterministic guarantees no longer apply.
@@ -507,13 +529,13 @@ The repository now includes [scripts/run_agent_benchmark.py](scripts/run_agent_b
 - A deterministic hydrogeologic reference pipeline that converts USGS monitoring records into cited, chart-backed answers with cryptographic provenance.
 - A typed binding between language-model synthesis and that pipeline — every factual sentence in the final report is tied to a registered `claim_id` and `evidence_id`, and unbacked claims are sanitized out by construction.
 - A cross-path chart-parity invariant — a single chart builder serves both deterministic and LLM paths, verified by a streaming regression test.
-- An evaluation harness showing 68/68 cases passing, 100% average citation coverage, 100% claim-verdict coverage, and 1.810 s median latency for the deterministic layer.
+- An evaluation harness showing 68/68 cases passing, 100% average citation coverage, 100% claim-verdict coverage, and 4.173 s median latency for the deterministic layer.
 - A reproducibility artefact (`research_provenance_v1`) that lets a reviewer deterministically re-derive the deterministic portion of any answer.
 
 ### 10.5 What the paper should not claim without additional work
 
 - Generalization beyond the monitored network.
-- LLM synthesis quality (runner exists, but stable full-suite results are not yet reported).
+- LLM synthesis quality beyond the cached one-case smoke run.
 - Calibrated risk classification.
 - Confidence-interval-quality trend estimates.
 - Production readiness.
@@ -610,8 +632,9 @@ After this pass, the largest remaining items are methodological rather than arch
 - Aquifer distribution: Biscayne 15, Surficial 7, Floridan 6, Tamiami 5, Florida 4, Intermediate 4, Hawthorn 3.
 - USGS data date range across sampled CSVs: **1994-01-01 through 2026-04-05**; 40 canonical CSV files under [data/](data/), daily cadence.
 - Knowledge base: ChromaDB persistent store, `BAAI/bge-small-en-v1.5` embeddings (384-dim), `chroma.sqlite3` ≈ 156 MB.
-- Benchmark (deterministic layer): **68 / 68 passing**, overall score **1.000**, average citation coverage **1.000**, average claim-citation coverage **1.000**, average section-citation coverage **1.000**, average claim-verdict coverage **1.000**, average contradicted-claim rate **0.010**, average high-risk-claim rate **0.010**, median latency **1.810 s**, max latency **3.412 s**. Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`.
-- Unit tests: **210 passing** as of 2026-04-14.
+- Benchmark (deterministic layer): **68 / 68 passing**, overall score **1.000**, average citation coverage **1.000**, average claim-citation coverage **1.000**, average section-citation coverage **1.000**, average claim-verdict coverage **1.000**, average contradicted-claim rate **0.010**, average high-risk-claim rate **0.010**, median latency **4.173 s**, max latency **8.070 s**. Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`.
+- Benchmark (bounded live-agent smoke): **1 / 68 cases**, Ollama `llama3.2`, mode `deep_research`, overall score **0.300**, agent-routed rate **1.000**, structured-response coverage **1.000**, provenance coverage **1.000**, citation coverage **1.000**, claim-verdict coverage **1.000**, median/max latency **495.294 s**, threshold pass **false**.
+- Unit tests: **181 passing** as of 2026-04-15.
 - Citation thresholds: `MIN_CLAIM_CITATION_COVERAGE = 0.90`, `MIN_SECTION_CITATION_COVERAGE = 0.90`.
 - Insights bullet cap: 5 (ordered: highlighted wells → cohort trend + risk → fastest decline → strongest rise → largest divergence).
 - Changepoint screen: two-segment OLS, min 12 monthly bins/side, improvement ≥ 20%, confidence labels `high ≥ 0.45 / moderate ≥ 0.30 / low ≥ 0.20`.
@@ -626,4 +649,4 @@ After this pass, the largest remaining items are methodological rather than arch
 
 ---
 
-*End of document. Intended use: upload to NotebookLM as a grounding source for manuscript drafting under the working title* "Data-Grounded Language Agents for Auditable Groundwater Trend Analysis from USGS Monitoring Records." *Every numeric claim is verifiable against the cited file path or by running the benchmark harness locally. Remaining cleanup decisions in §11 should be resolved before submission so that the repository a reviewer sees matches the system the manuscript describes.*
+*End of document. Intended use: manuscript grounding source for* "EAGLE: Evidence-Aligned Groundwater Level Explorer for Auditable Florida USGS Groundwater Trend Analysis." *Every numeric claim is verifiable against the cited file path or by running the benchmark harness locally. Remaining cleanup decisions in §11 should be resolved before submission so that the repository a reviewer sees matches the system the manuscript describes.*

@@ -1,4 +1,4 @@
-# GroundwaterGPT Development Guide
+# EAGLE Development Guide
 
 **Last Updated:** February 27, 2026
 **Purpose:** Engineering specification for an agentic deep-research platform for groundwater science, built on verified USGS data, modular AI agents, and interactive data visualization.
@@ -142,7 +142,7 @@ The system is organized into five layers. Data flows downward for queries and up
 ### Directory Structure
 
 ```
-GroundwaterGPT/
+EAGLE/
 ├── api/                          # FastAPI backend
 │   ├── main.py                   #   REST API endpoint registration
 │   └── routes/research_workflow.py # Research plan/run/draft endpoints
@@ -1241,7 +1241,7 @@ python dashboard.py
 
 - [README.md](README.md)
 - [docs/README.md](docs/README.md)
-- [GROUNDWATERGPT_TECHNICAL_OVERVIEW.md](GROUNDWATERGPT_TECHNICAL_OVERVIEW.md)
+- [EAGLE_TECHNICAL_OVERVIEW.md](EAGLE_TECHNICAL_OVERVIEW.md)
 
 ## License
 
@@ -1375,7 +1375,7 @@ This project is designed as an extensible foundation for agentic groundwater res
 
 The state of the art in agentic deep research has converged on the **orchestrator-worker pattern** (Anthropic, DeerFlow, GPT-Researcher). Key findings:
 
-| Finding | Source | Implication for GroundwaterGPT |
+| Finding | Source | Implication for EAGLE |
 |---------|--------|-------------------------------|
 | Token usage explains 80% of research quality variance | Anthropic (2025) | Multi-agent architecture is essential for complex groundwater questions |
 | Multi-agent outperforms single-agent by 90.2% | Anthropic BrowseComp eval | Session 13 should implement full orchestrator-worker decomposition |
@@ -1413,7 +1413,7 @@ The most active research frontier (2025-2026) is training search agents via RL:
 
 From the reference PDFs in `resources/pdfs/references/`:
 
-| Paper/System | Key Pattern | Application to GroundwaterGPT |
+| Paper/System | Key Pattern | Application to EAGLE |
 |-------------|-------------|-------------------------------|
 | **GAIA** (Harsuko et al., 2026) | Agentic AI for geothermal analytics — automated field development with domain tools | Model for our groundwater analytics agent: domain-specific tools + LLM reasoning |
 | **WaterGPT** (Ren et al., 2024) | LLM for water/wastewater management tasks | Validates our approach: domain-adapted LLM + specialized tools for hydrology |

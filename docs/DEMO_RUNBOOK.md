@@ -1,4 +1,4 @@
-# GroundwaterGPT Demo Runbook
+# EAGLE Demo Runbook
 
 **Last Updated:** April 15, 2026
 

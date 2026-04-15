@@ -4,7 +4,7 @@ This repository keeps a small set of living documents for the manuscript-facing 
 
 ## Core Docs
 
-- [GROUNDWATERGPT_TECHNICAL_OVERVIEW.md](GROUNDWATERGPT_TECHNICAL_OVERVIEW.md)
+- [EAGLE_TECHNICAL_OVERVIEW.md](EAGLE_TECHNICAL_OVERVIEW.md)
   Audit-oriented system description for manuscript and reviewer use.
 - [MANUSCRIPT_DRAFT.md](MANUSCRIPT_DRAFT.md)
   Submission-oriented manuscript draft focused on the Florida USGS data pipeline, claim/evidence binding, and cross-cohort presentation.
