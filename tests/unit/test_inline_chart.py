@@ -129,7 +129,7 @@ class TestBuildChartPayload:
         assert len(chart["insights"]) == 5
         assert chart["explainability"]["summary"]
         assert chart["explainability"]["how_to_read"]
-        assert chart["explainability"]["student_prompts"]
+        assert chart["explainability"]["suggested_questions"]
         assert "LLM" in chart["explainability"]["llm_role"]
         assert any("Highlighted wells mark" in insight for insight in chart["insights"])
         assert any(

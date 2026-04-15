@@ -249,11 +249,11 @@ export default function AgentChart({ chartData }) {
               </p>
             )}
 
-            {Array.isArray(explainability.student_prompts) && explainability.student_prompts.length > 0 && (
+            {Array.isArray(explainability.suggested_questions) && explainability.suggested_questions.length > 0 && (
               <div>
                 <p className="mb-1 font-semibold text-slate-700">Questions to ask next</p>
                 <ul className="space-y-1">
-                  {explainability.student_prompts.map((item, idx) => (
+                  {explainability.suggested_questions.map((item, idx) => (
                     <li key={idx}>{item}</li>
                   ))}
                 </ul>

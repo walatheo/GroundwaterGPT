@@ -57,7 +57,7 @@ Point out:
 - The chart uses the same deterministic series and trend values as the report.
 - The y-axis is inverted because the measured variable is depth to water below land surface.
 - The chart explanation panel translates the plotted monthly means, highlighted wells,
-  cohort average, and trend overlays into a student-friendly reading guide.
+  cohort average, and trend overlays into an interpretation guide.
 
 ### Step 3: Show Cross-Cohort Novelty
 
@@ -174,6 +174,9 @@ In the app, show these surfaces in order:
 - Chart panel: point to monthly depth-to-water series, cohort average, trend overlays, and highlighted wells.
 - Chart explainability panel: show that the LLM receives bounded chart context and
   can explain how to read the data without inventing new measurements.
+- Interpretation brief: ask "Interpret the Estero groundwater chart for a sponsor"
+  and show the chart context, key observations, USGS references, limitations, and
+  follow-up questions.
 - Source/citation panel: point to USGS-backed sources and claim citations.
 - Any provenance/details panel: point to response hashes, method flags, and data snapshot references if visible.
 - Research workflow, if time allows: plan -> run -> draft as a reproducibility workflow rather than a scientific proof.
@@ -217,6 +220,22 @@ Expected:
 - `claim_verdict_summary` should be present.
 - `structured_response.schema_version` should be `evidence_response_v1`.
 - `provenance.schema_version` should be `research_provenance_v1`.
+
+### Fast Interpretation Query
+
+```bash
+curl -s http://127.0.0.1:8000/api/interpret \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"Interpret the Estero groundwater chart for a sponsor.","audience":"sponsor","use_llm":false}' \
+  | jq '{mode, interpretation_response, chart: {title: .chart.title, insights: .chart.insights}}'
+```
+
+Expected:
+
+- `interpretation_response.schema_version` should be `interpretation_response_v1`.
+- `grounding_status.uses_chart_context` and `grounding_status.uses_usgs_data` should be true.
+- `grounding_status.invented_measurements_allowed` should be false.
+- `data_references` should point back to USGS NWIS wells.
 
 ### Cross-Cohort Query
 

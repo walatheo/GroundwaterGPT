@@ -10,6 +10,12 @@ benchmark-llm-smoke:
 benchmark-chart-llm:
 	python3 scripts/run_chart_explainability_benchmark.py --enforce-thresholds
 
+benchmark-interpretation:
+	python3 scripts/run_interpretation_benchmark.py --disable-llm --enforce-thresholds
+
+benchmark-interpretation-llm:
+	python3 scripts/run_interpretation_benchmark.py --enforce-thresholds
+
 benchmark-llm:
 	python3 scripts/run_agent_benchmark.py --output agent_benchmark_report.json
 

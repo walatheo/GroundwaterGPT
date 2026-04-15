@@ -1,0 +1,65 @@
+[
+  {
+    "id": "INT_estero_chart_sponsor",
+    "level": "core",
+    "question": "Interpret the Estero groundwater chart for a sponsor.",
+    "audience": "sponsor",
+    "max_seconds": 75,
+    "expected_terms": ["Estero", "USGS", "trend", "chart"],
+    "expected_concepts": ["monthly mean", "cohort average", "trend line"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_lee_county_fastest_change",
+    "level": "core",
+    "question": "Which Lee County wells are changing fastest and what should I notice?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["Lee", "USGS", "well"],
+    "expected_concepts": ["trend line", "cohort average"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_l581_l588_compare",
+    "level": "core",
+    "question": "Compare Lee L-581 and Lee L-588 and explain why the chart matters.",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_site_ids": ["263532081592201", "262538082045701"],
+    "expected_terms": ["Lee L-581", "Lee L-588", "Hawthorn", "Upper Floridan"],
+    "expected_concepts": ["confined aquifer"],
+    "min_data_references": 2
+  },
+  {
+    "id": "INT_l588_source",
+    "level": "source",
+    "question": "What does Lee L-588 show and where did the data come from?",
+    "audience": "sponsor",
+    "max_seconds": 75,
+    "expected_site_ids": ["262538082045701"],
+    "expected_terms": ["Lee L-588", "USGS", "Upper Floridan"],
+    "expected_concepts": ["confined aquifer"],
+    "min_data_references": 1
+  },
+  {
+    "id": "INT_biscayne_chart",
+    "level": "aquifer",
+    "question": "Interpret the Biscayne Aquifer monitoring trends in plain language.",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["Biscayne", "USGS", "trend"],
+    "expected_concepts": ["monthly mean", "trend line"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_causation_guardrail",
+    "level": "advanced",
+    "question": "For the Estero chart, does this falling groundwater trend prove overpumping?",
+    "audience": "technical",
+    "max_seconds": 75,
+    "expected_terms": ["trend", "observed", "model"],
+    "expected_concepts": ["trend line"],
+    "must_not_contain": ["proves overpumping", "definitely caused by"],
+    "min_data_references": 1
+  }
+]

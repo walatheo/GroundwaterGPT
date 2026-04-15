@@ -115,6 +115,19 @@ export async function compareSites(siteIds) {
   return parseApiResponse(response, 'Failed to compare sites')
 }
 
+export async function sendInterpretationQuery(question, { audience = 'general', useLlm = false } = {}) {
+  const response = await apiFetch(
+    `${API_BASE}/interpret`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, audience, use_llm: useLlm }),
+    },
+    'Failed to interpret groundwater data'
+  )
+  return parseApiResponse(response, 'Failed to interpret groundwater data')
+}
+
 // ---------------------------------------------------------------------------
 // Chart / Visualization endpoints (Session 8)
 // ---------------------------------------------------------------------------

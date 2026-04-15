@@ -1,0 +1,12 @@
+{
+  "min_overall_score": 0.85,
+  "min_case_score": 0.75,
+  "min_grounding_coverage": 0.95,
+  "min_chart_context_coverage": 0.85,
+  "min_data_reference_coverage": 0.85,
+  "min_suggested_question_coverage": 0.85,
+  "max_fake_measurement_policy_fail_rate": 0.0,
+  "max_median_seconds": 45.0,
+  "max_response_seconds": 90.0,
+  "notes": "Evidence-bound interpretation benchmark for chart/data interaction use cases."
+}

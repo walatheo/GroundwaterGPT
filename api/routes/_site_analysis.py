@@ -582,7 +582,7 @@ def _build_chart_explainability(
     highlighted_keys: set[str],
     well_count: int,
 ) -> dict:
-    """Build learner-facing chart context for UI and LLM narration."""
+    """Build chart interpretation context for UI and LLM narration."""
     risk_level = str(cross_well.get("risk_level", "unknown")).lower()
     cohort_trend = str(cross_well.get("cohort_trend", "unknown")).lower()
     highlighted_count = len(highlighted_keys)
@@ -610,7 +610,7 @@ def _build_chart_explainability(
         "Guardrail: the LLM may explain these fields but must not invent new measurements.",
     ]
 
-    student_prompts = [
+    suggested_questions = [
         "Which well is changing fastest, and is that change rising or falling?",
         "Do shallow and deep aquifer wells move together or diverge?",
         "How does the cohort average compare with the highlighted wells?",
@@ -626,11 +626,11 @@ def _build_chart_explainability(
         "how_to_read": how_to_read,
         "data_contract": data_contract,
         "llm_role": (
-            "The LLM receives this chart context as a bounded teaching brief. "
+            "The LLM receives this chart context as a bounded interpretation brief. "
             "It can translate the visual evidence into plain language, but the "
             "numbers, trend labels, and risk flags come from deterministic code."
         ),
-        "student_prompts": student_prompts,
+        "suggested_questions": suggested_questions,
     }
 
 
@@ -1490,7 +1490,7 @@ def _site_research_fallback(
                 )
 
             prompt = (
-                f"Hydrogeologist and teacher: synthesize USGS data for {location_name}, "
+                f"Hydrogeologist and chart interpreter: synthesize USGS data for {location_name}, "
                 "FL in 2 short paragraphs.\n\n"
                 + "\n".join(aq_data_lines)
                 + f"\n\nCohort: {synthesis_data['n_wells']} wells, "

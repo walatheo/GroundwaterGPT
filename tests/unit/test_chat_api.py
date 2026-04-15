@@ -303,6 +303,69 @@ class TestChatEndpoint:
 
 
 # ===================================================================
+# POST /api/interpret endpoint integration tests
+# ===================================================================
+
+
+class TestInterpretEndpoint:
+    """Integration tests for evidence-bound chart/data interpretation."""
+
+    def setup_method(self):
+        from api.routes import chat as chat_routes
+
+        chat_routes._INTERPRETATION_CACHE.clear()
+
+    def test_interpret_returns_grounded_contract(self):
+        """Interpretation response should expose chart context and USGS references."""
+        resp = client.post(
+            "/api/interpret",
+            json={
+                "question": "Interpret the Estero groundwater chart for a sponsor.",
+                "audience": "sponsor",
+                "use_llm": False,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        interpretation = body["interpretation_response"]
+        grounding = interpretation["grounding_status"]
+
+        assert body["mode"].startswith("interpret_")
+        assert interpretation["schema_version"] == "interpretation_response_v1"
+        assert interpretation["audience"] == "sponsor"
+        assert interpretation["chart_context"]["summary"]
+        assert interpretation["chart_context"]["how_to_read"]
+        assert interpretation["data_references"]
+        assert interpretation["follow_up_questions"]
+        assert grounding["uses_chart_context"] is True
+        assert grounding["uses_usgs_data"] is True
+        assert grounding["invented_measurements_allowed"] is False
+        assert grounding["llm_requested"] is False
+        assert grounding["cache_hit"] is False
+
+    def test_interpret_empty_question_returns_400(self):
+        """Blank interpretation questions are rejected."""
+        resp = client.post("/api/interpret", json={"question": ""})
+        assert resp.status_code == 400
+
+    def test_interpret_repeated_question_uses_cache(self):
+        """Repeated sponsor-demo prompts should be served from the short-lived cache."""
+        payload = {
+            "question": "Interpret Lee County groundwater trends for a demo.",
+            "audience": "sponsor",
+            "use_llm": False,
+        }
+
+        first = client.post("/api/interpret", json=payload)
+        second = client.post("/api/interpret", json=payload)
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["interpretation_response"]["grounding_status"]["cache_hit"] is False
+        assert second.json()["interpretation_response"]["grounding_status"]["cache_hit"] is True
+
+
+# ===================================================================
 # POST /api/research  endpoint integration tests
 # ===================================================================
 

@@ -15,7 +15,7 @@ The application has four active layers:
 | Layer | Files | Responsibility |
 | --- | --- | --- |
 | Frontend | `frontend/src/` | React dashboard, map, chart panels, chat, research workflow UI |
-| API | `api/main.py`, `api/routes/` | FastAPI route registration, deterministic chat routing, site/well/data endpoints |
+| API | `api/main.py`, `api/routes/` | FastAPI route registration, deterministic chat routing, interpretation, site/well/data endpoints |
 | Analysis | `api/routes/_site_analysis.py`, `api/routes/_research_workbench.py` | Monthly aggregation, trend summaries, cohort comparison, chart payloads |
 | Agent and evidence | `src/agent/`, `api/routes/_citation.py`, `api/routes/_provenance.py` | Knowledge search, evidence-linked synthesis, citation metrics, provenance envelopes |
 
@@ -25,6 +25,13 @@ deterministic text, chart, and evidence payloads. LLM output is allowed to
 summarize and organize the evidence, but measured groundwater facts come from the
 deterministic layer.
 
+The sponsor-facing LLM surface is now the chart/data interpretation path:
+`POST /api/interpret` returns an `interpretation_response_v1` object with chart
+context, key observations, USGS data references, evidence, suggested follow-up
+questions, explicit limitations, and grounding status. It can request the local
+LLM narration layer with `use_llm=true`, or run in fast deterministic mode with
+`use_llm=false` for classroom/demo interactions where latency matters.
+
 ## Repository Map
 
 ```text
@@ -33,7 +40,7 @@ api/
   helpers.py                   Shared CSV loading and summary stats
   site_metadata.py             Site metadata loader from config/usgs_sites.json
   routes/
-    chat.py                    Chat and streaming endpoints
+    chat.py                    Chat, interpretation, research, and streaming endpoints
     data.py                    Site data, heatmap, comparison endpoints
     wells.py                   Well catalogue endpoint
     knowledge.py               Knowledge-base status and ingestion endpoints
@@ -80,6 +87,9 @@ Use these paths when deciding whether a file is still part of the system:
 | Frontend | `cd frontend && npm run dev` | Vite dev server |
 | Unit tests | `make test` | Runs `GROUNDWATERGPT_SKIP_AGENT_INIT=1 python3 -m pytest tests/unit/ -q` |
 | Fallback benchmark | `make benchmark` | Runs deterministic chat benchmark with thresholds |
+| Chart LLM benchmark | `make benchmark-chart-llm` | Runs the bounded local-LLM chart explanation smoke |
+| Interpretation benchmark | `make benchmark-interpretation` | Runs the fast interpretation question bank with thresholds |
+| Interpretation LLM benchmark | `make benchmark-interpretation-llm` | Runs the same question bank with local LLM synthesis enabled |
 | E2E tests | `cd frontend && npm run test:e2e` | Requires app servers to be available per Playwright config |
 
 ## Environment
@@ -124,6 +134,8 @@ Common commands:
 make demo
 make test
 make benchmark
+make benchmark-chart-llm
+make benchmark-interpretation
 cd frontend && npm run build
 cd frontend && npm run test:e2e
 ```
@@ -150,6 +162,13 @@ Current test groups:
 
 When adding tests, prefer stable local fixtures over network calls. If a test
 needs a live service, mark it clearly and skip when that service is unavailable.
+
+Interpretation benchmark cases live in
+`tests/benchmark/interpretation_eval_cases.json`; thresholds live in
+`tests/benchmark/interpretation_eval_thresholds.json`. Keep the cases phrased as
+real chart/data interpretation prompts, not generic tutoring prompts. Education
+can be a use case, but the product contract is evidence-bound data
+interpretation.
 
 ## Data And Generated Artifacts
 

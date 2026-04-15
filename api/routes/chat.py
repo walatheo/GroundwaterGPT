@@ -2,16 +2,19 @@
 
 Endpoints:
  - POST /api/chat             -- Conversational agent
+ - POST /api/interpret        -- Evidence-bound chart/data interpretation
  - POST /api/research         -- Deep iterative research (blocking)
  - POST /api/research/stream  -- Deep iterative research with SSE progress stream
  - GET  /api/chat/status      -- System health for chat subsystem
 """
 
+import copy
 import json
 import logging
 import math
 import os
 import queue
+import re
 import threading
 import traceback
 from datetime import datetime, timezone
@@ -93,6 +96,8 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 _MONTHLY_SITE_CACHE: dict[str, pd.DataFrame | None] = {}
+_INTERPRETATION_CACHE: dict[tuple[str, str, bool], dict[str, Any]] = {}
+_INTERPRETATION_CACHE_MAX = 24
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -226,6 +231,23 @@ def _env_flag(name: str, default: bool = False) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _payload_bool(value: Any, *, default: bool) -> bool:
+    """Parse a request-body boolean without treating arbitrary strings as true."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return default
 
 
 def _fallback_response(query: str) -> dict:
@@ -1143,6 +1165,145 @@ def _augment_chat_payload(payload: dict[str, Any], *, question: str) -> dict[str
     return payload
 
 
+def _build_interpretation_response(
+    payload: dict[str, Any],
+    *,
+    question: str,
+    audience: str = "general",
+) -> dict[str, Any]:
+    """Build an evidence-bound interpretation object from a grounded chat payload."""
+    chart = payload.get("chart") or {}
+    explainability = chart.get("explainability") or {}
+    wells = payload.get("wells") or []
+    claim_citations = payload.get("claim_citations") or []
+    sources = payload.get("sources") or []
+
+    key_observations: list[str] = []
+    for item in chart.get("insights") or []:
+        if isinstance(item, str) and item.strip():
+            key_observations.append(item.strip())
+    for claim in claim_citations[:4]:
+        claim_text = str(claim.get("claim", "")).strip()
+        if claim_text and claim_text not in key_observations:
+            key_observations.append(claim_text)
+
+    concepts: list[str] = []
+    concept_terms = [
+        ("monthly mean", "monthly mean"),
+        ("cohort average", "cohort average"),
+        ("trend", "trend line"),
+        ("confined", "confined aquifer"),
+        ("unconfined", "unconfined aquifer"),
+        ("depth-to-water", "depth to water"),
+        ("saltwater", "saltwater intrusion risk"),
+    ]
+    text_blob = " ".join(
+        [
+            str(payload.get("response", "")),
+            str(explainability.get("summary", "")),
+            " ".join(str(item) for item in explainability.get("how_to_read", []) or []),
+        ]
+    ).lower()
+    for needle, label in concept_terms:
+        if needle in text_blob and label not in concepts:
+            concepts.append(label)
+
+    evidence = []
+    for claim in claim_citations[:8]:
+        for citation in claim.get("citations", []) or []:
+            url = str(citation.get("url") or citation.get("source") or "").strip()
+            if url:
+                evidence.append(
+                    {
+                        "claim_id": claim.get("claim_id"),
+                        "url": url,
+                        "trust_level": citation.get("trust_level", "unknown"),
+                        "verified": bool(citation.get("verified", False)),
+                    }
+                )
+    if not evidence:
+        evidence = [
+            {
+                "claim_id": None,
+                "url": str(source),
+                "trust_level": "unknown",
+                "verified": False,
+            }
+            for source in sources[:5]
+        ]
+
+    explanation = payload.get("llm_synthesis") or explainability.get("summary") or ""
+    if not explanation:
+        explanation = str(payload.get("response", "")).split("\n\n", 1)[0]
+    if re.search(r"\b(prove|caus|overpump|pumping|why)\b", question, re.I):
+        causation_note = (
+            "The chart shows observed monitoring-record patterns; it does not "
+            "prove a single cause such as overpumping without pumping, rainfall, "
+            "recharge, and groundwater-flow model context."
+        )
+        if causation_note not in explanation:
+            explanation = f"{explanation} {causation_note}".strip()
+        if causation_note not in key_observations:
+            key_observations.insert(0, causation_note)
+
+    follow_up_questions = list(
+        explainability.get("suggested_questions") or explainability.get("follow_up_questions") or []
+    )
+    if not follow_up_questions:
+        follow_up_questions = [
+            "Which highlighted well is changing fastest, and why might that matter?",
+            "Do nearby wells in different aquifers move together or diverge?",
+            "What outside data would help test a possible cause, such as pumping or rainfall?",
+        ]
+
+    return {
+        "schema_version": "interpretation_response_v1",
+        "question": question,
+        "audience": audience,
+        "interpretation": explanation,
+        "chart_context": {
+            "title": chart.get("title"),
+            "summary": explainability.get("summary"),
+            "how_to_read": explainability.get("how_to_read", []),
+            "data_contract": explainability.get("data_contract", []),
+            "llm_role": explainability.get("llm_role"),
+        },
+        "key_observations": key_observations[:6],
+        "groundwater_concepts": concepts[:6],
+        "data_references": [
+            {
+                "site_id": well.get("site_id") or well.get("id"),
+                "well_name": well.get("name"),
+                "aquifer": well.get("aquifer"),
+                "county": well.get("county"),
+                "source": "USGS NWIS",
+                "url": _usgs_site_url(str(well.get("site_id") or well.get("id"))),
+            }
+            for well in wells[:8]
+            if well.get("site_id") or well.get("id")
+        ],
+        "evidence": evidence[:10],
+        "follow_up_questions": follow_up_questions[:4],
+        "limits": [
+            (
+                "This is an interpretation of observed monitoring records, "
+                "not a groundwater-flow model."
+            ),
+            "Trend lines are screening summaries over available records, not forecasts.",
+            "The LLM may explain deterministic outputs but must not invent measurements.",
+        ],
+        "grounding_status": {
+            "uses_chart_context": bool(explainability),
+            "uses_usgs_data": bool(wells or sources or claim_citations),
+            "invented_measurements_allowed": False,
+            "has_llm_synthesis": bool(payload.get("llm_synthesis")),
+            "citation_integrity_passed": bool(
+                (payload.get("citation_integrity") or {}).get("passed", False)
+            ),
+        },
+    }
+
+
 def _chart_from(result: Optional[dict], *, path: str) -> Optional[dict]:
     """Single source of truth for extracting chart payloads from result dicts."""
     chart = None if not result else result.get("chart")
@@ -1197,6 +1358,10 @@ def chat_endpoint(query: dict):
     user_query = raw_message.strip() if isinstance(raw_message, str) else ""
     if not user_query:
         raise HTTPException(status_code=400, detail="Message is required")
+    allow_llm_synthesis = _payload_bool(
+        query.get("allow_llm_synthesis"),
+        default=True,
+    )
 
     def _finalize(response_payload: dict[str, Any]) -> dict[str, Any]:
         enriched = _enrich_with_usgs_data(user_query, response_payload)
@@ -1210,6 +1375,7 @@ def chat_endpoint(query: dict):
             user_query,
             named_sites,
             label,
+            allow_llm_synthesis=allow_llm_synthesis,
         )
         return _finalize(
             _build_chat_payload(
@@ -1244,6 +1410,7 @@ def chat_endpoint(query: dict):
             user_query,
             aq_sites,
             aq_display_name,
+            allow_llm_synthesis=allow_llm_synthesis,
         )
         return _finalize(
             _build_chat_payload(
@@ -1281,6 +1448,7 @@ def chat_endpoint(query: dict):
                 user_query,
                 multi_sites,
                 multi_label,
+                allow_llm_synthesis=allow_llm_synthesis,
             )
             return _finalize(
                 _build_chat_payload(
@@ -1317,6 +1485,7 @@ def chat_endpoint(query: dict):
             loc_name,
             ref_lat=ref_lat,
             ref_lng=ref_lng,
+            allow_llm_synthesis=allow_llm_synthesis,
         )
         wells_payload = _build_wells_payload(sites)
         response_dict = _build_chat_payload(
@@ -1352,6 +1521,7 @@ def chat_endpoint(query: dict):
                 user_query,
                 nw_sites,
                 "Florida monitoring network",
+                allow_llm_synthesis=allow_llm_synthesis,
             )
             return _finalize(
                 _build_chat_payload(
@@ -1446,6 +1616,70 @@ def chat_endpoint(query: dict):
 
     # --- Fallback ---
     return _finalize(_ground_fallback_chat_response(_fallback_response(user_query)))
+
+
+# ---------------------------------------------------------------------------
+# POST /api/interpret -- evidence-bound chart/data interpretation endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post("/interpret")
+def interpret_endpoint(query: dict):
+    """Interpret groundwater chart/data context without making the LLM the source."""
+    raw_question = query.get("question", query.get("message", ""))
+    question = raw_question.strip() if isinstance(raw_question, str) else ""
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required")
+
+    audience_raw = query.get("audience", "general")
+    audience = audience_raw.strip() if isinstance(audience_raw, str) else "general"
+    use_llm = _payload_bool(
+        query.get("use_llm"),
+        default=not _payload_bool(query.get("fast"), default=False),
+    )
+    cache_key = (" ".join(question.lower().split()), audience.lower(), use_llm)
+    cached = _INTERPRETATION_CACHE.get(cache_key)
+    if cached is not None:
+        cached_payload = copy.deepcopy(cached)
+        grounding = cached_payload.get("interpretation_response", {}).setdefault(
+            "grounding_status", {}
+        )
+        grounding["cache_hit"] = True
+        return cached_payload
+
+    needs_interpret_prompt = not re.search(
+        r"\b(explain|interpret|read|meaning|means|what should|what does)\b",
+        question,
+        re.I,
+    )
+    routed_question = (
+        f"Interpret this groundwater chart and data: {question}"
+        if needs_interpret_prompt
+        else question
+    )
+    payload = chat_endpoint(
+        {
+            "message": routed_question,
+            "allow_llm_synthesis": use_llm,
+        }
+    )
+    payload["interpretation_response"] = _build_interpretation_response(
+        payload,
+        question=question,
+        audience=audience or "general",
+    )
+    payload["interpretation_response"]["grounding_status"]["llm_requested"] = use_llm
+    payload["interpretation_response"]["grounding_status"]["cache_hit"] = False
+    payload["mode"] = f"interpret_{payload.get('mode', 'chat')}"
+    payload["provenance"] = build_research_provenance(
+        payload,
+        question=question,
+        route_mode=payload["mode"],
+    )
+    if len(_INTERPRETATION_CACHE) >= _INTERPRETATION_CACHE_MAX:
+        _INTERPRETATION_CACHE.pop(next(iter(_INTERPRETATION_CACHE)))
+    _INTERPRETATION_CACHE[cache_key] = copy.deepcopy(payload)
+    return payload
 
 
 # ---------------------------------------------------------------------------

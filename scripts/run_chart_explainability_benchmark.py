@@ -24,8 +24,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 DEFAULT_CASES = [
     {
-        "id": "chart_llm_estero_student",
-        "message": "Interpret Estero groundwater chart risk like I am a student.",
+        "id": "chart_llm_estero_interpret",
+        "message": "Interpret Estero groundwater chart risk for a sponsor.",
         "max_seconds": 150.0,
     }
 ]
@@ -83,7 +83,7 @@ def evaluate_case(
         "ok_status": status_code == 200 and body.get("status") == "ok",
         "has_chart": bool(chart.get("data") and chart.get("series")),
         "has_chart_explainability": bool(explainability.get("summary")),
-        "has_student_prompts": bool(explainability.get("student_prompts")),
+        "has_suggested_questions": bool(explainability.get("suggested_questions")),
         "has_llm_synthesis": bool(body.get("llm_synthesis")),
         "guardrail_all_cited": guardrail.get("all_factual_claims_cited") is True,
         "citation_coverage": _coverage(body) >= 0.9,

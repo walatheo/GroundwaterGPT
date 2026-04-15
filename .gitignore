@@ -30,6 +30,7 @@ data/*.csv
 # Generated benchmark / browser test artifacts
 /chat_benchmark_report.json
 /chart_llm_benchmark_report.json
+/interpretation_benchmark_report.json
 /frontend/test-results/
 
 # Manuscript closeout pins these benchmark reports for reproducibility.

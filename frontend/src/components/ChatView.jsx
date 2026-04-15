@@ -1,12 +1,13 @@
 import { Suspense, lazy, useState, useEffect, useRef } from 'react'
 import { Send, Bot, User, Sparkles, Search, MessageCircle, FlaskConical } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-import { backendStatus, sendChatMessage, sendResearchQueryStreaming, fetchChatStatus } from '../api/client'
+import { backendStatus, sendChatMessage, sendInterpretationQuery, sendResearchQueryStreaming, fetchChatStatus } from '../api/client'
 import ResearchSessionPanel from './ResearchSessionPanel'
 
 const AgentChart = lazy(() => import('./AgentChart'))
 const ResearchChartsPanel = lazy(() => import('./ResearchChartsPanel'))
 const VISUAL_QUERY_RE = /plot|chart|trend|visuali[sz]e|graph/i
+const INTERPRETATION_QUERY_RE = /interpret|explain|read|meaning|what does|chart|trend|compare .*well|lee l-\d+/i
 
 /** Custom component overrides for ReactMarkdown (no @tailwindcss/typography). */
 const markdownComponents = {
@@ -58,11 +59,11 @@ function extractChart(text) {
 }
 
 const EXAMPLE_QUESTIONS = [
-  "What water table depth is best for citrus trees?",
-  "How does the dry season affect groundwater levels?",
+  "Interpret the Estero groundwater chart for a sponsor.",
+  "Which Lee County wells are changing fastest?",
+  "Compare Lee L-581 and Lee L-588.",
+  "What does Lee L-588 show and where did the data come from?",
   "Is the Biscayne Aquifer at risk from saltwater intrusion?",
-  "What should farmers know about irrigation planning?",
-  "Which aquifer is used in Lee County?",
 ]
 
 const RESEARCH_EXAMPLES = [
@@ -194,7 +195,10 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
         })
       } else {
         // Quick chat mode
-        const data = await sendChatMessage(text)
+        const wantsInterpretation = INTERPRETATION_QUERY_RE.test(text)
+        const data = wantsInterpretation
+          ? await sendInterpretationQuery(text, { audience: 'general', useLlm: false })
+          : await sendChatMessage(text)
         const { text: replyText } = extractChart(data.response)
         const chart = data.chart || null
 
@@ -218,6 +222,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
           llmSynthesis: data.llm_synthesis || null,
           hallucinationGuardrail: data.hallucination_guardrail || null,
           citationIntegrity: data.citation_integrity || null,
+          interpretationResponse: data.interpretation_response || null,
           requestedVisualization: VISUAL_QUERY_RE.test(text),
           mode: data.mode,
           status: data.status,
@@ -373,6 +378,48 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
                   <Suspense fallback={<div className="h-[320px]" />}>
                     <AgentChart chartData={msg.chart} />
                   </Suspense>
+                </div>
+              )}
+
+              {msg.interpretationResponse && (
+                <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="text-xs font-medium text-emerald-800">
+                    Interpretation Brief
+                  </div>
+                  {msg.interpretationResponse.interpretation && (
+                    <p className="mt-1 text-sm leading-relaxed text-slate-800">
+                      {msg.interpretationResponse.interpretation}
+                    </p>
+                  )}
+                  {Array.isArray(msg.interpretationResponse.key_observations) && msg.interpretationResponse.key_observations.length > 0 && (
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-700">
+                      {msg.interpretationResponse.key_observations.slice(0, 3).map((item, i) => (
+                        <li key={i}>{item}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {Array.isArray(msg.interpretationResponse.follow_up_questions) && msg.interpretationResponse.follow_up_questions.length > 0 && (
+                    <div className="mt-2 border-t border-emerald-200 pt-2">
+                      <p className="text-[11px] font-medium text-emerald-800">Ask Next</p>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {msg.interpretationResponse.follow_up_questions.slice(0, 3).map((item, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => sendMessage(item)}
+                            className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-left text-[11px] text-emerald-900 hover:bg-emerald-100"
+                          >
+                            {item}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {msg.interpretationResponse.grounding_status && (
+                    <div className="mt-2 text-[10px] text-slate-500">
+                      USGS data: {msg.interpretationResponse.grounding_status.uses_usgs_data ? 'yes' : 'no'} · Chart context: {msg.interpretationResponse.grounding_status.uses_chart_context ? 'yes' : 'no'} · LLM: {msg.interpretationResponse.grounding_status.has_llm_synthesis ? 'grounded synthesis' : 'fast grounded mode'}
+                    </div>
+                  )}
                 </div>
               )}
 
