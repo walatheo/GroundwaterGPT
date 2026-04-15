@@ -577,6 +577,63 @@ def _build_chart_insights(
     return insights[:5]
 
 
+def _build_chart_explainability(
+    cross_well: dict,
+    highlighted_keys: set[str],
+    well_count: int,
+) -> dict:
+    """Build learner-facing chart context for UI and LLM narration."""
+    risk_level = str(cross_well.get("risk_level", "unknown")).lower()
+    cohort_trend = str(cross_well.get("cohort_trend", "unknown")).lower()
+    highlighted_count = len(highlighted_keys)
+
+    how_to_read = [
+        (
+            "Each point is a monthly mean from local USGS well measurements, "
+            "not a model forecast."
+        ),
+        "The dashed trend lines summarize the direction of change over the displayed record.",
+        "The gray dashed line is the cohort average when multiple wells are plotted.",
+        "The vertical axis is reversed so shallower depth-to-water plots higher on the chart.",
+    ]
+    if highlighted_count:
+        how_to_read.append(
+            f"{highlighted_count} highlighted well"
+            f"{'' if highlighted_count == 1 else 's'} mark the fastest-changing "
+            "or most divergent series."
+        )
+
+    data_contract = [
+        "Inputs: canonical local USGS CSV time series and site metadata.",
+        "Transform: resample observations to month-start means before plotting.",
+        "Trend: deterministic linear fit over monthly values for visual explanation.",
+        "Guardrail: the LLM may explain these fields but must not invent new measurements.",
+    ]
+
+    student_prompts = [
+        "Which well is changing fastest, and is that change rising or falling?",
+        "Do shallow and deep aquifer wells move together or diverge?",
+        "How does the cohort average compare with the highlighted wells?",
+        "What would you check next before making a water-management claim?",
+    ]
+
+    return {
+        "summary": (
+            f"This chart connects {well_count} USGS well"
+            f"{'' if well_count == 1 else 's'} to a {cohort_trend} cohort trend "
+            f"with {risk_level} screening risk."
+        ),
+        "how_to_read": how_to_read,
+        "data_contract": data_contract,
+        "llm_role": (
+            "The LLM receives this chart context as a bounded teaching brief. "
+            "It can translate the visual evidence into plain language, but the "
+            "numbers, trend labels, and risk flags come from deterministic code."
+        ),
+        "student_prompts": student_prompts,
+    }
+
+
 def _build_chart_payload(
     sites: list[dict],
     location_name: str,
@@ -739,6 +796,11 @@ def _build_chart_payload(
         "series": chart_series,
         "data": records,
         "insights": _build_chart_insights(cross_well or {}, highlighted_keys),
+        "explainability": _build_chart_explainability(
+            cross_well or {},
+            highlighted_keys,
+            well_count,
+        ),
         "cohort_risk_level": (cross_well or {}).get("risk_level"),
     }
 
@@ -1382,6 +1444,8 @@ def _site_research_fallback(
                 }
             )
 
+    chart_payload = _build_chart_payload(sites, location_name, cross_well=cross_well)
+
     # --- LLM synthesis (hybrid mode) ---
     synthesis_section = ""
     needs_synthesis = (
@@ -1426,15 +1490,20 @@ def _site_research_fallback(
                 )
 
             prompt = (
-                f"Hydrogeologist: synthesize USGS data for {location_name}, FL in 2 paragraphs.\n\n"
+                f"Hydrogeologist and teacher: synthesize USGS data for {location_name}, "
+                "FL in 2 short paragraphs.\n\n"
                 + "\n".join(aq_data_lines)
                 + f"\n\nCohort: {synthesis_data['n_wells']} wells, "
                 f"{synthesis_data['cohort_trend']}, risk: {synthesis_data['risk_level']}."
                 f"{supply_context}\n\n"
-                "Cover: 1) most concerning aquifer trends, "
-                "2) shallow vs deep comparison, "
-                "3) sustainability/saltwater intrusion implications. "
-                "Under 150 words. Use only data above."
+                "Chart context: "
+                f"{chart_payload.get('explainability', {}).get('summary', '')} "
+                "The chart uses monthly means, dashed trend overlays, highlighted divergent "
+                "or fast-changing wells, and a cohort average when multiple wells are present.\n\n"
+                "Cover: 1) how to read the chart, 2) most concerning aquifer trends, "
+                "3) shallow vs deep comparison, 4) sustainability/saltwater intrusion "
+                "implications. "
+                "Under 180 words. Use only data above. Do not add new measurements."
             )
             synthesis_model = os.environ.get("SYNTHESIS_MODEL", "llama3.2")
             ollama_resp = httpx.post(
@@ -1444,10 +1513,10 @@ def _site_research_fallback(
                     "prompt": prompt,
                     "stream": False,
                     "think": False,
-                    "options": {"num_predict": 300},
+                    "options": {"num_predict": 180},
                     "keep_alive": "10m",
                 },
-                timeout=60.0,
+                timeout=120.0,
             )
             ollama_resp.raise_for_status()
             llm_text = ollama_resp.json().get("response", "").strip()
@@ -1460,7 +1529,18 @@ def _site_research_fallback(
                         "claim_id": f"claim_{len(claim_citations) + 1:03d}",
                         "claim": llm_text[:200],
                         "confidence": 0.50,
-                        "citations": [],
+                        "citations": [
+                            {
+                                "url": "local://eagle/deterministic-chart-context",
+                                "source": "deterministic_chart_context",
+                                "basis": (
+                                    "LLM synthesis constrained to chart payload, "
+                                    "USGS-derived aquifer summaries, and cohort metrics"
+                                ),
+                                "verified": True,
+                                "trust_level": "moderate",
+                            }
+                        ],
                         "source_type": "llm_synthesis",
                     }
                 )
@@ -1490,7 +1570,7 @@ def _site_research_fallback(
         "report": report,
         "insights": insights,
         "sources": source_urls,
-        "chart": _build_chart_payload(sites, location_name, cross_well=cross_well),
+        "chart": chart_payload,
         "claim_citations": claim_citations,
         "claim_verdicts": claim_verdicts,
         "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),

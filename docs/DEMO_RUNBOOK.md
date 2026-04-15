@@ -56,6 +56,8 @@ Point out:
 - Sources point back to USGS monitoring records.
 - The chart uses the same deterministic series and trend values as the report.
 - The y-axis is inverted because the measured variable is depth to water below land surface.
+- The chart explanation panel translates the plotted monthly means, highlighted wells,
+  cohort average, and trend overlays into a student-friendly reading guide.
 
 ### Step 3: Show Cross-Cohort Novelty
 
@@ -170,6 +172,8 @@ In the app, show these surfaces in order:
 - Site/map context: where the monitored wells are and which Florida locations are in scope.
 - AI assistant: ask the Estero trend question.
 - Chart panel: point to monthly depth-to-water series, cohort average, trend overlays, and highlighted wells.
+- Chart explainability panel: show that the LLM receives bounded chart context and
+  can explain how to read the data without inventing new measurements.
 - Source/citation panel: point to USGS-backed sources and claim citations.
 - Any provenance/details panel: point to response hashes, method flags, and data snapshot references if visible.
 - Research workflow, if time allows: plan -> run -> draft as a reproducibility workflow rather than a scientific proof.
@@ -255,6 +259,12 @@ python3 scripts/run_chat_benchmark.py --mode fallback --enforce-thresholds
 jq '.summary' chat_benchmark_report.json
 ```
 
+Shortcut:
+
+```bash
+make benchmark
+```
+
 Current closeout result:
 
 - Cases: 68.
@@ -273,19 +283,46 @@ Use this line when presenting:
 > expected auditable fields. They do not validate hydrogeologic causality or
 > claim that OLS-on-monthly-means is the best trend estimator.
 
-## 7. Optional Live-Agent Smoke
+## 7. LLM Synthesis Benchmark
 
-Only run this if you have time and want to show the agent envelope. It is not the
-headline result.
+Run this when Ollama is available and you want to show that the language-model
+path can produce the same audit envelope while narrating the deterministic data.
+The smoke command is the best last-day proof because it exercises the LLM path
+without waiting for all 68 cases.
 
 ```bash
-python3 scripts/run_agent_benchmark.py \
-  --limit 1 \
-  --output agent_benchmark_report.json \
-  --provider ollama \
-  --model llama3.2
+make benchmark-llm-smoke
 jq '.summary, .agent_path_summary' agent_benchmark_report.json
 ```
+
+Full live-agent suite:
+
+```bash
+make benchmark-llm
+```
+
+For a live demo with grounded chart narration, start Ollama and run the API
+without `GROUNDWATERGPT_SKIP_AGENT_INIT`. Ask:
+
+```text
+Explain the Lee County groundwater chart like I am a student.
+```
+
+What to point out:
+
+- The chart and deterministic report still come from USGS records.
+- The LLM explanation is bounded by the chart payload, aquifer summaries, and cohort metrics.
+- LLM synthesis claims cite `local://eagle/deterministic-chart-context` so the audit layer
+  can distinguish grounded chart narration from raw USGS measurements.
+- `claim_verdicts`, `structured_response`, and `provenance` remain present.
+
+Current chart-LLM smoke result:
+
+- Cases: 1.
+- Passed: true.
+- LLM synthesis coverage: 1.000.
+- Chart explainability coverage: 1.000.
+- Average elapsed: 44.816 s.
 
 Current closeout smoke result:
 
@@ -293,10 +330,10 @@ Current closeout smoke result:
 - Agent-routed rate: 1.000.
 - Structured-response coverage: 1.000.
 - Provenance coverage: 1.000.
-- Citation coverage: 1.000.
-- Claim-verdict coverage: 1.000.
-- Overall score: 0.300.
-- Median/max latency: 495.294 s.
+- Citation coverage: 0.000.
+- Claim-verdict coverage: 0.000.
+- Overall score: 0.200.
+- Median/max latency: 270.155 s.
 - Threshold pass: false.
 
 Say:

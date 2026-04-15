@@ -37,6 +37,7 @@ export default function AgentChart({ chartData }) {
     series = [],
     data,
     insights = [],
+    explainability = null,
     cohort_risk_level: cohortRiskLevel,
   } = chartData
 
@@ -219,6 +220,47 @@ export default function AgentChart({ chartData }) {
             ))}
           </ul>
         </div>
+      )}
+
+      {explainability && (
+        <details className="mt-3 rounded-lg border border-cyan-200 bg-cyan-50 p-3">
+          <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-cyan-700">
+            How The Model Reads This Chart
+          </summary>
+          <div className="mt-2 space-y-3 text-xs text-slate-700">
+            {explainability.summary && (
+              <p>{explainability.summary}</p>
+            )}
+
+            {Array.isArray(explainability.how_to_read) && explainability.how_to_read.length > 0 && (
+              <div>
+                <p className="mb-1 font-semibold text-slate-700">Reading guide</p>
+                <ul className="space-y-1">
+                  {explainability.how_to_read.map((item, idx) => (
+                    <li key={idx}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {explainability.llm_role && (
+              <p className="border-l-2 border-cyan-300 pl-2 text-slate-600">
+                {explainability.llm_role}
+              </p>
+            )}
+
+            {Array.isArray(explainability.student_prompts) && explainability.student_prompts.length > 0 && (
+              <div>
+                <p className="mb-1 font-semibold text-slate-700">Questions to ask next</p>
+                <ul className="space-y-1">
+                  {explainability.student_prompts.map((item, idx) => (
+                    <li key={idx}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </details>
       )}
     </div>
   )

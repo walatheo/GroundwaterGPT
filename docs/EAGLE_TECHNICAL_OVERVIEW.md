@@ -478,14 +478,26 @@ The repository now includes [scripts/run_agent_benchmark.py](scripts/run_agent_b
 - Agent-routed rate: **1.000**.
 - Structured-response coverage: **1.000**.
 - Provenance coverage: **1.000**.
-- Citation coverage and claim-verdict coverage: **1.000**.
-- Overall score: **0.300**.
-- Median / max latency: **495.294 s**.
-- Threshold pass: **false** (`overall_score < 0.850`, case score below threshold, max latency above 8 s).
+- Citation coverage and claim-verdict coverage: **0.000** in the latest smoke.
+- Overall score: **0.200**.
+- Median / max latency: **270.155 s**.
+- Threshold pass: **false** (`overall_score < 0.850`, citation/verdict coverage below threshold, max latency above 8 s).
 
-This smoke result is useful as an architectural check: the live `DeepResearchAgent` path can emit the typed audit envelope. It is not a manuscript-quality LLM-performance claim. Stable full-suite LLM-path results have not been established yet and should be reported separately from the deterministic benchmark if the paper later makes strong claims about language-model synthesis quality.
+This smoke result is useful as an architectural check: the live `DeepResearchAgent` path can still route and emit the typed audit envelope, but it is not yet a manuscript-quality LLM-performance claim. The stronger near-term LLM story is the bounded chart-explainability path, where local Ollama narration is constrained to deterministic chart context rather than asked to run the full research agent.
 
-### 9.4 Benchmarks the paper should add
+### 9.4 Current chart-explainability LLM smoke benchmark
+
+The repository also includes [scripts/run_chart_explainability_benchmark.py](scripts/run_chart_explainability_benchmark.py), which keeps deterministic routing enabled, asks the local model to explain the chart context, and checks that chart explainability, LLM synthesis, citations, claim verdicts, and guardrails are present.
+
+- Cases: **1** chart-explainability smoke case.
+- LLM synthesis coverage: **1.000**.
+- Chart explainability coverage: **1.000**.
+- Average elapsed: **44.816 s**.
+- Threshold pass: **true**.
+
+This is the sponsor-facing LLM result: the model communicates with the deterministic data product and helps explain the chart, while the measured groundwater values remain owned by the USGS-backed pipeline.
+
+### 9.5 Benchmarks the paper should add
 
 [scripts/run_retrieval_precision.py](scripts/run_retrieval_precision.py) runs a KB retrieval precision benchmark with a configurable top-k and a minimum average precision threshold (default 0.90). Its cases live in a companion JSON file. This is the right starting point for a Methods-section claim about KB retrieval quality; the paper should report precision@1, precision@5, and MRR across those cases.
 
@@ -633,7 +645,8 @@ After this pass, the largest remaining items are methodological rather than arch
 - USGS data date range across sampled CSVs: **1994-01-01 through 2026-04-05**; 40 canonical CSV files under [data/](data/), daily cadence.
 - Knowledge base: ChromaDB persistent store, `BAAI/bge-small-en-v1.5` embeddings (384-dim), `chroma.sqlite3` ≈ 156 MB.
 - Benchmark (deterministic layer): **68 / 68 passing**, overall score **1.000**, average citation coverage **1.000**, average claim-citation coverage **1.000**, average section-citation coverage **1.000**, average claim-verdict coverage **1.000**, average contradicted-claim rate **0.010**, average high-risk-claim rate **0.010**, median latency **4.173 s**, max latency **8.070 s**. Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`.
-- Benchmark (bounded live-agent smoke): **1 / 68 cases**, Ollama `llama3.2`, mode `deep_research`, overall score **0.300**, agent-routed rate **1.000**, structured-response coverage **1.000**, provenance coverage **1.000**, citation coverage **1.000**, claim-verdict coverage **1.000**, median/max latency **495.294 s**, threshold pass **false**.
+- Benchmark (bounded live-agent smoke): **1 / 68 cases**, Ollama `llama3.2`, mode `deep_research`, overall score **0.200**, agent-routed rate **1.000**, structured-response coverage **1.000**, provenance coverage **1.000**, citation coverage **0.000**, claim-verdict coverage **0.000**, median/max latency **270.155 s**, threshold pass **false**.
+- Benchmark (chart-explainability LLM smoke): **1 case**, Ollama `llama3.2`, LLM synthesis coverage **1.000**, chart explainability coverage **1.000**, average elapsed **44.816 s**, threshold pass **true**.
 - Unit tests: **181 passing** as of 2026-04-15.
 - Citation thresholds: `MIN_CLAIM_CITATION_COVERAGE = 0.90`, `MIN_SECTION_CITATION_COVERAGE = 0.90`.
 - Insights bullet cap: 5 (ordered: highlighted wells → cohort trend + risk → fastest decline → strongest rise → largest divergence).

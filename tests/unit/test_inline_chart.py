@@ -98,13 +98,22 @@ class TestBuildChartPayload:
     def test_build_chart_payload_adds_trend_and_insights(self):
         sites = [
             _make_site(
-                "site_001", "Well A", ["2024-01-01", "2024-02-01", "2024-03-01"], [10.0, 11.0, 12.0]
+                "site_001",
+                "Well A",
+                ["2024-01-01", "2024-02-01", "2024-03-01"],
+                [10.0, 11.0, 12.0],
             ),
             _make_site(
-                "site_002", "Well B", ["2024-01-01", "2024-02-01", "2024-03-01"], [30.0, 28.0, 26.0]
+                "site_002",
+                "Well B",
+                ["2024-01-01", "2024-02-01", "2024-03-01"],
+                [30.0, 28.0, 26.0],
             ),
             _make_site(
-                "site_003", "Well C", ["2024-01-01", "2024-02-01", "2024-03-01"], [20.0, 20.5, 21.0]
+                "site_003",
+                "Well C",
+                ["2024-01-01", "2024-02-01", "2024-03-01"],
+                [20.0, 20.5, 21.0],
             ),
         ]
 
@@ -118,6 +127,10 @@ class TestBuildChartPayload:
         assert chart["cohort_risk_level"] in {"low", "moderate", "high"}
         assert chart["insights"]
         assert len(chart["insights"]) == 5
+        assert chart["explainability"]["summary"]
+        assert chart["explainability"]["how_to_read"]
+        assert chart["explainability"]["student_prompts"]
+        assert "LLM" in chart["explainability"]["llm_role"]
         assert any("Highlighted wells mark" in insight for insight in chart["insights"])
         assert any(
             series.get("highlight") for series in chart["series"] if not series.get("isTrend")
@@ -207,6 +220,49 @@ class TestInlineChartIntegration:
         assert result["chart"] is not None
         assert any(series["key"] == "avg" for series in result["chart"]["series"])
         assert result["chart"]["insights"]
+        assert result["chart"]["explainability"]["data_contract"]
+
+    def test_site_research_fallback_llm_synthesis_cites_chart_context(self, monkeypatch):
+        sites = [
+            _make_site("site_001", "Well A", ["2024-01-01", "2024-02-01"], [10.0, 11.0]),
+            _make_site("site_002", "Well B", ["2024-01-01", "2024-02-01"], [12.0, 13.0]),
+        ]
+
+        class _Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "response": (
+                        "The chart shows monthly USGS means and a cohort trend. "
+                        "Students should compare the highlighted wells with the cohort average."
+                    )
+                }
+
+        def _fake_post(*_args, **_kwargs):
+            return _Response()
+
+        import httpx
+
+        monkeypatch.delenv("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", raising=False)
+        monkeypatch.setattr(httpx, "post", _fake_post)
+
+        result = _site_research_fallback(
+            "interpret sustainability risk from this chart",
+            sites,
+            "Synthetic Area",
+        )
+
+        llm_claims = [
+            claim
+            for claim in result["claim_citations"]
+            if claim.get("source_type") == "llm_synthesis"
+        ]
+        assert result["llm_synthesis"]
+        assert llm_claims
+        assert llm_claims[0]["citations"][0]["source"] == "deterministic_chart_context"
+        assert result["hallucination_guardrail"]["all_factual_claims_cited"] is True
 
     def test_chat_endpoint_returns_chart(self):
         _first_site_id()
@@ -217,6 +273,7 @@ class TestInlineChartIntegration:
         assert body["chart"] is not None
         assert "series" in body["chart"]
         assert "insights" in body["chart"]
+        assert "explainability" in body["chart"]
         assert len(body["chart"]["data"]) > 0
 
     def test_research_endpoint_returns_chart(self):
@@ -228,6 +285,7 @@ class TestInlineChartIntegration:
         assert body["chart"] is not None
         assert "series" in body["chart"]
         assert "insights" in body["chart"]
+        assert "explainability" in body["chart"]
         assert len(body["chart"]["data"]) > 0
 
     def test_agent_path_attaches_chart_when_sites_identified(self, monkeypatch):

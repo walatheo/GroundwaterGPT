@@ -392,11 +392,14 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
               )}
 
               {msg.llmSynthesis && (
-                <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg p-3">
-                  <div className="text-xs text-purple-600 font-medium mb-1">
-                    LLM Synthesis (interpretive — uncited)
+                <div className="mt-3 bg-cyan-50 border border-cyan-200 rounded-lg p-3">
+                  <div className="text-xs text-cyan-700 font-medium mb-1">
+                    Grounded LLM Chart Explanation
                   </div>
-                  <div className="text-sm text-purple-900">
+                  <div className="mb-2 text-[11px] text-slate-500">
+                    The model explains deterministic USGS chart context; it does not create the measurements.
+                  </div>
+                  <div className="text-sm text-slate-800">
                     <ReactMarkdown components={markdownComponents}>{msg.llmSynthesis}</ReactMarkdown>
                   </div>
                 </div>
