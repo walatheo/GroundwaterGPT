@@ -157,6 +157,49 @@ def test_contextual_well_decline_followup_preempts_generic_kb(monkeypatch):
     assert "Well permits required" not in body["response"]
 
 
+def test_contextual_followup_returns_hydro_concepts_without_vector_kb(monkeypatch):
+    """The real interpreter should attach curated hydro context for vague follow-ups."""
+    from api.routes import chat as chat_routes
+
+    chat_routes._INTERPRETATION_CACHE.clear()
+    monkeypatch.setattr(chat_routes._chart_interpreter, "_rag_snippets", lambda _query: [])
+    history = [
+        {
+            "role": "assistant",
+            "content_preview": "Here are the wells for the Estero chart.",
+            "site_ids": ESTERO_CONTEXT["site_ids"],
+            "wells": [
+                {"site_id": "263335081394301", "name": "Lee L-729", "aquifer": "IAS"},
+                {"site_id": "263532081592201", "name": "Lee L-581", "aquifer": "Hawthorn"},
+            ],
+        }
+    ]
+
+    resp = client.post(
+        "/api/chat",
+        json={
+            "message": "Why is the well decline happening?",
+            "turn_history": history,
+            "allow_llm_synthesis": False,
+        },
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    interpretation = body["interpretation_response"]
+    assert body["mode"] == "chart_interpreter"
+    assert interpretation["groundwater_concepts"]
+    assert interpretation["interpretive_findings"]
+    assert interpretation["possible_drivers"]
+    assert interpretation["evidence_needed"]
+    assert interpretation["direct_answer"]
+    assert interpretation["supporting_evidence"]
+    assert "Possible explanations to test:" not in body["response"]
+    assert "What would confirm it:" not in body["response"]
+    assert "enriched_rag_query" in interpretation["evidence_used"]
+    assert "Well permits required" not in body["response"]
+
+
 def test_named_site_still_uses_deterministic_fast_path(monkeypatch):
     """Explicit site names should keep deterministic routing precedence."""
     from api.routes import chat as chat_routes

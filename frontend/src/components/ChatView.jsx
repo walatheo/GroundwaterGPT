@@ -219,6 +219,29 @@ function buildAnalyticalDepth(msg) {
   const observations = Array.isArray(interpretation.key_observations)
     ? interpretation.key_observations
     : []
+  const answerRelevantObservations = Array.isArray(interpretation.answer_relevant_observations)
+    ? interpretation.answer_relevant_observations
+    : []
+  const comparisonGroups = interpretation.comparison_groups || null
+  const largestGap = interpretation.largest_gap || null
+  const groundwaterConcepts = Array.isArray(interpretation.groundwater_concepts)
+    ? interpretation.groundwater_concepts
+    : []
+  const interpretiveFindings = Array.isArray(interpretation.interpretive_findings)
+    ? interpretation.interpretive_findings
+    : []
+  const possibleDrivers = Array.isArray(interpretation.possible_drivers)
+    ? interpretation.possible_drivers
+    : []
+  const evidenceNeeded = Array.isArray(interpretation.evidence_needed)
+    ? interpretation.evidence_needed
+    : []
+  const managementImplications = Array.isArray(interpretation.management_implications)
+    ? interpretation.management_implications
+    : []
+  const confidenceNotes = Array.isArray(interpretation.confidence_notes)
+    ? interpretation.confidence_notes
+    : []
   const limits = Array.isArray(interpretation.limits) ? interpretation.limits : []
   const aquiferSummaries = Array.isArray(details.aquifer_summaries)
     ? details.aquifer_summaries
@@ -229,9 +252,17 @@ function buildAnalyticalDepth(msg) {
   if (
     numericClaims.length === 0 &&
     observations.length === 0 &&
+    answerRelevantObservations.length === 0 &&
+    groundwaterConcepts.length === 0 &&
+    interpretiveFindings.length === 0 &&
+    possibleDrivers.length === 0 &&
+    evidenceNeeded.length === 0 &&
+    managementImplications.length === 0 &&
+    confidenceNotes.length === 0 &&
     limits.length === 0 &&
     aquiferSummaries.length === 0 &&
     supplyUnits.length === 0 &&
+    !comparisonGroups &&
     !msg.cohortRisk
   ) {
     return null
@@ -239,7 +270,16 @@ function buildAnalyticalDepth(msg) {
 
   return {
     numericClaims,
-    observations,
+    observations: answerRelevantObservations.length > 0 ? answerRelevantObservations : observations,
+    rawObservations: observations,
+    comparisonGroups,
+    largestGap,
+    groundwaterConcepts,
+    interpretiveFindings,
+    possibleDrivers,
+    evidenceNeeded,
+    managementImplications,
+    confidenceNotes,
     limits,
     aquiferSummaries,
     supplyUnits,
@@ -390,7 +430,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
             interpretationDetails: data.interpretation_details || null,
             hallucinationGuardrail: data.hallucination_guardrail || null,
             citationIntegrity: data.citation_integrity || null,
-            requestedVisualization: VISUAL_QUERY_RE.test(text),
+            requestedVisualization: VISUAL_QUERY_RE.test(text) && data.mode !== 'chart_interpreter',
             mode: data.mode,
           }]
         })
@@ -442,7 +482,11 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
           hallucinationGuardrail: data.hallucination_guardrail || null,
           citationIntegrity: data.citation_integrity || null,
           interpretationResponse: data.interpretation_response || null,
-          requestedVisualization: VISUAL_QUERY_RE.test(text),
+          requestedVisualization: (
+            VISUAL_QUERY_RE.test(text)
+            && data.mode !== 'chart_interpreter'
+            && !data.interpretation_response
+          ),
           mode: data.mode,
           status: data.status,
         }])
@@ -716,6 +760,85 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
                             </span>
                           ))}
                         </div>
+                      </div>
+                    )}
+
+                    {depth.comparisonGroups?.shallow_unconfined && depth.comparisonGroups?.deep_confined && (
+                      <div className="mt-3 rounded-md border border-teal-100 bg-teal-50 p-2">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-[11px] font-medium text-teal-800">Shallow vs deep comparison</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-700">
+                              {depth.comparisonGroups.shallow_unconfined.count || 0} shallow/unconfined well{depth.comparisonGroups.shallow_unconfined.count === 1 ? '' : 's'} average {formatSigned(depth.comparisonGroups.shallow_unconfined.mean_annual_change_ft_yr)} ft/yr; {depth.comparisonGroups.deep_confined.count || 0} deep/confined well{depth.comparisonGroups.deep_confined.count === 1 ? '' : 's'} average {formatSigned(depth.comparisonGroups.deep_confined.mean_annual_change_ft_yr)} ft/yr.
+                            </p>
+                          </div>
+                          {Number.isFinite(Number(depth.largestGap?.gap_ft_yr)) && (
+                            <span className="rounded-md bg-white px-2 py-1 text-[11px] font-medium text-teal-900">
+                              largest gap {Number(depth.largestGap.gap_ft_yr).toFixed(3)} ft/yr
+                            </span>
+                          )}
+                        </div>
+                        {(Number.isFinite(Number(depth.comparisonGroups.shallow_unconfined.mean_seasonal_amplitude_ft)) || Number.isFinite(Number(depth.comparisonGroups.deep_confined.mean_seasonal_amplitude_ft))) && (
+                          <p className="mt-1 text-[11px] leading-5 text-slate-600">
+                            Seasonal amplitude: shallow {formatSigned(depth.comparisonGroups.shallow_unconfined.mean_seasonal_amplitude_ft, 1)} ft; deep {formatSigned(depth.comparisonGroups.deep_confined.mean_seasonal_amplitude_ft, 1)} ft.
+                          </p>
+                        )}
+                        {depth.largestGap?.site_a?.name && depth.largestGap?.site_b?.name && (
+                          <p className="mt-1 text-[11px] leading-5 text-slate-600">
+                            The widest well-level separation is {depth.largestGap.site_a.name} versus {depth.largestGap.site_b.name}.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {(depth.interpretiveFindings.length > 0 || depth.possibleDrivers.length > 0 || depth.evidenceNeeded.length > 0) && (
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <div className="rounded-md bg-emerald-50 p-2">
+                          <p className="text-[11px] font-medium text-emerald-800">What this means</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-700">
+                            {depth.interpretiveFindings.find(item => item.label === 'Hydrogeologic meaning')?.text
+                              || depth.managementImplications[0]
+                              || 'This is an evidence-bound screening interpretation of the observed monitoring pattern.'}
+                          </p>
+                        </div>
+                        <div className="rounded-md bg-sky-50 p-2">
+                          <p className="text-[11px] font-medium text-sky-800">Possible explanations</p>
+                          <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-slate-700">
+                            {depth.possibleDrivers.slice(0, 3).map((item, i) => (
+                              <li key={`driver-${i}`}>{item}</li>
+                            ))}
+                            {depth.possibleDrivers.length === 0 && <li>Use outside data to test the observed signal.</li>}
+                          </ul>
+                        </div>
+                        <div className="rounded-md bg-amber-50 p-2">
+                          <p className="text-[11px] font-medium text-amber-800">What would confirm it</p>
+                          <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-slate-700">
+                            {depth.evidenceNeeded.slice(0, 3).map((item, i) => (
+                              <li key={`evidence-${i}`}>{item}</li>
+                            ))}
+                            {depth.evidenceNeeded.length === 0 && <li>Additional covariates and nearby wells.</li>}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+
+                    {depth.confidenceNotes.length > 0 && (
+                      <div className="mt-3 rounded-md bg-slate-50 p-2">
+                        <p className="text-[11px] font-medium text-slate-500">Confidence note</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">{depth.confidenceNotes[0]}</p>
+                      </div>
+                    )}
+
+                    {depth.groundwaterConcepts.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-[11px] font-medium text-slate-500">Groundwater concepts</p>
+                        <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-slate-600">
+                          {depth.groundwaterConcepts.slice(0, 3).map((concept, i) => (
+                            <li key={`${concept.id || 'concept'}-${i}`}>
+                              {String(concept.summary || '').split('Caveat:')[0].trim()}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
 

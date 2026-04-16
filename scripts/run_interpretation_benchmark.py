@@ -66,9 +66,20 @@ def _text_blob(body: dict[str, Any]) -> str:
             str(body.get("response", "")),
             str(body.get("llm_synthesis", "")),
             str(interpretation.get("interpretation", "")),
+            str(interpretation.get("direct_answer", "")),
+            " ".join(str(item) for item in interpretation.get("supporting_evidence", []) or []),
+            " ".join(
+                str(item) for item in interpretation.get("answer_relevant_observations", []) or []
+            ),
+            str(interpretation.get("hydrogeologic_meaning", "")),
+            " ".join(str(item) for item in interpretation.get("possible_drivers", []) or []),
+            " ".join(str(item) for item in interpretation.get("evidence_needed", []) or []),
+            " ".join(str(item) for item in interpretation.get("management_implications", []) or []),
+            " ".join(str(item) for item in interpretation.get("confidence_notes", []) or []),
             str(chart_context.get("summary", "")),
             " ".join(str(item) for item in interpretation.get("key_observations", []) or []),
             " ".join(str(item) for item in interpretation.get("groundwater_concepts", []) or []),
+            " ".join(str(item) for item in interpretation.get("limits", []) or []),
         ]
     )
 
@@ -157,6 +168,51 @@ def _guardrail_compliant(
     return any(phrase in text_lower for phrase in hedge_phrases) or bool(flags)
 
 
+def _not_generic_contextual(case: dict[str, Any], text_lower: str) -> bool:
+    if not case.get("prior_turn") and str(case.get("level", "")) != "hydro-context":
+        return True
+    generic_phrases = [
+        "well permits required",
+        "a well is a hole",
+        "a groundwater well is",
+        "wells are structures",
+        "a well provides access",
+    ]
+    return not any(phrase in text_lower for phrase in generic_phrases)
+
+
+def _not_data_only(case: dict[str, Any], interpretation: dict[str, Any], text_lower: str) -> bool:
+    level = str(case.get("level", "")).lower()
+    if level == "numeric":
+        return True
+    if not case.get("prior_turn") and level != "hydro-context":
+        return True
+    interpretive_fields = [
+        interpretation.get("hydrogeologic_meaning"),
+        interpretation.get("interpretive_findings"),
+        interpretation.get("possible_drivers"),
+        interpretation.get("evidence_needed"),
+        interpretation.get("management_implications"),
+        interpretation.get("confidence_notes"),
+    ]
+    if any(bool(item) for item in interpretive_fields):
+        return True
+    interpretive_terms = [
+        "what this may mean",
+        "possible explanations",
+        "what would confirm",
+        "drawdown",
+        "recharge",
+        "seasonal",
+        "proxy",
+        "evidence needed",
+        "would require",
+        "does not prove",
+        "confidence note",
+    ]
+    return any(term in text_lower for term in interpretive_terms)
+
+
 def evaluate_case(
     case: dict[str, Any],
     body: dict[str, Any],
@@ -207,6 +263,8 @@ def evaluate_case(
         "must_not_contain_absent": all(term not in text_lower for term in must_not_contain),
         "numeric_match": _numeric_match(case, interpretation),
         "free_text_numbers_claimed": _free_text_numbers_are_claimed(interpretation),
+        "not_generic_contextual": _not_generic_contextual(case, text_lower),
+        "not_data_only": _not_data_only(case, interpretation, text_lower),
         "turn_context_bound": (
             not case.get("prior_turn")
             or (

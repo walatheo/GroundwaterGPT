@@ -1,0 +1,170 @@
+[
+  {
+    "id": "decline_drawdown_context",
+    "tags": ["decline", "drawdown", "trend", "stress"],
+    "trigger_terms": ["declining", "decline", "falling", "lower", "drawdown", "negative trend", "dropping"],
+    "summary": "A falling groundwater-level trend can indicate drawdown or reduced aquifer pressure, but the monitoring record alone does not identify the cause.",
+    "interpretive_move": "Connect a negative trend to possible aquifer stress while keeping causality unproven.",
+    "evidence_needed": ["pumping records", "rainfall and recharge data", "nearby monitoring wells", "groundwater-flow model context"],
+    "implication": "Persistent decline is a screening flag for sustainability and monitoring priority.",
+    "caveat": "Attribution requires external evidence such as pumping records, rainfall, recharge, land-use change, and groundwater-flow model context.",
+    "follow_up_questions": [
+      "Is this decline seasonal or persistent?",
+      "What outside data would help test the cause?"
+    ]
+  },
+  {
+    "id": "rising_recovery_context",
+    "tags": ["rise", "recovery", "trend"],
+    "trigger_terms": ["rising", "recovery", "increase", "higher", "positive trend", "rebounded"],
+    "summary": "A rising groundwater-level trend means the measured depth to water is becoming shallower or aquifer pressure is increasing over the analyzed period.",
+    "interpretive_move": "Treat a positive trend as possible recovery or pressure gain only after checking seasonality and nearby wells.",
+    "evidence_needed": ["record-length review", "nearby wells", "seasonality-aware trend checks", "changes in pumping or recharge"],
+    "implication": "A rising signal can support a recovery discussion when it persists across wells and seasons.",
+    "caveat": "A rising trend should still be compared with seasonal cycles, record length, and nearby wells before calling it recovery.",
+    "follow_up_questions": [
+      "Which well is rising fastest?",
+      "Does the rise hold across the full record?"
+    ]
+  },
+  {
+    "id": "seasonal_variability_context",
+    "tags": ["seasonal", "recharge", "wet season", "dry season"],
+    "trigger_terms": ["seasonal", "season", "wet", "dry", "recharge", "rainfall", "cycle", "monthly"],
+    "summary": "Seasonal groundwater movement is common in Florida because recharge, evapotranspiration, and pumping demand vary between wet and dry periods.",
+    "interpretive_move": "Separate repeating wet/dry-season movement from persistent multi-year change.",
+    "evidence_needed": ["multi-year monthly records", "rainfall and recharge data", "seasonal amplitude estimates", "dry-season pumping demand"],
+    "implication": "Seasonality helps explain short-term movement without overclaiming a long-term decline or recovery.",
+    "caveat": "A chart can show seasonal variability, but separating seasonal cycles from a long-term trend requires looking at multiple years and nearby wells.",
+    "follow_up_questions": [
+      "Is the long-term trend still visible after seasonal swings?",
+      "Which wells have the largest seasonal amplitude?"
+    ]
+  },
+  {
+    "id": "shallow_deep_comparison_context",
+    "tags": ["shallow", "deep", "aquifer comparison", "confinement"],
+    "trigger_terms": ["shallow", "deep", "depth", "compare aquifers", "upper", "lower", "surficial", "floridan"],
+    "summary": "Shallow wells often respond more strongly to seasonal recharge and local conditions, while deeper or confined wells can show smoother but persistent pressure changes.",
+    "interpretive_move": "Use depth and aquifer setting to explain why wells may move differently without assuming direct hydraulic connection.",
+    "evidence_needed": ["well depth", "screened interval", "aquifer unit", "distance between wells", "confining-layer documentation"],
+    "implication": "Shallow/deep comparisons help identify whether a pattern is local, seasonal, or shared across aquifer units.",
+    "caveat": "Depth alone is not proof of hydraulic connection; well construction, screened interval, confinement, and distance all affect whether wells are good proxies for one another.",
+    "follow_up_questions": [
+      "Which aquifer unit does each well represent?",
+      "Do shallow and deep wells move together or diverge?"
+    ]
+  },
+  {
+    "id": "confined_aquifer_context",
+    "tags": ["confined", "artesian", "pressure", "floridan", "hawthorn"],
+    "trigger_terms": ["confined", "artesian", "pressure", "floridan", "hawthorn", "confining"],
+    "summary": "Confined aquifers are bounded by lower-permeability layers, so water levels in wells often represent pressure head rather than a free water table.",
+    "interpretive_move": "Explain confined-well change as pressure-head behavior rather than simple water-table drainage.",
+    "evidence_needed": ["confining-unit documentation", "screened interval", "well construction", "regional potentiometric-surface data"],
+    "implication": "Confined trends are important for supply pressure and regional aquifer stress discussions.",
+    "caveat": "A confined-aquifer trend should not be interpreted as the aquifer physically draining in the same way as an unconfined water table.",
+    "follow_up_questions": [
+      "Is the monitored aquifer confined or unconfined?",
+      "How does the confined trend compare with shallower wells?"
+    ]
+  },
+  {
+    "id": "unconfined_aquifer_context",
+    "tags": ["unconfined", "surficial", "water table", "biscayne", "tamiami"],
+    "trigger_terms": ["unconfined", "surficial", "water table", "biscayne", "tamiami", "shallow"],
+    "summary": "Unconfined aquifers respond directly to recharge and drainage because the water table is exposed to atmospheric pressure through connected pore spaces.",
+    "interpretive_move": "Interpret unconfined-well movement as more directly tied to recharge, drainage, and seasonal water-table shifts.",
+    "evidence_needed": ["rainfall and recharge data", "surface-water stage", "drainage/canal context", "seasonality checks"],
+    "implication": "Unconfined trends are useful for explaining short-term water-table sensitivity.",
+    "caveat": "Short wet or dry periods can move unconfined water levels quickly, so long-term interpretation should avoid over-reading a single season.",
+    "follow_up_questions": [
+      "How large are the seasonal swings?",
+      "Does the water-table trend match nearby wells?"
+    ]
+  },
+  {
+    "id": "supply_proxy_context",
+    "tags": ["supply", "proxy", "monitoring well", "aquifer source"],
+    "trigger_terms": ["supply", "source", "drinking water", "utility", "proxy", "represent", "monitoring well"],
+    "summary": "Monitoring wells can be useful proxies for aquifer behavior near a water-supply area, but they are not the same as production wells unless construction, screened interval, and location match the supply system.",
+    "interpretive_move": "Use monitoring wells as evidence about aquifer behavior, not as direct proof of production-well conditions.",
+    "evidence_needed": ["utility supply-source documentation", "production well locations", "screened intervals", "wellfield pumping records"],
+    "implication": "Proxy language keeps supply-risk interpretation useful without overstating what monitoring wells prove.",
+    "caveat": "Supply-source conclusions should identify which aquifer each monitoring well represents and state limitations when documentation is incomplete.",
+    "follow_up_questions": [
+      "Which monitoring wells represent each aquifer?",
+      "What proxy limitations should I mention?"
+    ]
+  },
+  {
+    "id": "saltwater_intrusion_context",
+    "tags": ["saltwater", "coastal", "intrusion", "risk"],
+    "trigger_terms": ["saltwater", "intrusion", "coastal", "salinity", "chloride", "sea level"],
+    "summary": "In coastal aquifers, sustained groundwater declines can increase saltwater-intrusion concern because lower freshwater heads reduce resistance to inland saltwater movement.",
+    "interpretive_move": "Translate decline into saltwater-risk concern only as a hypothesis requiring water-quality confirmation.",
+    "evidence_needed": ["chloride records", "salinity or conductivity data", "coastal boundary context", "pumping and canal-stage data"],
+    "implication": "Decline near coastal aquifers can justify water-quality follow-up, not an intrusion diagnosis by itself.",
+    "caveat": "Water-level trends alone do not prove saltwater intrusion; salinity, chloride, pumping, canal stage, and coastal boundary data are needed.",
+    "follow_up_questions": [
+      "Are there salinity or chloride records for this area?",
+      "Are the declining wells near the coast?"
+    ]
+  },
+  {
+    "id": "pumping_stress_context",
+    "tags": ["pumping", "stress", "demand", "causality"],
+    "trigger_terms": ["pumping", "withdrawal", "overpumping", "stress", "demand", "cause", "why"],
+    "summary": "Pumping can lower groundwater levels locally or regionally, but a monitoring chart by itself shows correlation in time rather than proof of pumping causation.",
+    "interpretive_move": "Discuss pumping as a possible driver while refusing to treat temporal correlation as proof.",
+    "evidence_needed": ["withdrawal records", "wellfield operations", "rainfall/recharge context", "water-budget or model support"],
+    "implication": "Pumping-stress language is appropriate as a testable explanation, not a conclusion.",
+    "caveat": "A defensible pumping claim needs withdrawal records, wellfield operations, rainfall/recharge context, and preferably model or water-budget support.",
+    "follow_up_questions": [
+      "What pumping or rainfall data would test this?",
+      "Do nearby wells show the same timing?"
+    ]
+  },
+  {
+    "id": "depth_to_water_convention_context",
+    "tags": ["chart reading", "depth to water", "axis", "measurement"],
+    "trigger_terms": ["depth to water", "axis", "deeper", "shallower", "chart", "read", "mean"],
+    "summary": "Depth-to-water data are measured downward from land surface, so larger values mean groundwater is deeper below ground and smaller values mean it is closer to land surface.",
+    "interpretive_move": "Prevent chart-reading errors by distinguishing depth-to-water from groundwater elevation.",
+    "evidence_needed": ["measurement datum", "axis direction", "site metadata", "chart unit labels"],
+    "implication": "Clear measurement language keeps the interpretation from reversing the meaning of a rise or decline.",
+    "caveat": "Chart language should be explicit about whether it is discussing depth-to-water values or groundwater elevation/pressure head.",
+    "follow_up_questions": [
+      "Which direction on the chart means deeper water?",
+      "Are we comparing depth-to-water or elevation?"
+    ]
+  },
+  {
+    "id": "record_length_uncertainty_context",
+    "tags": ["uncertainty", "record length", "trend", "benchmark"],
+    "trigger_terms": ["confidence", "caveat", "uncertain", "record", "period", "benchmark", "limitations"],
+    "summary": "Groundwater trends are sensitive to the chosen period of record, missing data, seasonal cycles, and whether nearby wells show the same signal.",
+    "interpretive_move": "State uncertainty without discarding the useful screening signal.",
+    "evidence_needed": ["longer record", "missing-data review", "nearby wells", "seasonality and serial-correlation checks"],
+    "implication": "A caveated trend is still useful for prioritizing follow-up analysis.",
+    "caveat": "The current trend screen is an exploratory OLS summary, not a formal hydrogeologic model or causal test.",
+    "follow_up_questions": [
+      "How long is the record for each well?",
+      "Do nearby wells support the same interpretation?"
+    ]
+  },
+  {
+    "id": "sustainability_implication_context",
+    "tags": ["sustainability", "management", "risk", "implication"],
+    "trigger_terms": ["sustainability", "management", "risk", "implication", "concern", "what does it mean"],
+    "summary": "A persistent decline can be a screening signal for sustainability concern because it may indicate that discharge and withdrawals exceed recharge over the analyzed period.",
+    "interpretive_move": "Turn a persistent observed decline into a bounded management screening implication.",
+    "evidence_needed": ["water budget", "withdrawal records", "recharge estimates", "water-quality data", "model or expert review"],
+    "implication": "The chart can support a follow-up priority discussion, not a final management diagnosis.",
+    "caveat": "Management conclusions should be framed as screening implications unless supported by water-budget, pumping, water-quality, and model evidence.",
+    "follow_up_questions": [
+      "What caveats should I mention?",
+      "What additional data would support a management conclusion?"
+    ]
+  }
+]

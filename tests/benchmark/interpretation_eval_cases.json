@@ -58,7 +58,7 @@
     "audience": "technical",
     "max_seconds": 75,
     "expected_terms": ["trend", "observed", "model"],
-    "expected_concepts": ["trend line"],
+    "expected_concepts": ["drawdown"],
     "must_not_contain": ["proves overpumping", "definitely caused by"],
     "min_data_references": 1
   },
@@ -223,6 +223,63 @@
     "max_seconds": 75,
     "must_hedge": true,
     "must_not_contain": ["climate change explains", "definitely climate"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_hydro_decline_drawdown_context",
+    "level": "hydro-context",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "Explain the decline using these wells.",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["drawdown", "USGS"],
+    "expected_concepts": ["drawdown"],
+    "must_hedge": true,
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_hydro_seasonal_long_term",
+    "level": "hydro-context",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "Is this seasonal or long-term?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["seasonal", "trend"],
+    "expected_concepts": ["seasonal"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_hydro_supply_proxy_caveat",
+    "level": "hydro-context",
+    "prior_turn": {"question": "Estero trends", "audience": "sponsor"},
+    "question": "What proxy limitations should I mention for supply aquifers?",
+    "audience": "sponsor",
+    "max_seconds": 75,
+    "expected_terms": ["monitoring", "aquifer"],
+    "must_hedge": true,
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_hydro_saltwater_guardrail",
+    "level": "hydro-context",
+    "prior_turn": {"question": "Estero trends", "audience": "technical"},
+    "question": "Could this indicate saltwater intrusion risk?",
+    "audience": "technical",
+    "max_seconds": 75,
+    "expected_terms": ["saltwater", "risk"],
+    "must_hedge": true,
+    "must_not_contain": ["proves saltwater intrusion", "definitely intrusion"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_hydro_shallow_deep_caveat",
+    "level": "hydro-context",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "How do I compare shallow and deep aquifer wells?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["shallow", "deep", "wells"],
+    "must_hedge": true,
     "min_data_references": 4
   }
 ]
