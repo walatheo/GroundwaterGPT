@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState, useEffect, useRef } from 'react'
-import { Send, Bot, User, Sparkles, Search, MessageCircle, FlaskConical } from 'lucide-react'
+import { Send, Bot, User, Sparkles, Search, MessageCircle, FlaskConical, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { backendStatus, sendChatMessage, sendInterpretationQuery, sendResearchQueryStreaming, fetchChatStatus } from '../api/client'
 import ResearchSessionPanel from './ResearchSessionPanel'
@@ -58,6 +58,35 @@ function extractChart(text) {
   return { text, chart: null }
 }
 
+function chartContextFromPayload(chart) {
+  if (!chart) return null
+  const siteIds = Array.isArray(chart.series)
+    ? chart.series
+        .map(series => String(series.key || ''))
+        .filter(key => key && key !== 'avg' && !key.endsWith('_trend'))
+    : []
+  if (siteIds.length === 0) return null
+  return {
+    chart_id: chart.title || `${chart.chart_type || 'chart'}:${siteIds.join(',')}`,
+    site_ids: [...new Set(siteIds)],
+    chart_type: chart.chart_type || 'comparison',
+    summary_metrics: {
+      title: chart.title || '',
+      summary: chart.explainability?.summary || '',
+      insights: chart.insights || [],
+      site_ids: [...new Set(siteIds)],
+    },
+  }
+}
+
+function turnHistoryFromMessages(messages) {
+  return messages.slice(-4).map(message => ({
+    role: message.role,
+    content_preview: String(message.content || '').slice(0, 260),
+    chart_id: message.chartContextRef?.chart_id || null,
+  }))
+}
+
 const EXAMPLE_QUESTIONS = [
   "Interpret the Estero groundwater chart for a sponsor.",
   "Which Lee County wells are changing fastest?",
@@ -85,6 +114,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
   const [mode, setMode] = useState('chat') // 'chat' | 'research'
   const [agentStatus, setAgentStatus] = useState(null)
   const [backendState, setBackendState] = useState(() => backendStatus.getStatus())
+  const [activeChartContext, setActiveChartContext] = useState(null)
   const messagesEndRef = useRef(null)
 
   // Scroll to bottom when messages change
@@ -101,9 +131,12 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
 
   useEffect(() => backendStatus.subscribe(setBackendState), [])
 
-  const sendMessage = async (text = input) => {
+  const sendMessage = async (text = input, { chartContext } = {}) => {
     if (!text.trim()) return
 
+    const priorMessages = messages
+    const requestChartContext = chartContext || activeChartContext || null
+    const turnHistory = turnHistoryFromMessages(priorMessages)
     const userMessage = { role: 'user', content: text }
     setMessages(prev => [...prev, userMessage])
     setInput('')
@@ -156,6 +189,8 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
         const reportRaw = data.report || data.response || 'Research complete — no report generated.'
         const { text: reportText } = extractChart(reportRaw)
         const chart = data.chart || null
+        const chartContextRef = chartContextFromPayload(chart)
+        if (chartContextRef) setActiveChartContext(chartContextRef)
 
         // Swap out the progress bubble for the finished report.
         setMessages(prev => {
@@ -167,6 +202,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
             role: 'assistant',
             content: reportText,
             chart,
+            chartContextRef,
             context: `Depth reached: ${data.depth_reached ?? 0} | Elapsed: ${elapsedSeconds}s`,
             sources: data.sources || [],
             sessionId: data.session_id || '',
@@ -197,15 +233,26 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
         // Quick chat mode
         const wantsInterpretation = INTERPRETATION_QUERY_RE.test(text)
         const data = wantsInterpretation
-          ? await sendInterpretationQuery(text, { audience: 'general', useLlm: false })
-          : await sendChatMessage(text)
+          ? await sendInterpretationQuery(text, {
+              audience: 'general',
+              useLlm: false,
+              chartContext: requestChartContext,
+              turnHistory,
+            })
+          : await sendChatMessage(text, {
+              chartContext: requestChartContext,
+              turnHistory,
+            })
         const { text: replyText } = extractChart(data.response)
         const chart = data.chart || null
+        const chartContextRef = chartContextFromPayload(chart) || requestChartContext
+        if (chartContextRef) setActiveChartContext(chartContextRef)
 
         setMessages(prev => [...prev, {
           role: 'assistant',
           content: replyText,
           chart,
+          chartContextRef,
           context: data.context,
           sources: data.sources || [],
           sessionId: data.session_id || '',
@@ -406,7 +453,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
                           <button
                             key={i}
                             type="button"
-                            onClick={() => sendMessage(item)}
+                            onClick={() => sendMessage(item, { chartContext: msg.chartContextRef })}
                             className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-left text-[11px] text-emerald-900 hover:bg-emerald-100"
                           >
                             {item}
@@ -731,6 +778,8 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
                   {msg.mode === 'site_fallback' && 'Site Analysis'}
                   {msg.mode === 'aquifer_fallback' && 'Aquifer Analysis'}
                   {msg.mode === 'network_fallback' && 'Network Analysis'}
+                  {msg.mode === 'chart_interpreter' && 'Chart Interpreter'}
+                  {msg.mode === 'interpret_chart_interpreter' && 'Chart Interpreter'}
                 </div>
               )}
             </div>
@@ -790,6 +839,19 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
 
       {/* Input */}
       <div className="border-t border-slate-200 bg-white/95 p-4">
+        {activeChartContext && mode === 'chat' && (
+          <div className="mb-2 inline-flex max-w-full items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-800">
+            <span className="truncate">In context: {activeChartContext.summary_metrics?.title || activeChartContext.chart_id}</span>
+            <button
+              type="button"
+              onClick={() => setActiveChartContext(null)}
+              className="rounded p-0.5 text-emerald-700 hover:bg-emerald-100"
+              aria-label="Clear chart context"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
         <div className="flex gap-2">
           <input
             type="text"

@@ -9,6 +9,7 @@ Endpoints:
 """
 
 import copy
+import hashlib
 import json
 import logging
 import math
@@ -25,6 +26,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from api.helpers import calculate_stats, load_site_data
+from api.routes import _chart_interpreter
 from api.routes._agent_chart_hook import attach_chart_from_agent_result
 from api.routes._citation import (  # noqa: E402
     MIN_CLAIM_CITATION_COVERAGE,
@@ -96,7 +98,7 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 _MONTHLY_SITE_CACHE: dict[str, pd.DataFrame | None] = {}
-_INTERPRETATION_CACHE: dict[tuple[str, str, bool], dict[str, Any]] = {}
+_INTERPRETATION_CACHE: dict[tuple[str, str, bool, str], dict[str, Any]] = {}
 _INTERPRETATION_CACHE_MAX = 24
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -248,6 +250,48 @@ def _payload_bool(value: Any, *, default: bool) -> bool:
         if normalized in {"0", "false", "no", "off"}:
             return False
     return default
+
+
+def _trim_turn_history(raw_history: Any) -> list[dict[str, Any]]:
+    """Normalize the last four chat turns for chart-bound follow-ups."""
+    if not isinstance(raw_history, list):
+        return []
+    turns: list[dict[str, Any]] = []
+    for item in raw_history[-4:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role", "user"))[:20]
+        preview = str(item.get("content_preview") or item.get("content") or "")[:500]
+        chart_id = item.get("chart_id")
+        turns.append(
+            {
+                "role": role,
+                "content_preview": preview,
+                "chart_id": str(chart_id)[:120] if chart_id else None,
+            }
+        )
+    return turns
+
+
+def _context_hash(chart_context: Any, turn_history: list[dict[str, Any]]) -> str:
+    """Stable hash for cache keys that depend on chart and turn context."""
+    if not chart_context and not turn_history:
+        return ""
+    raw = json.dumps([chart_context or {}, turn_history], sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _is_open_ended_chart_followup(question: str) -> bool:
+    """Return true for chart-context questions that need interpretation."""
+    return bool(
+        re.search(
+            r"\b(why|how|explain|interpret|what does|does this|which is|what should)\b"
+            r"|caus\w*|overpump\w*|\bpumping\b|\bclimate change\b|\brun dry\b"
+            r"|\bmanagement claim\b",
+            question,
+            re.I,
+        )
+    )
 
 
 def _fallback_response(query: str) -> dict:
@@ -1362,6 +1406,10 @@ def chat_endpoint(query: dict):
         query.get("allow_llm_synthesis"),
         default=True,
     )
+    chart_context = query.get("chart_context")
+    if not isinstance(chart_context, dict):
+        chart_context = None
+    turn_history = _trim_turn_history(query.get("turn_history"))
 
     def _finalize(response_payload: dict[str, Any]) -> dict[str, Any]:
         enriched = _enrich_with_usgs_data(user_query, response_payload)
@@ -1547,6 +1595,16 @@ def chat_endpoint(query: dict):
                 )
             )
 
+    # --- Chart-context interpretation: open-ended follow-up about the prior chart ---
+    if chart_context is not None and _is_open_ended_chart_followup(user_query):
+        interpreted = _chart_interpreter.interpret_with_context(
+            user_query,
+            chart_context,
+            turn_history,
+            allow_llm_synthesis=allow_llm_synthesis,
+        )
+        return _finalize(interpreted)
+
     # --- Groundwater KB fast path: keep lightweight chat queries deterministic ---
     if _kb_topic_matches(user_query):
         return _finalize(_ground_fallback_chat_response(_fallback_response(user_query)))
@@ -1637,7 +1695,16 @@ def interpret_endpoint(query: dict):
         query.get("use_llm"),
         default=not _payload_bool(query.get("fast"), default=False),
     )
-    cache_key = (" ".join(question.lower().split()), audience.lower(), use_llm)
+    chart_context = query.get("chart_context")
+    if not isinstance(chart_context, dict):
+        chart_context = None
+    turn_history = _trim_turn_history(query.get("turn_history"))
+    cache_key = (
+        " ".join(question.lower().split()),
+        audience.lower(),
+        use_llm,
+        _context_hash(chart_context, turn_history),
+    )
     cached = _INTERPRETATION_CACHE.get(cache_key)
     if cached is not None:
         cached_payload = copy.deepcopy(cached)
@@ -1661,13 +1728,19 @@ def interpret_endpoint(query: dict):
         {
             "message": routed_question,
             "allow_llm_synthesis": use_llm,
+            "chart_context": chart_context,
+            "turn_history": turn_history,
         }
     )
-    payload["interpretation_response"] = _build_interpretation_response(
-        payload,
-        question=question,
-        audience=audience or "general",
-    )
+    if not payload.get("interpretation_response"):
+        payload["interpretation_response"] = _build_interpretation_response(
+            payload,
+            question=question,
+            audience=audience or "general",
+        )
+    else:
+        payload["interpretation_response"]["question"] = question
+        payload["interpretation_response"]["audience"] = audience or "general"
     payload["interpretation_response"]["grounding_status"]["llm_requested"] = use_llm
     payload["interpretation_response"]["grounding_status"]["cache_hit"] = False
     payload["mode"] = f"interpret_{payload.get('mode', 'chat')}"

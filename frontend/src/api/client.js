@@ -115,13 +115,19 @@ export async function compareSites(siteIds) {
   return parseApiResponse(response, 'Failed to compare sites')
 }
 
-export async function sendInterpretationQuery(question, { audience = 'general', useLlm = false } = {}) {
+export async function sendInterpretationQuery(
+  question,
+  { audience = 'general', useLlm = false, chartContext, turnHistory } = {}
+) {
+  const body = { question, audience, use_llm: useLlm }
+  if (chartContext) body.chart_context = chartContext
+  if (turnHistory) body.turn_history = turnHistory
   const response = await apiFetch(
     `${API_BASE}/interpret`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, audience, use_llm: useLlm }),
+      body: JSON.stringify(body),
     },
     'Failed to interpret groundwater data'
   )
@@ -177,11 +183,14 @@ export async function fetchComparisonChart(siteIds, { startDate, endDate } = {})
  * @param {string} message — the user's question
  * @returns {{ response: string, context: string, sources: string[], mode: string, status: string }}
  */
-export async function sendChatMessage(message) {
+export async function sendChatMessage(message, { chartContext, turnHistory } = {}) {
+  const body = { message }
+  if (chartContext) body.chart_context = chartContext
+  if (turnHistory) body.turn_history = turnHistory
   const response = await apiFetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(body),
   }, 'Chat request failed')
   return parseApiResponse(response, 'Chat request failed')
 }

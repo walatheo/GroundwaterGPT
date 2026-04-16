@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import statistics
 import sys
 import time
@@ -72,11 +73,96 @@ def _text_blob(body: dict[str, Any]) -> str:
     )
 
 
+def _chart_context_from_body(body: dict[str, Any]) -> dict[str, Any] | None:
+    chart = body.get("chart") or {}
+    series = chart.get("series") or []
+    site_ids = []
+    for item in series:
+        key = str((item or {}).get("key", ""))
+        if key and key != "avg" and not key.endswith("_trend"):
+            site_ids.append(key)
+    if not site_ids:
+        return None
+    return {
+        "chart_id": chart.get("title")
+        or f"{chart.get('chart_type', 'chart')}:{','.join(site_ids)}",
+        "site_ids": list(dict.fromkeys(site_ids)),
+        "chart_type": chart.get("chart_type", "comparison"),
+        "summary_metrics": {
+            "title": chart.get("title", ""),
+            "summary": (chart.get("explainability") or {}).get("summary", ""),
+            "insights": chart.get("insights", []),
+            "site_ids": list(dict.fromkeys(site_ids)),
+        },
+    }
+
+
+def _numeric_match(case: dict[str, Any], interpretation: dict[str, Any]) -> bool:
+    expected = case.get("expected_numeric_claims") or []
+    if not expected:
+        return True
+    numeric_claims = interpretation.get("numeric_claims") or []
+    for target in expected:
+        target_site = str(target.get("site", "")).lower()
+        target_unit = str(target.get("unit", "ft/yr"))
+        target_value = float(target.get("value", 0.0))
+        tolerance = float(target.get("tolerance", 0.1))
+        found = False
+        for claim in numeric_claims:
+            claim_site = str(claim.get("site", "")).lower()
+            if target_site and target_site not in claim_site:
+                continue
+            if str(claim.get("unit")) != target_unit:
+                continue
+            try:
+                value = float(claim.get("value"))
+            except (TypeError, ValueError):
+                continue
+            if abs(value - target_value) <= tolerance:
+                found = True
+                break
+        if not found:
+            return False
+    return True
+
+
+def _free_text_numbers_are_claimed(interpretation: dict[str, Any]) -> bool:
+    answer = str(interpretation.get("answer") or interpretation.get("interpretation") or "")
+    inline_values = [float(match) for match in re.findall(r"([+-]?\d+(?:\.\d+)?)\s*ft/yr", answer)]
+    if not inline_values:
+        return True
+    numeric_values = [
+        float(claim.get("value"))
+        for claim in interpretation.get("numeric_claims", []) or []
+        if claim.get("unit") == "ft/yr"
+    ]
+    return all(
+        any(abs(value - claimed) <= 0.01 for claimed in numeric_values) for value in inline_values
+    )
+
+
+def _guardrail_compliant(
+    case: dict[str, Any], interpretation: dict[str, Any], text_lower: str
+) -> bool:
+    if not case.get("must_hedge"):
+        return True
+    hedge_phrases = [
+        "does not prove",
+        "available record does not show",
+        "cannot attribute",
+        "would require",
+        "not enough evidence",
+    ]
+    flags = [str(flag).lower() for flag in interpretation.get("guardrail_flags", []) or []]
+    return any(phrase in text_lower for phrase in hedge_phrases) or bool(flags)
+
+
 def evaluate_case(
     case: dict[str, Any],
     body: dict[str, Any],
     status_code: int,
     elapsed_seconds: float,
+    outbound_body: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Score one interpretation response."""
     interpretation = body.get("interpretation_response") or {}
@@ -92,6 +178,10 @@ def evaluate_case(
     expected_site_ids = [str(site_id) for site_id in case.get("expected_site_ids", [])]
     expected_concepts = [str(term).lower() for term in case.get("expected_concepts", [])]
     must_not_contain = [str(term).lower() for term in case.get("must_not_contain", [])]
+    prior_site_ids = [
+        str(site_id)
+        for site_id in ((outbound_body or {}).get("chart_context") or {}).get("site_ids", [])
+    ]
 
     concept_text = " ".join(
         str(item).lower() for item in interpretation.get("groundwater_concepts", []) or []
@@ -115,6 +205,16 @@ def evaluate_case(
             term in concept_text or term in text_lower for term in expected_concepts
         ),
         "must_not_contain_absent": all(term not in text_lower for term in must_not_contain),
+        "numeric_match": _numeric_match(case, interpretation),
+        "free_text_numbers_claimed": _free_text_numbers_are_claimed(interpretation),
+        "turn_context_bound": (
+            not case.get("prior_turn")
+            or (
+                bool((outbound_body or {}).get("chart_context"))
+                and any(site_id in text for site_id in prior_site_ids)
+            )
+        ),
+        "guardrail_compliant": _guardrail_compliant(case, interpretation, text_lower),
         "within_time_budget": elapsed_seconds <= float(case.get("max_seconds", 90.0)),
     }
 
@@ -131,6 +231,7 @@ def evaluate_case(
         "passed": score >= 0.75,
         "checks": checks,
         "llm_synthesis_present": bool(body.get("llm_synthesis")),
+        "outbound_had_chart_context": bool((outbound_body or {}).get("chart_context")),
     }
 
 
@@ -175,6 +276,14 @@ def evaluate_thresholds(
         "suggested_question_coverage": (
             "has_suggested_questions",
             thresholds.get("min_suggested_question_coverage", 0.0),
+        ),
+        "numeric_match_rate": (
+            "numeric_match",
+            thresholds.get("min_numeric_match_rate", 0.0),
+        ),
+        "guardrail_pass_rate": (
+            "guardrail_compliant",
+            thresholds.get("min_guardrail_pass_rate", 0.0),
         ),
     }
     coverage_summary: dict[str, float] = {}
@@ -238,21 +347,51 @@ def main() -> int:
     client = TestClient(app)
     results = []
     for case in cases:
+        chart_context = None
+        turn_history = []
+        if case.get("prior_turn"):
+            prior = case["prior_turn"]
+            prior_response = client.post(
+                "/api/interpret",
+                json={
+                    "question": prior.get("question", ""),
+                    "audience": prior.get("audience", "general"),
+                    "use_llm": False,
+                },
+            )
+            try:
+                prior_body = prior_response.json()
+            except Exception:
+                prior_body = {}
+            chart_context = _chart_context_from_body(prior_body)
+            turn_history = [
+                {
+                    "role": "user",
+                    "content_preview": prior.get("question", ""),
+                    "chart_id": None,
+                },
+                {
+                    "role": "assistant",
+                    "content_preview": str(prior_body.get("response", ""))[:260],
+                    "chart_id": (chart_context or {}).get("chart_id"),
+                },
+            ]
+        outbound_body = {
+            "question": case.get("question", ""),
+            "audience": case.get("audience", "general"),
+            "use_llm": not args.disable_llm,
+        }
+        if chart_context:
+            outbound_body["chart_context"] = chart_context
+            outbound_body["turn_history"] = turn_history
         start = time.perf_counter()
-        response = client.post(
-            "/api/interpret",
-            json={
-                "question": case.get("question", ""),
-                "audience": case.get("audience", "general"),
-                "use_llm": not args.disable_llm,
-            },
-        )
+        response = client.post("/api/interpret", json=outbound_body)
         elapsed = time.perf_counter() - start
         try:
             body = response.json()
         except Exception:
             body = {"status": "error", "response": response.text}
-        results.append(evaluate_case(case, body, response.status_code, elapsed))
+        results.append(evaluate_case(case, body, response.status_code, elapsed, outbound_body))
 
     summary = evaluate_thresholds(results, thresholds)
     report = {

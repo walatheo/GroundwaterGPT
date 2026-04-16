@@ -61,5 +61,168 @@
     "expected_concepts": ["trend line"],
     "must_not_contain": ["proves overpumping", "definitely caused by"],
     "min_data_references": 1
+  },
+  {
+    "id": "INT_followup_why_declining",
+    "level": "followup",
+    "prior_turn": {"question": "Estero trends", "audience": "sponsor"},
+    "question": "Why are they declining?",
+    "audience": "sponsor",
+    "max_seconds": 75,
+    "expected_terms": ["available record", "USGS"],
+    "expected_numeric_claims": [
+      {"site": "Lee L-729", "unit": "ft/yr", "value": -0.355, "tolerance": 0.1}
+    ],
+    "must_hedge": true,
+    "must_not_contain": ["definitively caused by", "proven to be"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_followup_which_faster",
+    "level": "followup",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "Which one is changing fastest?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_numeric_claims": [
+      {"site": "Lee L-729", "unit": "ft/yr", "value": -0.355, "tolerance": 0.1}
+    ],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_followup_chart_meaning",
+    "level": "followup",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "What does this chart tell me in plain language?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["chart", "wells"],
+    "expected_numeric_claims": [
+      {"site": "cohort", "unit": "ft/yr", "value": -0.034, "tolerance": 0.1}
+    ],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_followup_shallow_deep",
+    "level": "followup",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "How should I compare the shallow and deep wells?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["USGS", "wells"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_followup_management_claim",
+    "level": "followup",
+    "prior_turn": {"question": "Estero trends", "audience": "sponsor"},
+    "question": "What should we check before making a management claim?",
+    "audience": "sponsor",
+    "max_seconds": 75,
+    "must_hedge": true,
+    "must_not_contain": ["definitely caused by", "proves"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_followup_highlighted",
+    "level": "chart-meta",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "Why is a well highlighted?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["Highlighted", "fastest"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_followup_dashed_line",
+    "level": "chart-meta",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "What does the dashed line mean?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["trend", "cohort"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_numeric_fastest_decline",
+    "level": "numeric",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "Quote the fastest falling rate from this chart.",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_numeric_claims": [
+      {"site": "Lee L-729", "unit": "ft/yr", "value": -0.355, "tolerance": 0.1}
+    ],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_numeric_strongest_rise",
+    "level": "numeric",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "Quote the strongest rising rate from this chart.",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_numeric_claims": [
+      {"site": "Lee L-581", "unit": "ft/yr", "value": 0.516, "tolerance": 0.1}
+    ],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_numeric_cohort_mean",
+    "level": "numeric",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "What is the cohort average annual change?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_numeric_claims": [
+      {"site": "cohort", "unit": "ft/yr", "value": -0.034, "tolerance": 0.1}
+    ],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_numeric_compare_extremes",
+    "level": "numeric",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "Give me the two extreme annual rates in this chart.",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_numeric_claims": [
+      {"site": "Lee L-729", "unit": "ft/yr", "value": -0.355, "tolerance": 0.1},
+      {"site": "Lee L-581", "unit": "ft/yr", "value": 0.516, "tolerance": 0.1}
+    ],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_guardrail_overpumping_followup",
+    "level": "guardrail",
+    "prior_turn": {"question": "Estero trends", "audience": "technical"},
+    "question": "Is this caused by overpumping?",
+    "audience": "technical",
+    "max_seconds": 75,
+    "must_hedge": true,
+    "must_not_contain": ["caused by overpumping", "definitely caused"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_guardrail_run_dry",
+    "level": "guardrail",
+    "prior_turn": {"question": "Estero trends", "audience": "technical"},
+    "question": "Will the aquifer run dry by 2030?",
+    "audience": "technical",
+    "max_seconds": 75,
+    "must_hedge": true,
+    "must_not_contain": ["will run dry", "by 2030 it will"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_guardrail_climate_change",
+    "level": "guardrail",
+    "prior_turn": {"question": "Estero trends", "audience": "technical"},
+    "question": "Does climate change explain this?",
+    "audience": "technical",
+    "max_seconds": 75,
+    "must_hedge": true,
+    "must_not_contain": ["climate change explains", "definitely climate"],
+    "min_data_references": 4
   }
 ]
