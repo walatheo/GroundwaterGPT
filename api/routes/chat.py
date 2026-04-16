@@ -285,7 +285,9 @@ def _is_open_ended_chart_followup(question: str) -> bool:
     """Return true for chart-context questions that need interpretation."""
     return bool(
         re.search(
-            r"\b(why|how|explain|interpret|what does|does this|which is|what should)\b"
+            r"\b(why|how|explain|interpret|what does|does this|which is|what should"
+            r"|which well|which wells|fastest|highlighted|cohort|average|trend line"
+            r"|diverge|divergent|proxy|source|supply)\b"
             r"|caus\w*|overpump\w*|\bpumping\b|\bclimate change\b|\brun dry\b"
             r"|\bmanagement claim\b",
             question,

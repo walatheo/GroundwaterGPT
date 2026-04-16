@@ -611,10 +611,10 @@ def _build_chart_explainability(
     ]
 
     suggested_questions = [
-        "Which well is changing fastest, and is that change rising or falling?",
-        "Do shallow and deep aquifer wells move together or diverge?",
-        "How does the cohort average compare with the highlighted wells?",
-        "What would you check next before making a water-management claim?",
+        "Which wells on this chart are changing fastest, and what are their rates?",
+        "Do the shallow and deep aquifer wells diverge on this chart?",
+        "What does the cohort average mean for these monitored wells?",
+        "What outside evidence would help test a management claim from this chart?",
     ]
 
     return {

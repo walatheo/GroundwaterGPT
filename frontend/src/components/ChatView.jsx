@@ -7,7 +7,8 @@ import ResearchSessionPanel from './ResearchSessionPanel'
 const AgentChart = lazy(() => import('./AgentChart'))
 const ResearchChartsPanel = lazy(() => import('./ResearchChartsPanel'))
 const VISUAL_QUERY_RE = /plot|chart|trend|visuali[sz]e|graph/i
-const INTERPRETATION_QUERY_RE = /interpret|explain|read|meaning|what does|chart|trend|compare .*well|lee l-\d+|water supply|groundwater sources?|supply source|drinking water|aquifer.*supply|changes? in groundwater levels|30 years|which wells/i
+const INTERPRETATION_QUERY_RE = /interpret|explain|read|meaning|what does|chart|trend|compare .*well|lee l-\d+|water supply|groundwater sources?|supply source|drinking water|aquifer.*supply|changes? in groundwater levels|30 years|which wells?|fastest|highlighted|cohort|diverge|proxy/i
+const CHART_FOLLOWUP_RE = /which wells?|fastest|highlighted|cohort|average|trend line|diverge|divergent|proxy|source|supply|what should/i
 
 /** Custom component overrides for ReactMarkdown (no @tailwindcss/typography). */
 const markdownComponents = {
@@ -87,6 +88,70 @@ function turnHistoryFromMessages(messages) {
   }))
 }
 
+function unitMeanRate(unit) {
+  const trendSummary = unit?.trend_summary
+  if (Number.isFinite(trendSummary?.mean_annual_change)) return trendSummary.mean_annual_change
+  const proxies = unit?.proxy_wells || []
+  if (proxies.length === 0) return null
+  const rates = proxies
+    .map(well => Number(well.annual_change_ft_yr))
+    .filter(Number.isFinite)
+  if (rates.length === 0) return null
+  return rates.reduce((sum, rate) => sum + rate, 0) / rates.length
+}
+
+function buildContextualFollowUps(msg) {
+  const questions = []
+  const supply = msg.interpretationDetails?.supply_interpretation || msg.interpretationResponse?.supply_interpretation
+  const units = supply?.supply_units || []
+
+  if (units.length > 0) {
+    const primaryUnit = units.find(unit => unit.usage === 'primary') || units[0]
+    const rankedUnits = units
+      .map(unit => ({ unit, rate: unitMeanRate(unit) }))
+      .filter(item => Number.isFinite(item.rate))
+      .sort((a, b) => a.rate - b.rate)
+    questions.push(`Which proxy wells represent the ${primaryUnit.zone} supply unit?`)
+    if (rankedUnits[0]?.unit?.zone) {
+      questions.push(`Why is ${rankedUnits[0].unit.zone} the most stressed supply unit in this dataset?`)
+    }
+    questions.push('What caveats should I say before using this as a supply-risk claim?')
+  }
+
+  if (msg.chartContextRef || msg.chart) {
+    questions.push('Which wells on this chart are changing fastest, and what are their rates?')
+    if (Array.isArray(msg.divergentPairs) && msg.divergentPairs.length > 0) {
+      const pair = msg.divergentPairs[0]
+      const a = pair.site_a?.name
+      const b = pair.site_b?.name
+      if (a && b) questions.push(`Why do ${a} and ${b} diverge on this chart?`)
+    } else {
+      questions.push('Do the shallow and deep aquifer wells diverge on this chart?')
+    }
+    questions.push('What does the cohort average mean for these monitored wells?')
+  }
+
+  if (Array.isArray(msg.wells) && msg.wells.length >= 2) {
+    const [first, second] = msg.wells
+    if (first?.name && second?.name) {
+      questions.push(`Compare ${first.name} and ${second.name} using the chart and well metadata.`)
+    }
+  }
+
+  const backendQuestions = msg.interpretationResponse?.follow_up_questions || []
+  questions.push(
+    ...backendQuestions.filter(question =>
+      /chart|wells?|cohort|aquifer|supply|proxy|trend|management/i.test(question)
+    )
+  )
+
+  const seen = new Set()
+  return questions
+    .map(question => String(question || '').trim())
+    .filter(question => question && !seen.has(question) && seen.add(question))
+    .slice(0, 3)
+}
+
 const EXAMPLE_QUESTIONS = [
   "What groundwater sources does Estero use, and how have levels changed?",
   "Interpret the Estero groundwater chart for a sponsor.",
@@ -114,13 +179,18 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
   const [agentStatus, setAgentStatus] = useState(null)
   const [backendState, setBackendState] = useState(() => backendStatus.getStatus())
   const [activeChartContext, setActiveChartContext] = useState(null)
-  const messagesContainerRef = useRef(null)
+  const messagesEndRef = useRef(null)
+  const hasMountedRef = useRef(false)
 
-  // Keep scrolling contained inside the chat transcript, not the outer page.
+  // The page is the single scroll owner for chat; avoid a second transcript scroller.
   useEffect(() => {
-    const el = messagesContainerRef.current
-    if (!el) return
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true
+      return
+    }
+    window.requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    })
   }, [messages])
 
   // Check agent status on mount
@@ -132,7 +202,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
 
   useEffect(() => backendStatus.subscribe(setBackendState), [])
 
-  const sendMessage = async (text = input, { chartContext } = {}) => {
+  const sendMessage = async (text = input, { chartContext, forceInterpretation = false } = {}) => {
     if (!text.trim()) return
 
     const priorMessages = messages
@@ -235,7 +305,11 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
         })
       } else {
         // Quick chat mode
-        const wantsInterpretation = INTERPRETATION_QUERY_RE.test(text)
+        const wantsInterpretation = (
+          forceInterpretation
+          || INTERPRETATION_QUERY_RE.test(text)
+          || Boolean(requestChartContext && CHART_FOLLOWUP_RE.test(text))
+        )
         const data = wantsInterpretation
           ? await sendInterpretationQuery(text, {
               audience: 'general',
@@ -308,7 +382,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
   const examples = mode === 'research' ? RESEARCH_EXAMPLES : EXAMPLE_QUESTIONS
 
   return (
-    <div className="flex h-[calc(100vh-120px)] min-h-[620px] max-h-[860px] flex-col bg-[linear-gradient(180deg,_rgba(248,250,252,0.92),_rgba(255,255,255,0.98))]">
+    <div className="flex min-h-[620px] flex-col bg-[linear-gradient(180deg,_rgba(248,250,252,0.92),_rgba(255,255,255,0.98))]">
       {/* Header */}
       <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.16),_transparent_24%),linear-gradient(135deg,_#0f172a,_#164e63)] p-5 text-white">
         <div className="flex items-center justify-between">
@@ -368,10 +442,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
       )}
 
       {/* Messages */}
-      <div
-        ref={messagesContainerRef}
-        className="min-h-0 flex-1 overscroll-contain overflow-y-auto bg-[linear-gradient(180deg,_rgba(248,250,252,0.65),_rgba(241,245,249,0.85))] p-4"
-      >
+      <div className="bg-[linear-gradient(180deg,_rgba(248,250,252,0.65),_rgba(241,245,249,0.85))] p-4">
         {selectedSite && (
           <div className="mb-4 rounded-2xl border border-teal-100 bg-teal-50/80 p-4 text-sm text-slate-700 shadow-sm">
             <div className="flex items-start gap-3">
@@ -420,7 +491,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
                   <summary className="cursor-pointer text-xs font-medium text-slate-600">
                     Evidence report
                   </summary>
-                  <div className="mt-2 max-h-80 overflow-y-auto pr-1 text-xs leading-relaxed text-slate-700">
+                  <div className="mt-2 text-xs leading-relaxed text-slate-700">
                     <ReactMarkdown components={markdownComponents}>{msg.rawContent}</ReactMarkdown>
                   </div>
                 </details>
@@ -468,23 +539,30 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
                       ))}
                     </ul>
                   )}
-                  {Array.isArray(msg.interpretationResponse.follow_up_questions) && msg.interpretationResponse.follow_up_questions.length > 0 && (
-                    <div className="mt-2 border-t border-emerald-200 pt-2">
-                      <p className="text-[11px] font-medium text-emerald-800">Ask Next</p>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
-                        {msg.interpretationResponse.follow_up_questions.slice(0, 3).map((item, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => sendMessage(item, { chartContext: msg.chartContextRef })}
-                            className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-left text-[11px] text-emerald-900 hover:bg-emerald-100"
-                          >
-                            {item}
-                          </button>
-                        ))}
+                  {(() => {
+                    const followUps = buildContextualFollowUps(msg)
+                    if (followUps.length === 0) return null
+                    return (
+                      <div className="mt-2 border-t border-emerald-200 pt-2">
+                        <p className="text-[11px] font-medium text-emerald-800">Ask Next</p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {followUps.map((item, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => sendMessage(item, {
+                                chartContext: msg.chartContextRef,
+                                forceInterpretation: true,
+                              })}
+                              className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-left text-[11px] text-emerald-900 hover:bg-emerald-100"
+                            >
+                              {item}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
                   {msg.interpretationResponse.grounding_status && (
                     <div className="mt-2 text-[10px] text-slate-500">
                       USGS data: {msg.interpretationResponse.grounding_status.uses_usgs_data ? 'yes' : 'no'} · Chart context: {msg.interpretationResponse.grounding_status.uses_chart_context ? 'yes' : 'no'} · LLM: {msg.interpretationResponse.grounding_status.has_llm_synthesis ? 'grounded synthesis' : 'fast grounded mode'}
@@ -860,6 +938,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
             </div>
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Example Questions */}
@@ -889,7 +968,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
       </div>
 
       {/* Input */}
-      <div className="border-t border-slate-200 bg-white/95 p-4">
+      <div className="sticky bottom-0 z-20 border-t border-slate-200 bg-white/95 p-4 backdrop-blur">
         {activeChartContext && mode === 'chat' && (
           <div className="mb-2 inline-flex max-w-full items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-800">
             <span className="truncate">In context: {activeChartContext.summary_metrics?.title || activeChartContext.chart_id}</span>

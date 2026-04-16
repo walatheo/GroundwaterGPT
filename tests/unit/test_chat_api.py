@@ -354,6 +354,59 @@ class TestChatEndpoint:
         assert body["mode"] == "network_fallback"
         assert len(body.get("wells", [])) >= 2
 
+    def test_chart_context_which_wells_followup_routes_to_interpreter(self, monkeypatch):
+        """Follow-up chips like 'which wells' should not fall through to the well KB."""
+        from api.routes import chat as chat_routes
+
+        def _stub_interpreter(question, chart_context, turn_history, **_kwargs):
+            return {
+                "response": "Stubbed chart-context interpretation.",
+                "context": "Chart-context interpretation",
+                "sources": [],
+                "mode": "chart_interpreter",
+                "status": "ok",
+                "claim_citations": [],
+                "interpretation_response": {
+                    "schema_version": "interpretation_response_v1",
+                    "question": question,
+                    "audience": "general",
+                    "interpretation": "The fastest well is identified from chart context.",
+                    "follow_up_questions": [],
+                    "grounding_status": {
+                        "uses_chart_context": True,
+                        "uses_usgs_data": True,
+                        "invented_measurements_allowed": False,
+                    },
+                    "chart_context": {"summary": "Stub chart"},
+                    "data_references": [],
+                },
+                "chart_context_used": chart_context,
+                "turn_history_used": turn_history,
+            }
+
+        monkeypatch.setattr(
+            chat_routes._chart_interpreter,
+            "interpret_with_context",
+            _stub_interpreter,
+        )
+        resp = client.post(
+            "/api/chat",
+            json={
+                "message": "Which wells on this chart are changing fastest?",
+                "chart_context": {
+                    "chart_id": "Estero Monthly Groundwater Levels",
+                    "site_ids": ["263335081394301", "263532081592201"],
+                    "chart_type": "comparison",
+                    "summary_metrics": {"title": "Estero Monthly Groundwater Levels"},
+                },
+                "allow_llm_synthesis": False,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["mode"] == "chart_interpreter"
+        assert body["interpretation_response"]["grounding_status"]["uses_chart_context"] is True
+
 
 # ===================================================================
 # POST /api/interpret endpoint integration tests
