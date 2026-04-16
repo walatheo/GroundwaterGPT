@@ -153,7 +153,7 @@ def _highlighted_site_ids(cross_well: dict[str, Any]) -> set[str]:
 
 
 def _rag_snippets(question: str) -> list[dict[str, Any]]:
-    if os.getenv("GROUNDWATERGPT_ENABLE_INTERPRETER_RAG", "").strip().lower() not in {
+    if os.getenv("GROUNDWATERGPT_DISABLE_INTERPRETER_RAG", "").strip().lower() in {
         "1",
         "true",
         "yes",
@@ -416,6 +416,52 @@ def _deterministic_result_from_pack(
     )
 
 
+def _reconcile_llm_numeric_claims(
+    llm_claims: list[NumericClaim],
+    pack: dict[str, Any],
+    tolerance: float = 0.1,
+) -> tuple[list[NumericClaim], list[str]]:
+    """Cross-check LLM numeric claims against the deterministic EvidencePack.
+
+    Replaces any value that disagrees with the deterministic metric by more
+    than ``tolerance`` with the deterministic value and records a guardrail flag.
+    Drops claims whose ``source`` has no deterministic counterpart.
+    """
+    cross_well = pack.get("cross_well", {}) or {}
+    truth: dict[tuple[str, str], float] = {}
+    for metric in cross_well.get("per_site_metrics", []) or []:
+        name = str(metric.get("name", "")).strip()
+        if not name:
+            continue
+        truth[(name, "annual_change_ft_yr")] = float(metric.get("annual_change_ft_yr", 0.0))
+        truth[(name, "net_change_ft")] = float(metric.get("net_change_ft", 0.0))
+    cohort_mean = cross_well.get("mean_annual_change_ft_yr")
+    if cohort_mean is not None:
+        truth[("cohort", "mean_annual_change_ft_yr")] = float(cohort_mean)
+
+    reconciled: list[NumericClaim] = []
+    flags: list[str] = []
+    for claim in llm_claims:
+        key = (str(claim.site).strip(), str(claim.source).strip())
+        anchor = truth.get(key)
+        if anchor is None:
+            flags.append(f"llm_claim_unknown_source:{claim.source}")
+            continue
+        if abs(float(claim.value) - anchor) > tolerance:
+            flags.append(f"llm_claim_value_mismatch:{claim.site}:{claim.source}")
+            reconciled.append(
+                NumericClaim(
+                    site=claim.site,
+                    value=anchor,
+                    unit=claim.unit,
+                    source=claim.source,
+                )
+            )
+        else:
+            reconciled.append(claim)
+    return reconciled, flags
+
+
 def _coerce_structured_response(raw: Any) -> InterpretationResult:
     if isinstance(raw, InterpretationResult):
         return raw
@@ -522,11 +568,16 @@ def interpret_with_context(
     except Exception as exc:
         logger.debug("Chart interpreter structured LLM failed: %s", exc)
         llm_result = None
-    result = llm_result or _deterministic_result_from_pack(clean_question, pack)
-    if result.grounding_status != "refused":
-        result = (
-            _deterministic_result_from_pack(clean_question, pack) if not result.answer else result
+    if llm_result is not None:
+        reconciled_claims, reconciliation_flags = _reconcile_llm_numeric_claims(
+            llm_result.numeric_claims, pack
         )
+        llm_result.numeric_claims = reconciled_claims
+        if reconciliation_flags:
+            llm_result.guardrail_flags = list(llm_result.guardrail_flags) + reconciliation_flags
+        if not llm_result.answer.strip():
+            llm_result = None
+    result = llm_result or _deterministic_result_from_pack(clean_question, pack)
 
     claim_citations = _claim_citations_from_result(result, pack)
     claim_verdicts = _build_claim_verdicts(claim_citations)

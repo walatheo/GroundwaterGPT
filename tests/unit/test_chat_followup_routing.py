@@ -70,6 +70,27 @@ def test_chart_context_open_ended_routes_to_interpreter(monkeypatch):
     assert body["interpretation_response"]["grounding_status"]["uses_chart_context"] is True
 
 
+def test_chart_context_compare_followup_routes_to_interpreter(monkeypatch):
+    """Compare/using-chart follow-up chips should keep chart context."""
+    from api.routes import chat as chat_routes
+
+    monkeypatch.setattr(chat_routes._chart_interpreter, "interpret_with_context", _stub_interpreter)
+
+    resp = client.post(
+        "/api/chat",
+        json={
+            "message": "Compare these wells using the chart.",
+            "chart_context": ESTERO_CONTEXT,
+            "allow_llm_synthesis": False,
+        },
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mode"] == "chart_interpreter"
+    assert body["chart_context_used"]["chart_id"] == ESTERO_CONTEXT["chart_id"]
+
+
 def test_named_site_still_uses_deterministic_fast_path(monkeypatch):
     """Explicit site names should keep deterministic routing precedence."""
     from api.routes import chat as chat_routes
@@ -106,6 +127,22 @@ def test_no_chart_context_keeps_existing_routing():
         },
     )
 
+    assert resp.status_code == 200
+    assert resp.json()["mode"] == "site_fallback"
+
+
+def test_chat_benchmark_case_regression_guard():
+    """Re-run a real chat-benchmark case to pin its pre-5.4 mode invariant."""
+    import json
+
+    cases_path = Path(__file__).resolve().parents[1] / "benchmark" / "chat_eval_cases.json"
+    with cases_path.open() as fh:
+        cases = json.load(fh)
+    case = next(c for c in cases if c["id"] == "L1_estero_trend_01")
+    resp = client.post(
+        "/api/chat",
+        json={"message": case["question"], "allow_llm_synthesis": False},
+    )
     assert resp.status_code == 200
     assert resp.json()["mode"] == "site_fallback"
 

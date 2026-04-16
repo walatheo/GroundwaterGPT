@@ -8,7 +8,7 @@ const AgentChart = lazy(() => import('./AgentChart'))
 const ResearchChartsPanel = lazy(() => import('./ResearchChartsPanel'))
 const VISUAL_QUERY_RE = /plot|chart|trend|visuali[sz]e|graph/i
 const INTERPRETATION_QUERY_RE = /interpret|explain|read|meaning|what does|chart|trend|compare .*well|lee l-\d+|water supply|groundwater sources?|supply source|drinking water|aquifer.*supply|changes? in groundwater levels|30 years|which wells?|fastest|highlighted|cohort|diverge|proxy/i
-const CHART_FOLLOWUP_RE = /which wells?|fastest|highlighted|cohort|average|trend line|diverge|divergent|proxy|source|supply|what should/i
+const CHART_FOLLOWUP_RE = /which wells?|fastest|highlighted|cohort|average|trend line|diverge|divergent|proxy|source|supply|compare|this chart|the chart|on the chart|using the chart|what should/i
 
 /** Custom component overrides for ReactMarkdown (no @tailwindcss/typography). */
 const markdownComponents = {
@@ -152,6 +152,51 @@ function buildContextualFollowUps(msg) {
     .slice(0, 3)
 }
 
+function formatSigned(value, digits = 3) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 'n/a'
+  return `${numeric > 0 ? '+' : ''}${numeric.toFixed(digits)}`
+}
+
+function buildAnalyticalDepth(msg) {
+  const interpretation = msg.interpretationResponse || {}
+  const details = msg.interpretationDetails || interpretation.interpretation_details || {}
+  const numericClaims = Array.isArray(interpretation.numeric_claims)
+    ? interpretation.numeric_claims
+    : []
+  const observations = Array.isArray(interpretation.key_observations)
+    ? interpretation.key_observations
+    : []
+  const limits = Array.isArray(interpretation.limits) ? interpretation.limits : []
+  const aquiferSummaries = Array.isArray(details.aquifer_summaries)
+    ? details.aquifer_summaries
+    : []
+  const supplyUnits = details.supply_interpretation?.supply_units || []
+  const guardrailFlags = interpretation.guardrail_flags || []
+
+  if (
+    numericClaims.length === 0 &&
+    observations.length === 0 &&
+    limits.length === 0 &&
+    aquiferSummaries.length === 0 &&
+    supplyUnits.length === 0 &&
+    !msg.cohortRisk
+  ) {
+    return null
+  }
+
+  return {
+    numericClaims,
+    observations,
+    limits,
+    aquiferSummaries,
+    supplyUnits,
+    guardrailFlags,
+    cohortRisk: msg.cohortRisk || details.risk_level || null,
+    grounding: interpretation.grounding_status || null,
+  }
+}
+
 const EXAMPLE_QUESTIONS = [
   "What groundwater sources does Estero use, and how have levels changed?",
   "Interpret the Estero groundwater chart for a sponsor.",
@@ -165,7 +210,7 @@ const RESEARCH_EXAMPLES = [
   "What does the literature say about saltwater intrusion in Southeast Florida?",
 ]
 
-export default function ChatView({ selectedSite, onOpenWorkbench }) {
+export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = false }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -182,7 +227,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
   const messagesEndRef = useRef(null)
   const hasMountedRef = useRef(false)
 
-  // The page is the single scroll owner for chat; avoid a second transcript scroller.
+  // In full-screen chat the transcript is the single scroll owner; otherwise use page scroll.
   useEffect(() => {
     if (!hasMountedRef.current) {
       hasMountedRef.current = true
@@ -382,9 +427,9 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
   const examples = mode === 'research' ? RESEARCH_EXAMPLES : EXAMPLE_QUESTIONS
 
   return (
-    <div className="flex min-h-[620px] flex-col bg-[linear-gradient(180deg,_rgba(248,250,252,0.92),_rgba(255,255,255,0.98))]">
+    <div className={`flex min-h-0 flex-col bg-[linear-gradient(180deg,_rgba(248,250,252,0.92),_rgba(255,255,255,0.98))] ${fullScreen ? 'h-full' : 'min-h-[620px]'}`}>
       {/* Header */}
-      <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.16),_transparent_24%),linear-gradient(135deg,_#0f172a,_#164e63)] p-5 text-white">
+      <div className="shrink-0 border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.16),_transparent_24%),linear-gradient(135deg,_#0f172a,_#164e63)] p-5 text-white">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="rounded-2xl bg-white/10 p-2.5 ring-1 ring-white/10">
@@ -442,7 +487,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
       )}
 
       {/* Messages */}
-      <div className="bg-[linear-gradient(180deg,_rgba(248,250,252,0.65),_rgba(241,245,249,0.85))] p-4">
+      <div className={`${fullScreen ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain' : ''} bg-[linear-gradient(180deg,_rgba(248,250,252,0.65),_rgba(241,245,249,0.85))] p-4`}>
         {selectedSite && (
           <div className="mb-4 rounded-2xl border border-teal-100 bg-teal-50/80 p-4 text-sm text-slate-700 shadow-sm">
             <div className="flex items-start gap-3">
@@ -472,7 +517,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
             )}
 
             <div
-              className={`max-w-[80%] rounded-lg p-3 ${
+              className={`${fullScreen ? 'max-w-[min(980px,86%)]' : 'max-w-[80%]'} rounded-lg p-3 ${
                 msg.role === 'user'
                   ? 'bg-blue-600 text-white'
                   : msg.error
@@ -570,6 +615,111 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
                   )}
                 </div>
               )}
+
+              {msg.role === 'assistant' && (() => {
+                const depth = buildAnalyticalDepth(msg)
+                if (!depth) return null
+                return (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Analytical Depth
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Deterministic signals, limits, and support checks behind this answer.
+                        </p>
+                      </div>
+                      {depth.cohortRisk && (
+                        <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${
+                          depth.cohortRisk === 'high' ? 'bg-red-100 text-red-700'
+                          : depth.cohortRisk === 'moderate' ? 'bg-amber-100 text-amber-700'
+                          : 'bg-green-100 text-green-700'
+                        }`}>
+                          {depth.cohortRisk} risk
+                        </span>
+                      )}
+                    </div>
+
+                    {depth.numericClaims.length > 0 && (
+                      <div className="mt-3 grid gap-2 md:grid-cols-3">
+                        {depth.numericClaims.slice(0, 6).map((claim, i) => (
+                          <div key={`${claim.site}-${claim.source}-${i}`} className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                            <p className="truncate text-[11px] font-medium text-slate-600">{claim.site}</p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                              {formatSigned(claim.value)} {claim.unit}
+                            </p>
+                            <p className="mt-0.5 truncate text-[10px] text-slate-400">{claim.source}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {depth.aquiferSummaries.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-[11px] font-medium text-slate-500">Aquifer comparison</p>
+                        <div className="mt-1 grid gap-1.5 md:grid-cols-2">
+                          {depth.aquiferSummaries.slice(0, 4).map((item, i) => (
+                            <div key={`${item.zone}-${i}`} className="rounded-md bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
+                              <span className="font-medium text-slate-800">{item.zone || item.aquifer}</span>
+                              <span> · {formatSigned(item.mean_annual_change)} ft/yr</span>
+                              <span> · {item.n_falling || 0} falling / {item.n_rising || 0} rising</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {depth.supplyUnits.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-[11px] font-medium text-slate-500">Supply proxy mapping</p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {depth.supplyUnits.slice(0, 4).map((unit, i) => (
+                            <span key={`${unit.zone}-${i}`} className="rounded-md bg-teal-50 px-2 py-1 text-xs text-teal-800">
+                              {unit.zone}: {(unit.proxy_wells || []).length} proxy well{(unit.proxy_wells || []).length === 1 ? '' : 's'}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {(depth.observations.length > 0 || depth.limits.length > 0 || depth.guardrailFlags.length > 0) && (
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {depth.observations.length > 0 && (
+                          <div>
+                            <p className="text-[11px] font-medium text-slate-500">Key observations</p>
+                            <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-slate-600">
+                              {depth.observations.slice(0, 3).map((item, i) => (
+                                <li key={i}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-[11px] font-medium text-slate-500">Limits and guardrails</p>
+                          <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-slate-600">
+                            {depth.limits.slice(0, 3).map((item, i) => (
+                              <li key={`limit-${i}`}>{item}</li>
+                            ))}
+                            {depth.guardrailFlags.slice(0, 2).map((item, i) => (
+                              <li key={`guardrail-${i}`}>{item}</li>
+                            ))}
+                            {depth.limits.length === 0 && depth.guardrailFlags.length === 0 && (
+                              <li>All displayed measurements come from deterministic evidence fields.</li>
+                            )}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+
+                    {depth.grounding && (
+                      <div className="mt-3 border-t border-slate-200 pt-2 text-[10px] text-slate-500">
+                        Chart context: {depth.grounding.uses_chart_context ? 'yes' : 'no'} · USGS data: {depth.grounding.uses_usgs_data ? 'yes' : 'no'} · Invented measurements: {depth.grounding.invented_measurements_allowed ? 'allowed' : 'blocked'}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {!msg.chart && msg.requestedVisualization && (
                 <div className="mt-3 text-xs italic text-slate-400">
@@ -942,7 +1092,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
       </div>
 
       {/* Example Questions */}
-      <div className="border-t border-slate-200 bg-white/90 p-4">
+      <div className="shrink-0 border-t border-slate-200 bg-white/90 p-4">
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
           {mode === 'research' ? 'Research examples:' : 'Try asking:'}
         </p>
@@ -968,7 +1118,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
       </div>
 
       {/* Input */}
-      <div className="sticky bottom-0 z-20 border-t border-slate-200 bg-white/95 p-4 backdrop-blur">
+      <div className={`${fullScreen ? 'shrink-0' : 'sticky bottom-0 z-20'} border-t border-slate-200 bg-white/95 p-4 backdrop-blur`}>
         {activeChartContext && mode === 'chat' && (
           <div className="mb-2 inline-flex max-w-full items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-800">
             <span className="truncate">In context: {activeChartContext.summary_metrics?.title || activeChartContext.chart_id}</span>

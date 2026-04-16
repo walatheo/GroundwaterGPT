@@ -89,6 +89,14 @@ export default function Dashboard({
     { label: 'Records indexed', value: (networkSummary?.totalRecords || 0).toLocaleString() },
   ]
 
+  if (activeTab === 'chat') {
+    return (
+      <div className="h-[calc(100dvh-76px)] min-h-[640px] bg-white/90 lg:h-screen lg:min-h-0">
+        <ChatView selectedSite={site} onOpenWorkbench={onOpenWorkbench} fullScreen />
+      </div>
+    )
+  }
+
   return (
     <div className="p-4 md:p-6">
       <header className="mb-6 overflow-hidden rounded-[30px] border border-white/70 bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.18),_transparent_28%),linear-gradient(135deg,_rgba(255,255,255,0.92),_rgba(241,245,249,0.86))] p-6 shadow-[0_30px_80px_rgba(15,23,42,0.08)] backdrop-blur">
@@ -209,9 +217,6 @@ export default function Dashboard({
         )}
         {activeTab === 'analysis' && (
           <AnalysisView data={data} site={site} stats={stats} />
-        )}
-        {activeTab === 'chat' && (
-          <ChatView selectedSite={site} onOpenWorkbench={onOpenWorkbench} />
         )}
         {activeTab === 'research_workbench' && (
           <ResearchWorkbenchView

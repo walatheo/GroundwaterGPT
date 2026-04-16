@@ -126,7 +126,7 @@ function App() {
         setActiveTab={setActiveTab}
         networkSummary={networkSummary}
       />
-      <main className="flex-1 overflow-auto">
+      <main className={`flex-1 ${activeTab === 'chat' ? 'overflow-hidden lg:h-screen' : 'overflow-auto'}`}>
         <Dashboard
           site={selectedSite}
           data={siteData}
