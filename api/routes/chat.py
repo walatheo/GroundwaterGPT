@@ -1121,6 +1121,9 @@ def _build_chat_payload(
     context: str,
     sources: list[Any],
     mode: str,
+    answer_brief: Optional[str] = None,
+    raw_report: Optional[str] = None,
+    interpretation_details: Optional[dict[str, Any]] = None,
     chart: Any = None,
     wells: Optional[list[dict[str, Any]]] = None,
     aquifer_info: Optional[dict[str, Any]] = None,
@@ -1156,6 +1159,9 @@ def _build_chat_payload(
 
     return {
         "response": response_text,
+        "answer_brief": answer_brief,
+        "raw_report": raw_report,
+        "interpretation_details": interpretation_details,
         "context": context,
         "sources": sources,
         "chart": chart,
@@ -1276,7 +1282,13 @@ def _build_interpretation_response(
             for source in sources[:5]
         ]
 
-    explanation = payload.get("llm_synthesis") or explainability.get("summary") or ""
+    interpretation_details = payload.get("interpretation_details") or {}
+    explanation = (
+        payload.get("answer_brief")
+        or payload.get("llm_synthesis")
+        or explainability.get("summary")
+        or ""
+    )
     if not explanation:
         explanation = str(payload.get("response", "")).split("\n\n", 1)[0]
     if re.search(r"\b(prove|caus|overpump|pumping|why)\b", question, re.I):
@@ -1314,6 +1326,8 @@ def _build_interpretation_response(
         },
         "key_observations": key_observations[:6],
         "groundwater_concepts": concepts[:6],
+        "interpretation_details": interpretation_details,
+        "supply_interpretation": interpretation_details.get("supply_interpretation"),
         "data_references": [
             {
                 "site_id": well.get("site_id") or well.get("id"),
@@ -1428,6 +1442,9 @@ def chat_endpoint(query: dict):
         return _finalize(
             _build_chat_payload(
                 response_text=ns_result["report"],
+                answer_brief=ns_result.get("answer_brief"),
+                raw_report=ns_result.get("report"),
+                interpretation_details=ns_result.get("interpretation_details"),
                 context=_get_site_context(named_sites[0].get("county")),
                 sources=ns_result["sources"],
                 chart=_chart_from(ns_result, path="chat.site_fallback"),
@@ -1463,6 +1480,9 @@ def chat_endpoint(query: dict):
         return _finalize(
             _build_chat_payload(
                 response_text=aq_result["report"],
+                answer_brief=aq_result.get("answer_brief"),
+                raw_report=aq_result.get("report"),
+                interpretation_details=aq_result.get("interpretation_details"),
                 context=_get_site_context(),
                 sources=aq_result["sources"],
                 chart=_chart_from(aq_result, path="chat.aquifer_fallback"),
@@ -1501,6 +1521,9 @@ def chat_endpoint(query: dict):
             return _finalize(
                 _build_chat_payload(
                     response_text=multi_result["report"],
+                    answer_brief=multi_result.get("answer_brief"),
+                    raw_report=multi_result.get("report"),
+                    interpretation_details=multi_result.get("interpretation_details"),
                     context=_get_site_context(),
                     sources=multi_result["sources"],
                     chart=_chart_from(multi_result, path="chat.multi_location_fallback"),
@@ -1538,6 +1561,9 @@ def chat_endpoint(query: dict):
         wells_payload = _build_wells_payload(sites)
         response_dict = _build_chat_payload(
             response_text=result["report"],
+            answer_brief=result.get("answer_brief"),
+            raw_report=result.get("report"),
+            interpretation_details=result.get("interpretation_details"),
             context=_get_site_context(county_hint.title() if county_hint else None),
             sources=result["sources"],
             chart=_chart_from(result, path="chat.location_fallback"),
@@ -1574,6 +1600,9 @@ def chat_endpoint(query: dict):
             return _finalize(
                 _build_chat_payload(
                     response_text=nw_result["report"],
+                    answer_brief=nw_result.get("answer_brief"),
+                    raw_report=nw_result.get("report"),
+                    interpretation_details=nw_result.get("interpretation_details"),
                     context=_get_site_context(),
                     sources=nw_result["sources"],
                     chart=_chart_from(nw_result, path="chat.network_fallback"),
@@ -1632,6 +1661,9 @@ def chat_endpoint(query: dict):
             return _finalize(
                 _build_chat_payload(
                     response_text=response_text,
+                    answer_brief=result.get("answer_brief"),
+                    raw_report=result.get("report"),
+                    interpretation_details=result.get("interpretation_details"),
                     context=_get_site_context(),
                     sources=result.get("sources", []),
                     chart=_chart_from(result, path="chat.evidence_bound_research"),

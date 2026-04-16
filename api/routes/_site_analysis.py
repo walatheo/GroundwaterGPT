@@ -805,6 +805,331 @@ def _build_chart_payload(
     }
 
 
+def _change_direction(rate: float) -> str:
+    """Return a plain trend word for annual change rates."""
+    if rate < -0.05:
+        return "declining"
+    if rate > 0.05:
+        return "rising"
+    return "roughly stable"
+
+
+def _format_rate(rate: float | None) -> str:
+    """Format an annual change value for user-facing summaries."""
+    if rate is None or not math.isfinite(float(rate)):
+        return "unknown ft/yr"
+    return f"{float(rate):+.3f} ft/yr"
+
+
+def _supply_unit_matches_entry(supply_unit: dict, entry: dict) -> bool:
+    """Return True when a monitored aquifer entry can proxy a supply unit."""
+    zone = str(supply_unit.get("zone", "")).lower()
+    aquifer = str(supply_unit.get("aquifer", "")).lower()
+    aquifer_tokens = [
+        token
+        for token in re.split(r"\W+", aquifer)
+        if token and token not in {"aquifer", "system", "group"} and len(token) >= 4
+    ]
+    haystack = " ".join(
+        [
+            str(entry.get("aq_zone", "")),
+            str(entry.get("aq_label", "")),
+        ]
+    ).lower()
+    return bool(
+        (zone and (zone in haystack or haystack in zone))
+        or (aquifer and aquifer in haystack)
+        or any(token in haystack for token in aquifer_tokens)
+    )
+
+
+def _proxy_distance_label(entry: dict, ref_lat: Optional[float], ref_lng: Optional[float]) -> str:
+    """Return a short distance/bearing label when reference coordinates exist."""
+    if ref_lat is None or ref_lng is None or entry.get("lat") is None or entry.get("lng") is None:
+        return ""
+    dist_mi = _distance_miles(ref_lat, ref_lng, float(entry["lat"]), float(entry["lng"]))
+    bearing = _bearing_label(ref_lat, ref_lng, float(entry["lat"]), float(entry["lng"]))
+    return f"{dist_mi:.1f} mi {bearing}"
+
+
+def _aquifer_summary_sentence(aquifer_summaries: list[dict]) -> str:
+    """Summarize aquifer-level trend metrics in one compact sentence."""
+    if not aquifer_summaries:
+        return "No aquifer-level trend summary was available."
+    pieces = []
+    for item in aquifer_summaries[:5]:
+        pieces.append(
+            f"{item['aquifer']} ({item['zone']}): "
+            f"{_change_direction(float(item['mean_annual_change']))} "
+            f"at {_format_rate(float(item['mean_annual_change']))} mean"
+        )
+    return "; ".join(pieces) + "."
+
+
+def _build_supply_interpretation(
+    *,
+    supply_info: Optional[dict],
+    site_computed: list[dict],
+    aquifer_summaries: list[dict],
+    ref_lat: Optional[float],
+    ref_lng: Optional[float],
+) -> dict | None:
+    """Map known municipal supply units to monitored proxy wells and trends."""
+    if not supply_info:
+        return None
+
+    summary_by_zone = {}
+    for item in aquifer_summaries:
+        if item.get("zone"):
+            summary_by_zone[str(item.get("zone", "")).lower()] = item
+    supply_units: list[dict] = []
+    limitations = [
+        (
+            "Monitoring wells are proxies for aquifer behavior; they are not "
+            "production-allocation records."
+        ),
+        (
+            "The municipal supply mapping is curated at moderate confidence and "
+            "should be verified against permits before operational decisions."
+        ),
+    ]
+
+    for supply_unit in supply_info.get("supply_aquifers", []):
+        proxies: list[dict] = []
+        for entry in site_computed:
+            if not _supply_unit_matches_entry(supply_unit, entry):
+                continue
+            distance_label = _proxy_distance_label(entry, ref_lat, ref_lng)
+            proxies.append(
+                {
+                    "site_id": entry.get("site_id"),
+                    "name": entry.get("name"),
+                    "aquifer": entry.get("aq_label"),
+                    "aquifer_zone": entry.get("aq_zone"),
+                    "well_depth_ft": entry.get("well_depth_ft"),
+                    "trend": entry.get("trend"),
+                    "annual_change_ft_yr": round(float(entry.get("annual_change", 0.0)), 4),
+                    "distance_from_reference": distance_label or None,
+                    "why_proxy": (
+                        f"Monitors {entry.get('aq_zone')} in the same mapped unit as "
+                        f"{supply_unit.get('zone')}."
+                    ),
+                    "limitations": (
+                        "Proxy match is based on aquifer unit/depth metadata and proximity, "
+                        "not a direct utility production-well record."
+                    ),
+                }
+            )
+
+        zone_key = str(supply_unit.get("zone", "")).lower()
+        trend_summary = summary_by_zone.get(zone_key)
+        if trend_summary is None:
+            for key, candidate in summary_by_zone.items():
+                if zone_key in key or key in zone_key:
+                    trend_summary = candidate
+                    break
+
+        supply_units.append(
+            {
+                "aquifer": supply_unit.get("aquifer"),
+                "zone": supply_unit.get("zone"),
+                "usage": supply_unit.get("usage"),
+                "depth_range_ft": supply_unit.get("depth_range_ft"),
+                "notes": supply_unit.get("notes"),
+                "proxy_wells": proxies,
+                "trend_summary": trend_summary,
+            }
+        )
+
+        if not proxies:
+            limitations.append(
+                f"No nearby monitored proxy well in this dataset matched {supply_unit.get('zone')}."
+            )
+
+    return {
+        "municipality": supply_info.get("municipality"),
+        "utility": supply_info.get("utility"),
+        "regulatory_authority": supply_info.get("regulatory_authority"),
+        "supply_units": supply_units,
+        "non_supply_aquifers": supply_info.get("non_supply_aquifers", []),
+        "known_risks": supply_info.get("known_risks", []),
+        "confidence": supply_info.get(
+            "data_confidence",
+            "moderate - curated from hydrogeologic framework and regional supply references",
+        ),
+        "limitations": list(dict.fromkeys(limitations)),
+    }
+
+
+def _build_answer_brief(
+    *,
+    location_name: str,
+    sites: list[dict],
+    site_computed: list[dict],
+    aquifer_summaries: list[dict],
+    cross_well: dict,
+    supply_interpretation: dict | None,
+    period_note: str,
+    implications_claim: str,
+) -> tuple[str, dict]:
+    """Build the natural-language answer shown first in chat."""
+    aquifer_names = ", ".join(
+        dict.fromkeys(str(item.get("aquifer", "Unknown Aquifer")) for item in aquifer_summaries)
+    )
+    per_site = cross_well.get("per_site_metrics", [])
+    strongest_decline = (
+        min(per_site, key=lambda item: item["annual_change_ft_yr"]) if per_site else None
+    )
+    strongest_rise = (
+        max(per_site, key=lambda item: item["annual_change_ft_yr"]) if per_site else None
+    )
+    risk = str(cross_well.get("risk_level", "unknown")).lower()
+    cohort = str(cross_well.get("cohort_trend", "unknown")).lower()
+    dist = cross_well.get("trend_distribution", {})
+
+    lines: list[str] = []
+    interpretation_details: dict = {
+        "location": location_name,
+        "n_wells": len(sites),
+        "aquifer_summaries": aquifer_summaries,
+        "cohort_trend": cohort,
+        "risk_level": risk,
+        "supply_interpretation": supply_interpretation,
+    }
+
+    if supply_interpretation:
+        municipality = supply_interpretation.get("municipality") or location_name
+        utility = supply_interpretation.get("utility") or "the listed utility"
+        unit_phrases = [
+            f"{unit.get('usage', 'supply')} {unit.get('aquifer')} / {unit.get('zone')}"
+            for unit in supply_interpretation.get("supply_units", [])
+        ]
+        lines.append(
+            f"**Plain-language answer:** {municipality} is mapped in this project as served by "
+            f"{utility}. The supply units listed here are {', '.join(unit_phrases)}. "
+            "The USGS wells below are monitoring proxies for those aquifer units, "
+            "not proof of exact utility pumping volumes."
+        )
+
+        for unit in supply_interpretation.get("supply_units", []):
+            proxies = unit.get("proxy_wells", [])
+            proxy_names = ", ".join(p["name"] for p in proxies[:4] if p.get("name"))
+            if len(proxies) > 4:
+                proxy_names += f", plus {len(proxies) - 4} more"
+            trend_summary = unit.get("trend_summary") or {}
+            if trend_summary:
+                rate = float(trend_summary.get("mean_annual_change", 0.0))
+                trend_text = (
+                    f"{_change_direction(rate)} mean trend ({_format_rate(rate)}; "
+                    f"{trend_summary.get('n_falling', 0)} falling, "
+                    f"{trend_summary.get('n_stable', 0)} stable, "
+                    f"{trend_summary.get('n_rising', 0)} rising)"
+                )
+            elif proxies:
+                rates = [float(p.get("annual_change_ft_yr", 0.0)) for p in proxies]
+                mean_rate = sum(rates) / len(rates)
+                trend_text = (
+                    f"{_change_direction(mean_rate)} proxy mean ({_format_rate(mean_rate)})"
+                )
+            else:
+                trend_text = "no matching proxy trend in the loaded dataset"
+            lines.append(
+                f"- **{unit.get('zone')} ({unit.get('usage')})**: {trend_text}. "
+                f"Proxy wells: {proxy_names or 'none matched in the current dataset'}."
+            )
+
+        non_supply = supply_interpretation.get("non_supply_aquifers") or []
+        if non_supply:
+            roles = "; ".join(
+                f"{item.get('aquifer')}: {item.get('role')}" for item in non_supply[:3]
+            )
+            lines.append(f"- **Context aquifers:** {roles}.")
+
+        risks = supply_interpretation.get("known_risks") or []
+        if risks:
+            lines.append(
+                "- **Implications:** "
+                + "; ".join(risks[:3])
+                + ". These risks are screening concerns, not a permit-grade finding."
+            )
+    else:
+        lines.append(
+            f"**Plain-language answer:** I found {len(sites)} USGS monitoring well"
+            f"{'' if len(sites) == 1 else 's'} for {location_name}, covering "
+            f"{aquifer_names or 'the available aquifer metadata'}. The cohort is {cohort} "
+            f"with {risk} screening risk."
+        )
+        lines.append(f"- **Aquifer trends:** {_aquifer_summary_sentence(aquifer_summaries)}")
+
+    if cross_well.get("n_total", 0) >= 2:
+        lines.append(
+            "- **Cohort signal:** "
+            f"{dist.get('falling', 0)} falling, {dist.get('stable', 0)} stable, "
+            f"{dist.get('rising', 0)} rising; mean change "
+            f"{_format_rate(cross_well.get('mean_annual_change_ft_yr'))}."
+        )
+    if strongest_decline:
+        lines.append(
+            f"- **Most negative trend:** {strongest_decline['name']} "
+            f"at {_format_rate(strongest_decline['annual_change_ft_yr'])}."
+        )
+    if strongest_rise and strongest_rise is not strongest_decline:
+        lines.append(
+            f"- **Most positive trend:** {strongest_rise['name']} "
+            f"at {_format_rate(strongest_rise['annual_change_ft_yr'])}."
+        )
+
+    shallow_wells = [entry for entry in site_computed if not entry["confined"]]
+    deep_wells = [entry for entry in site_computed if entry["confined"]]
+    if shallow_wells and deep_wells:
+        shallow_rate = sum(float(w["annual_change"]) for w in shallow_wells) / len(shallow_wells)
+        deep_rate = sum(float(w["annual_change"]) for w in deep_wells) / len(deep_wells)
+        shallow_seasonal = [
+            float(w["seasonal"].get("seasonal_amplitude_ft", 0.0))
+            for w in shallow_wells
+            if w["seasonal"].get("has_seasonal")
+        ]
+        deep_seasonal = [
+            float(w["seasonal"].get("seasonal_amplitude_ft", 0.0))
+            for w in deep_wells
+            if w["seasonal"].get("has_seasonal")
+        ]
+        variability_note = ""
+        if shallow_seasonal or deep_seasonal:
+            variability_note = (
+                f" Shallow seasonal amplitude averages "
+                f"{(sum(shallow_seasonal) / len(shallow_seasonal)):.1f} ft"
+                if shallow_seasonal
+                else " Shallow seasonal amplitude was not available"
+            )
+            variability_note += (
+                f"; deeper/confined amplitude averages "
+                f"{(sum(deep_seasonal) / len(deep_seasonal)):.1f} ft."
+                if deep_seasonal
+                else "; deeper/confined seasonal amplitude was limited."
+            )
+        lines.append(
+            "- **Shallow vs deep:** "
+            f"shallow/unconfined proxies average {_format_rate(shallow_rate)}, while "
+            f"deeper/confined proxies average {_format_rate(deep_rate)}.{variability_note}"
+        )
+
+    if period_note.strip():
+        lines.append(f"- **Period caveat:** {period_note.strip()}")
+    lines.append(
+        "- **What this means:** "
+        f"{implications_claim} This is a monitoring-record interpretation, not a forecast "
+        "or a groundwater-flow model."
+    )
+    if supply_interpretation:
+        lines.append(
+            "- **Confidence:** " + "; ".join(supply_interpretation.get("limitations", [])[:2])
+        )
+
+    interpretation_details["deterministic_brief"] = "\n".join(lines)
+    return "\n".join(lines), interpretation_details
+
+
 def _site_research_fallback(
     question: str,
     sites: list[dict],
@@ -833,6 +1158,16 @@ def _site_research_fallback(
         claim_verdicts = _build_claim_verdicts(claim_citations)
         return {
             "report": fallback["response"],
+            "answer_brief": fallback["response"],
+            "interpretation_details": {
+                "location": location_name,
+                "n_wells": 0,
+                "aquifer_summaries": [],
+                "cohort_trend": "unknown",
+                "risk_level": "unknown",
+                "supply_interpretation": None,
+                "deterministic_brief": fallback["response"],
+            },
             "insights": [],
             "sources": fallback["sources"],
             "chart": None,
@@ -993,6 +1328,10 @@ def _site_research_fallback(
         # Store computed data for aquifer grouping
         site_computed.append(
             {
+                "site_id": site.get("site_id"),
+                "name": site.get("name", site.get("site_id")),
+                "lat": site.get("lat"),
+                "lng": site.get("lng"),
                 "block": block,
                 "aq_zone": aq_zone,
                 "aq_label": aq_label,
@@ -1444,6 +1783,25 @@ def _site_research_fallback(
                 }
             )
 
+    supply_interpretation = _build_supply_interpretation(
+        supply_info=supply_info,
+        site_computed=site_computed,
+        aquifer_summaries=aquifer_summaries,
+        ref_lat=ref_lat,
+        ref_lng=ref_lng,
+    )
+
+    answer_brief, interpretation_details = _build_answer_brief(
+        location_name=location_name,
+        sites=sites,
+        site_computed=site_computed,
+        aquifer_summaries=aquifer_summaries,
+        cross_well=cross_well,
+        supply_interpretation=supply_interpretation,
+        period_note=period_note,
+        implications_claim=implications_claim,
+    )
+
     chart_payload = _build_chart_payload(sites, location_name, cross_well=cross_well)
 
     # --- LLM synthesis (hybrid mode) ---
@@ -1476,6 +1834,20 @@ def _site_research_fallback(
                     f"{si['utility']}. Supply aquifers: {supply_names}. "
                     f"Known risks: {'; '.join(si.get('known_risks', []))}."
                 )
+                if supply_interpretation:
+                    proxy_lines = []
+                    for unit in supply_interpretation.get("supply_units", []):
+                        proxy_names = ", ".join(
+                            proxy.get("name", "")
+                            for proxy in unit.get("proxy_wells", [])[:4]
+                            if proxy.get("name")
+                        )
+                        proxy_lines.append(
+                            f"{unit.get('zone')}: {proxy_names or 'no matching proxy'}"
+                        )
+                    supply_context += (
+                        "\nProxy monitoring wells by supply unit: " + "; ".join(proxy_lines) + "."
+                    )
 
             aq_data_lines = []
             for aq_s in synthesis_data["aquifer_summaries"]:
@@ -1502,7 +1874,8 @@ def _site_research_fallback(
                 "or fast-changing wells, and a cohort average when multiple wells are present.\n\n"
                 "Cover: 1) how to read the chart, 2) most concerning aquifer trends, "
                 "3) shallow vs deep comparison, 4) sustainability/saltwater intrusion "
-                "implications. "
+                "implications. For supply questions, explicitly identify the supply "
+                "aquifer units, proxy wells, trend direction by unit, and limitations. "
                 "Under 180 words. Use only data above. Do not add new measurements."
             )
             synthesis_model = os.environ.get("SYNTHESIS_MODEL", "llama3.2")
@@ -1524,6 +1897,8 @@ def _site_research_fallback(
             llm_text = re.sub(r"<think>.*?</think>", "", llm_text, flags=re.DOTALL).strip()
             if llm_text and len(llm_text) > 50:
                 synthesis_section = llm_text
+                answer_brief = llm_text
+                interpretation_details["llm_brief"] = llm_text
                 claim_citations.append(
                     {
                         "claim_id": f"claim_{len(claim_citations) + 1:03d}",
@@ -1568,6 +1943,8 @@ def _site_research_fallback(
     claim_verdicts = _build_claim_verdicts(claim_citations)
     return {
         "report": report,
+        "answer_brief": answer_brief,
+        "interpretation_details": interpretation_details,
         "insights": insights,
         "sources": source_urls,
         "chart": chart_payload,

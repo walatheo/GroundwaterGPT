@@ -7,7 +7,7 @@ import ResearchSessionPanel from './ResearchSessionPanel'
 const AgentChart = lazy(() => import('./AgentChart'))
 const ResearchChartsPanel = lazy(() => import('./ResearchChartsPanel'))
 const VISUAL_QUERY_RE = /plot|chart|trend|visuali[sz]e|graph/i
-const INTERPRETATION_QUERY_RE = /interpret|explain|read|meaning|what does|chart|trend|compare .*well|lee l-\d+/i
+const INTERPRETATION_QUERY_RE = /interpret|explain|read|meaning|what does|chart|trend|compare .*well|lee l-\d+|water supply|groundwater sources?|supply source|drinking water|aquifer.*supply|changes? in groundwater levels|30 years|which wells/i
 
 /** Custom component overrides for ReactMarkdown (no @tailwindcss/typography). */
 const markdownComponents = {
@@ -88,11 +88,10 @@ function turnHistoryFromMessages(messages) {
 }
 
 const EXAMPLE_QUESTIONS = [
+  "What groundwater sources does Estero use, and how have levels changed?",
   "Interpret the Estero groundwater chart for a sponsor.",
   "Which Lee County wells are changing fastest?",
   "Compare Lee L-581 and Lee L-588.",
-  "What does Lee L-588 show and where did the data come from?",
-  "Is the Biscayne Aquifer at risk from saltwater intrusion?",
 ]
 
 const RESEARCH_EXAMPLES = [
@@ -115,11 +114,13 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
   const [agentStatus, setAgentStatus] = useState(null)
   const [backendState, setBackendState] = useState(() => backendStatus.getStatus())
   const [activeChartContext, setActiveChartContext] = useState(null)
-  const messagesEndRef = useRef(null)
+  const messagesContainerRef = useRef(null)
 
-  // Scroll to bottom when messages change
+  // Keep scrolling contained inside the chat transcript, not the outer page.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = messagesContainerRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
   // Check agent status on mount
@@ -188,6 +189,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
         const data = await sendResearchQueryStreaming(text, { onProgress: handleProgress })
         const reportRaw = data.report || data.response || 'Research complete — no report generated.'
         const { text: reportText } = extractChart(reportRaw)
+        const answerBrief = data.answer_brief || data.interpretation_response?.interpretation || null
         const chart = data.chart || null
         const chartContextRef = chartContextFromPayload(chart)
         if (chartContextRef) setActiveChartContext(chartContextRef)
@@ -200,7 +202,8 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
             : 0
           return [...filtered, {
             role: 'assistant',
-            content: reportText,
+            content: answerBrief || reportText,
+            rawContent: answerBrief && reportText && answerBrief.trim() !== reportText.trim() ? reportText : '',
             chart,
             chartContextRef,
             context: `Depth reached: ${data.depth_reached ?? 0} | Elapsed: ${elapsedSeconds}s`,
@@ -223,6 +226,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
             divergentPairs: data.divergent_pairs || [],
             cohortRisk: data.cohort_risk_level || null,
             llmSynthesis: data.llm_synthesis || null,
+            interpretationDetails: data.interpretation_details || null,
             hallucinationGuardrail: data.hallucination_guardrail || null,
             citationIntegrity: data.citation_integrity || null,
             requestedVisualization: VISUAL_QUERY_RE.test(text),
@@ -244,13 +248,15 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
               turnHistory,
             })
         const { text: replyText } = extractChart(data.response)
+        const answerBrief = data.answer_brief || data.interpretation_response?.interpretation || data.llm_synthesis || null
         const chart = data.chart || null
         const chartContextRef = chartContextFromPayload(chart) || requestChartContext
         if (chartContextRef) setActiveChartContext(chartContextRef)
 
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: replyText,
+          content: answerBrief || replyText,
+          rawContent: answerBrief && replyText && answerBrief.trim() !== replyText.trim() ? replyText : '',
           chart,
           chartContextRef,
           context: data.context,
@@ -267,6 +273,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
           divergentPairs: data.divergent_pairs || [],
           cohortRisk: data.cohort_risk_level || null,
           llmSynthesis: data.llm_synthesis || null,
+          interpretationDetails: data.interpretation_details || null,
           hallucinationGuardrail: data.hallucination_guardrail || null,
           citationIntegrity: data.citation_integrity || null,
           interpretationResponse: data.interpretation_response || null,
@@ -301,7 +308,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
   const examples = mode === 'research' ? RESEARCH_EXAMPLES : EXAMPLE_QUESTIONS
 
   return (
-    <div className="flex h-[700px] flex-col bg-[linear-gradient(180deg,_rgba(248,250,252,0.92),_rgba(255,255,255,0.98))]">
+    <div className="flex h-[calc(100vh-120px)] min-h-[620px] max-h-[860px] flex-col bg-[linear-gradient(180deg,_rgba(248,250,252,0.92),_rgba(255,255,255,0.98))]">
       {/* Header */}
       <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.16),_transparent_24%),linear-gradient(135deg,_#0f172a,_#164e63)] p-5 text-white">
         <div className="flex items-center justify-between">
@@ -361,7 +368,10 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,_rgba(248,250,252,0.65),_rgba(241,245,249,0.85))] p-4">
+      <div
+        ref={messagesContainerRef}
+        className="min-h-0 flex-1 overscroll-contain overflow-y-auto bg-[linear-gradient(180deg,_rgba(248,250,252,0.65),_rgba(241,245,249,0.85))] p-4"
+      >
         {selectedSite && (
           <div className="mb-4 rounded-2xl border border-teal-100 bg-teal-50/80 p-4 text-sm text-slate-700 shadow-sm">
             <div className="flex items-start gap-3">
@@ -405,6 +415,17 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
                 <ReactMarkdown components={markdownComponents}>{msg.content}</ReactMarkdown>
               </div>
 
+              {msg.rawContent && (
+                <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <summary className="cursor-pointer text-xs font-medium text-slate-600">
+                    Evidence report
+                  </summary>
+                  <div className="mt-2 max-h-80 overflow-y-auto pr-1 text-xs leading-relaxed text-slate-700">
+                    <ReactMarkdown components={markdownComponents}>{msg.rawContent}</ReactMarkdown>
+                  </div>
+                </details>
+              )}
+
               {(msg.isProgress || msg.researchPlan || msg.budgetStatus) && (
                 <ResearchSessionPanel
                   sessionId={msg.sessionId}
@@ -434,9 +455,11 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
                     Interpretation Brief
                   </div>
                   {msg.interpretationResponse.interpretation && (
-                    <p className="mt-1 text-sm leading-relaxed text-slate-800">
-                      {msg.interpretationResponse.interpretation}
-                    </p>
+                    msg.interpretationResponse.interpretation !== msg.content && (
+                      <p className="mt-1 text-sm leading-relaxed text-slate-800">
+                        {msg.interpretationResponse.interpretation}
+                      </p>
+                    )
                   )}
                   {Array.isArray(msg.interpretationResponse.key_observations) && msg.interpretationResponse.key_observations.length > 0 && (
                     <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-700">
@@ -498,6 +521,36 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
                   </div>
                 </div>
               )}
+
+              {(msg.interpretationDetails?.supply_interpretation || msg.interpretationResponse?.supply_interpretation) && (() => {
+                const supply = msg.interpretationDetails?.supply_interpretation || msg.interpretationResponse?.supply_interpretation
+                const units = supply?.supply_units || []
+                return (
+                  <details className="mt-3 rounded-lg border border-teal-200 bg-teal-50 p-3">
+                    <summary className="cursor-pointer text-xs font-medium text-teal-800">
+                      Supply source mapping
+                    </summary>
+                    <div className="mt-2 space-y-2 text-xs text-slate-700">
+                      <p>
+                        {supply.municipality} · {supply.utility}
+                        {supply.confidence && <span className="text-slate-500"> · {supply.confidence}</span>}
+                      </p>
+                      {units.slice(0, 4).map((unit, i) => (
+                        <div key={`${unit.zone}-${i}`} className="rounded-md bg-white p-2">
+                          <div className="font-medium text-slate-800">
+                            {unit.usage} · {unit.aquifer} / {unit.zone}
+                          </div>
+                          <div className="mt-1 text-slate-500">
+                            {(unit.proxy_wells || []).length > 0
+                              ? `Proxy wells: ${(unit.proxy_wells || []).map(w => w.name).filter(Boolean).slice(0, 4).join(', ')}`
+                              : 'No matching proxy well in the loaded dataset.'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )
+              })()}
 
               {msg.hallucinationGuardrail && !msg.hallucinationGuardrail.all_factual_claims_cited && (
                 <div className="text-[10px] text-amber-500 mt-1">
@@ -807,8 +860,6 @@ export default function ChatView({ selectedSite, onOpenWorkbench }) {
             </div>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Example Questions */}

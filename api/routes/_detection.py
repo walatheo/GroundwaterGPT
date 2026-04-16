@@ -73,7 +73,8 @@ _WATER_SUPPLY_SOURCES: dict = _load_water_supply_sources()
 _SUPPLY_QUERY_RE = re.compile(
     r"\b(water\s*supply|drinking\s*water|supply\s*source|municipal\s*supply"
     r"|water\s*source|supply\s*aquifer|where\s+does.*get.*water"
-    r"|what\s+aquifer.*supply|what\s+are\s+the\s+groundwater\s+sources)\b",
+    r"|what\s+aquifer.*supply|what\s+are\s+the\s+groundwater\s+sources"
+    r"|what\s+groundwater\s+sources)\b",
     re.IGNORECASE,
 )
 

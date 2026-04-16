@@ -202,6 +202,59 @@ class TestChatEndpoint:
         assert isinstance(body["citation_integrity"], dict)
         assert "passed" in body["citation_integrity"]
 
+    def test_chat_supply_question_returns_brief_and_evidence_report(self):
+        """Supply/source prompts should get a natural-language brief, not only a data dump."""
+        resp = client.post(
+            "/api/chat",
+            json={
+                "message": (
+                    "What are the groundwater sources the Village of Estero uses for "
+                    "water supply and what have been changes in groundwater levels "
+                    "there over the last 30 years?"
+                ),
+                "allow_llm_synthesis": False,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        brief = body.get("answer_brief", "")
+        raw_report = body.get("raw_report", "")
+        supply = (body.get("interpretation_details") or {}).get("supply_interpretation")
+
+        assert brief
+        assert raw_report
+        assert len(brief) < len(raw_report)
+        assert "Village of Estero" in brief
+        assert "Sand and Shell" in brief
+        assert "Hawthorn" in brief
+        assert "Floridan" in brief
+        assert "proxy" in brief.lower()
+        assert supply
+        assert len(supply["supply_units"]) >= 3
+
+    def test_chat_supply_interpretation_is_not_estero_only(self):
+        """The supply brief should use the configured municipality mapping generically."""
+        resp = client.post(
+            "/api/chat",
+            json={
+                "message": (
+                    "What groundwater sources does Naples use for supply, and how "
+                    "are monitored groundwater levels changing?"
+                ),
+                "allow_llm_synthesis": False,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        brief = body.get("answer_brief", "")
+        supply = (body.get("interpretation_details") or {}).get("supply_interpretation")
+
+        assert "City of Naples" in brief
+        assert "Lower Tamiami" in brief
+        assert "Floridan" in brief
+        assert supply["municipality"] == "City of Naples"
+        assert any(unit["zone"] == "Lower Tamiami" for unit in supply["supply_units"])
+
     def test_chat_kb_query_skips_research_agent_for_fast_fallback(self, monkeypatch):
         """KB-matched chat queries should not invoke the slower research-agent path."""
         from api.routes import chat as chat_routes
@@ -363,6 +416,29 @@ class TestInterpretEndpoint:
         assert second.status_code == 200
         assert first.json()["interpretation_response"]["grounding_status"]["cache_hit"] is False
         assert second.json()["interpretation_response"]["grounding_status"]["cache_hit"] is True
+
+    def test_interpret_supply_question_uses_answer_brief(self):
+        """Open supply/source questions should expose the same brief in interpretation mode."""
+        resp = client.post(
+            "/api/interpret",
+            json={
+                "question": (
+                    "What are the groundwater sources the Village of Estero uses for "
+                    "water supply and what have been changes in groundwater levels "
+                    "there over the last 30 years?"
+                ),
+                "audience": "sponsor",
+                "use_llm": False,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        interpretation = body["interpretation_response"]
+
+        assert body.get("answer_brief")
+        assert "Village of Estero" in interpretation["interpretation"]
+        assert interpretation["supply_interpretation"]["municipality"] == "Village of Estero"
+        assert interpretation["grounding_status"]["uses_usgs_data"] is True
 
 
 # ===================================================================
