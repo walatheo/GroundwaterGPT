@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState, useEffect, useRef } from 'react'
-import { Send, Bot, User, Sparkles, Search, MessageCircle, FlaskConical, X } from 'lucide-react'
+import { Send, Bot, User, Sparkles, MessageCircle, FlaskConical, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { backendStatus, sendChatMessage, sendInterpretationQuery, sendResearchQueryStreaming, fetchChatStatus } from '../api/client'
 import ResearchSessionPanel from './ResearchSessionPanel'
@@ -80,12 +80,61 @@ function chartContextFromPayload(chart) {
   }
 }
 
+function siteIdsFromMessage(message) {
+  const ids = []
+  const add = (value) => {
+    const id = String(value || '').trim()
+    if (id && id !== 'avg' && !id.endsWith('_trend') && !ids.includes(id)) ids.push(id)
+  }
+  message.chartContextRef?.site_ids?.forEach(add)
+  message.chart?.series?.forEach(series => add(series.key))
+  message.wells?.forEach(well => add(well.site_id || well.id))
+  return ids.slice(0, 12)
+}
+
+function chartContextFromMessage(message) {
+  const siteIds = siteIdsFromMessage(message)
+  if (siteIds.length === 0) return null
+  const title =
+    message.chartContextRef?.summary_metrics?.title
+    || message.chartContextRef?.chart_id
+    || message.chart?.title
+    || 'Recent groundwater context'
+  return {
+    chart_id: title,
+    site_ids: siteIds,
+    chart_type: message.chart?.chart_type || 'conversation_context',
+    summary_metrics: {
+      title,
+      summary: message.chart?.explainability?.summary || '',
+      insights: message.chart?.insights || [],
+      site_ids: siteIds,
+    },
+  }
+}
+
 function turnHistoryFromMessages(messages) {
-  return messages.slice(-4).map(message => ({
-    role: message.role,
-    content_preview: String(message.content || '').slice(0, 260),
-    chart_id: message.chartContextRef?.chart_id || null,
-  }))
+  return messages.slice(-4).map(message => {
+    const context = chartContextFromMessage(message)
+    const wells = Array.isArray(message.wells)
+      ? message.wells.slice(0, 8).map(well => ({
+          site_id: well.site_id || well.id || null,
+          name: well.name || '',
+          aquifer: well.aquifer || '',
+          county: well.county || '',
+        }))
+      : []
+    return {
+      role: message.role,
+      content_preview: String(message.content || '').slice(0, 260),
+      mode: message.mode || '',
+      chart_id: context?.chart_id || null,
+      site_ids: context?.site_ids || [],
+      wells,
+      aquifer: message.aquiferInfo?.name || wells[0]?.aquifer || '',
+      cohort_risk_level: message.cohortRisk || '',
+    }
+  })
 }
 
 function unitMeanRate(unit) {
@@ -132,6 +181,9 @@ function buildContextualFollowUps(msg) {
   }
 
   if (Array.isArray(msg.wells) && msg.wells.length >= 2) {
+    questions.push('Explain the decline using these wells.')
+    questions.push('Which well is changing fastest?')
+    questions.push('What caveats should I mention?')
     const [first, second] = msg.wells
     if (first?.name && second?.name) {
       questions.push(`Compare ${first.name} and ${second.name} using the chart and well metadata.`)
@@ -204,23 +256,17 @@ const EXAMPLE_QUESTIONS = [
   "Compare Lee L-581 and Lee L-588.",
 ]
 
-const RESEARCH_EXAMPLES = [
-  "What are the long-term trends for Biscayne Aquifer sites?",
-  "Compare water levels in Miami-Dade vs Collier County over the last 5 years",
-  "What does the literature say about saltwater intrusion in Southeast Florida?",
-]
-
 export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = false }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: "Welcome to Florida Aquifer Analysis. I can help answer questions about groundwater, irrigation, crops, and aquifers in Florida. Switch to Deep Research mode for multi-step investigations with source citations.",
+      content: "Welcome to Florida Aquifer Analysis. I can answer groundwater questions with USGS-backed wells, charts, citations, and grounded interpretation. Ask about a location, aquifer, well, trend, or supply risk.",
       sources: [],
     }
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [mode, setMode] = useState('chat') // 'chat' | 'research'
+  const [mode] = useState('chat') // Sponsor demo locks the visible chat surface to grounded chat.
   const [agentStatus, setAgentStatus] = useState(null)
   const [backendState, setBackendState] = useState(() => backendStatus.getStatus())
   const [activeChartContext, setActiveChartContext] = useState(null)
@@ -424,7 +470,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
     }
   }
 
-  const examples = mode === 'research' ? RESEARCH_EXAMPLES : EXAMPLE_QUESTIONS
+  const examples = EXAMPLE_QUESTIONS
 
   return (
     <div className={`flex min-h-0 flex-col bg-[linear-gradient(180deg,_rgba(248,250,252,0.92),_rgba(255,255,255,0.98))] ${fullScreen ? 'h-full' : 'min-h-[620px]'}`}>
@@ -440,38 +486,28 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
               <h3 className="text-xl font-semibold">Ask about wells, aquifers, trends, and supply risk</h3>
               <p className="mt-1 flex items-center gap-1 text-sm text-teal-50/80">
                 <Sparkles className="w-3 h-3" />
-                {agentStatus?.agent_available
-                  ? 'LLM-powered agent active'
-                  : 'Rule-based mode (LLM agent unavailable)'}
+                Grounded groundwater analysis with USGS data, citations, and chart context
               </p>
             </div>
           </div>
 
-          {/* Mode Toggle */}
+          {/* Sponsor demo mode: keep the visible path on reliable grounded chat. */}
           <div className="flex overflow-hidden rounded-xl bg-white/10 text-sm ring-1 ring-white/10">
-            <button
-              onClick={() => setMode('chat')}
-              className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${
-                mode === 'chat' ? 'bg-white/20 font-semibold' : 'hover:bg-white/10'
-              }`}
-            >
+            <div className="flex items-center gap-1 bg-white/20 px-3 py-1.5 font-semibold">
               <MessageCircle className="w-3.5 h-3.5" /> Chat
-            </button>
-            <button
-              onClick={() => setMode('research')}
-              className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${
-                mode === 'research' ? 'bg-white/20 font-semibold' : 'hover:bg-white/10'
-              }`}
-            >
-              <Search className="w-3.5 h-3.5" /> Research
-            </button>
+            </div>
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
           <span className="rounded-full bg-white/10 px-3 py-1.5 text-teal-50/85">
-            {mode === 'chat' ? 'Fast answers for groundwater prompts' : 'Long-form, multi-step groundwater research'}
+            Fast grounded answers for sponsor-ready groundwater prompts
           </span>
+          {agentStatus?.research_available === false && (
+            <span className="rounded-full bg-white/10 px-3 py-1.5 text-teal-50/75">
+              Deep research remains backend-only future work
+            </span>
+          )}
           {selectedSite && (
             <span className="rounded-full bg-teal-400/15 px-3 py-1.5 text-teal-100">
               Current site: {selectedSite.name}
@@ -596,7 +632,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
                               key={i}
                               type="button"
                               onClick={() => sendMessage(item, {
-                                chartContext: msg.chartContextRef,
+                                chartContext: msg.chartContextRef || chartContextFromMessage(msg),
                                 forceInterpretation: true,
                               })}
                               className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-left text-[11px] text-emerald-900 hover:bg-emerald-100"
@@ -1094,7 +1130,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
       {/* Example Questions */}
       <div className="shrink-0 border-t border-slate-200 bg-white/90 p-4">
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
-          {mode === 'research' ? 'Research examples:' : 'Try asking:'}
+          Try asking:
         </p>
         <div className="flex flex-wrap gap-2">
           {examples.slice(0, 3).map((q, i) => (
@@ -1138,24 +1174,16 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder={
-              mode === 'research'
-                ? 'Ask a deep-research question with a site, county, or aquifer focus…'
-                : 'Ask about groundwater levels, aquifers, well depth, irrigation, or supply risk…'
-            }
+            placeholder="Ask about groundwater levels, aquifers, well depth, trends, or supply risk..."
             className="flex-1 rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm shadow-inner focus:border-transparent focus:outline-none focus:ring-2 focus:ring-teal-500"
             disabled={loading}
           />
           <button
             onClick={() => sendMessage()}
             disabled={loading || !input.trim()}
-            className={`${
-              mode === 'research'
-                ? 'bg-teal-700 hover:bg-teal-800'
-                : 'bg-slate-900 hover:bg-teal-700'
-            } flex items-center gap-2 rounded-2xl px-4 py-2 text-white transition-colors disabled:bg-slate-300`}
+            className="flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-white transition-colors hover:bg-teal-700 disabled:bg-slate-300"
           >
-            {mode === 'research' ? <Search className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+            <Send className="w-4 h-4" />
           </button>
         </div>
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">

@@ -91,6 +91,72 @@ def test_chart_context_compare_followup_routes_to_interpreter(monkeypatch):
     assert body["chart_context_used"]["chart_id"] == ESTERO_CONTEXT["chart_id"]
 
 
+def test_turn_history_site_ids_recover_context_for_vague_followup(monkeypatch):
+    """A vague follow-up should inherit recent wells instead of falling to KB."""
+    from api.routes import chat as chat_routes
+
+    monkeypatch.setattr(chat_routes._chart_interpreter, "interpret_with_context", _stub_interpreter)
+    history = [
+        {
+            "role": "assistant",
+            "content_preview": "Estero wells show a falling trend.",
+            "mode": "site_fallback",
+            "site_ids": ESTERO_CONTEXT["site_ids"],
+            "wells": [
+                {"site_id": "263335081394301", "name": "Lee L-729", "aquifer": "IAS"},
+                {"site_id": "263532081592201", "name": "Lee L-581", "aquifer": "Hawthorn"},
+            ],
+            "cohort_risk_level": "high",
+        }
+    ]
+
+    resp = client.post(
+        "/api/chat",
+        json={
+            "message": "Why is it declining?",
+            "turn_history": history,
+            "allow_llm_synthesis": False,
+        },
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mode"] == "chart_interpreter"
+    assert body["chart_context_used"]["site_ids"] == ESTERO_CONTEXT["site_ids"]
+
+
+def test_contextual_well_decline_followup_preempts_generic_kb(monkeypatch):
+    """The word 'well' should not trigger the basic KB when recent wells exist."""
+    from api.routes import chat as chat_routes
+
+    monkeypatch.setattr(chat_routes._chart_interpreter, "interpret_with_context", _stub_interpreter)
+    history = [
+        {
+            "role": "assistant",
+            "content_preview": "Here are the wells for the latest chart.",
+            "site_ids": ESTERO_CONTEXT["site_ids"][:2],
+            "wells": [
+                {"site_id": "263335081394301", "name": "Lee L-729"},
+                {"site_id": "263532081592201", "name": "Lee L-581"},
+            ],
+        }
+    ]
+
+    resp = client.post(
+        "/api/chat",
+        json={
+            "message": "Which well decline matters most?",
+            "turn_history": history,
+            "allow_llm_synthesis": False,
+        },
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mode"] == "chart_interpreter"
+    assert "Well permits required" not in body["response"]
+
+
 def test_named_site_still_uses_deterministic_fast_path(monkeypatch):
     """Explicit site names should keep deterministic routing precedence."""
     from api.routes import chat as chat_routes
@@ -129,6 +195,22 @@ def test_no_chart_context_keeps_existing_routing():
 
     assert resp.status_code == 200
     assert resp.json()["mode"] == "site_fallback"
+
+
+def test_no_context_well_definition_still_uses_kb():
+    """Without chart or turn context, generic well questions can use the KB."""
+    resp = client.post(
+        "/api/chat",
+        json={
+            "message": "What is a well permit?",
+            "allow_llm_synthesis": False,
+        },
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mode"] == "fallback"
+    assert "Well permits required" in body["response"]
 
 
 def test_chat_benchmark_case_regression_guard():

@@ -263,14 +263,105 @@ def _trim_turn_history(raw_history: Any) -> list[dict[str, Any]]:
         role = str(item.get("role", "user"))[:20]
         preview = str(item.get("content_preview") or item.get("content") or "")[:500]
         chart_id = item.get("chart_id")
+        raw_site_ids = item.get("site_ids") or []
+        site_ids: list[str] = []
+        if isinstance(raw_site_ids, list):
+            for raw_site_id in raw_site_ids:
+                site_id = str(raw_site_id).strip()
+                if site_id and site_id not in site_ids:
+                    site_ids.append(site_id)
+        wells: list[dict[str, Any]] = []
+        raw_wells = item.get("wells") or []
+        if isinstance(raw_wells, list):
+            for raw_well in raw_wells[:8]:
+                if not isinstance(raw_well, dict):
+                    continue
+                site_id = str(raw_well.get("site_id") or raw_well.get("id") or "").strip()
+                if site_id and site_id not in site_ids:
+                    site_ids.append(site_id)
+                wells.append(
+                    {
+                        "site_id": site_id or None,
+                        "name": str(raw_well.get("name") or "")[:120],
+                        "aquifer": str(raw_well.get("aquifer") or "")[:120],
+                        "county": str(raw_well.get("county") or "")[:80],
+                    }
+                )
         turns.append(
             {
                 "role": role,
                 "content_preview": preview,
                 "chart_id": str(chart_id)[:120] if chart_id else None,
+                "mode": str(item.get("mode") or "")[:80],
+                "site_ids": site_ids[:12],
+                "wells": wells,
+                "aquifer": str(item.get("aquifer") or "")[:120],
+                "cohort_risk_level": str(item.get("cohort_risk_level") or "")[:40],
             }
         )
     return turns
+
+
+def _site_ids_from_turn_history(turn_history: list[dict[str, Any]]) -> list[str]:
+    """Recover recent USGS site IDs from previous assistant context."""
+    site_ids: list[str] = []
+    for turn in reversed(turn_history):
+        for raw_site_id in turn.get("site_ids") or []:
+            site_id = str(raw_site_id).strip()
+            if site_id and site_id not in site_ids:
+                site_ids.append(site_id)
+        for well in turn.get("wells") or []:
+            if not isinstance(well, dict):
+                continue
+            site_id = str(well.get("site_id") or well.get("id") or "").strip()
+            if site_id and site_id not in site_ids:
+                site_ids.append(site_id)
+        if site_ids:
+            break
+    return site_ids[:12]
+
+
+def _chart_context_from_turn_history(turn_history: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Build chart context from the latest assistant turn that carried wells."""
+    site_ids = _site_ids_from_turn_history(turn_history)
+    if not site_ids:
+        return None
+    latest_context_turn = next(
+        (
+            turn
+            for turn in reversed(turn_history)
+            if turn.get("site_ids") or turn.get("wells") or turn.get("chart_id")
+        ),
+        {},
+    )
+    title = str(latest_context_turn.get("chart_id") or "Recent groundwater context")
+    return {
+        "chart_id": title,
+        "site_ids": site_ids,
+        "chart_type": "conversation_context",
+        "summary_metrics": {
+            "title": title,
+            "summary": "Recovered from the recent chat context.",
+            "site_ids": site_ids,
+        },
+    }
+
+
+def _is_contextual_followup(question: str) -> bool:
+    """Detect short follow-ups that should inherit the previous data context."""
+    q = " ".join(str(question or "").lower().split())
+    if not q:
+        return False
+    contextual_patterns = [
+        r"\bwhy\b.*\b(declin\w*|fall\w*|chang\w*|trend\w*|rising|dropping)\b",
+        r"\bexplain\b.*\b(declin\w*|fall\w*|trend\w*|chang\w*|this|that)\b",
+        r"\bwhat (about|does|should|caveats?)\b.*\b(trend|declin\w*|this|that|mean|mention)\b",
+        r"\bwhich wells?\b",
+        r"\b(well|wells)\b.*\b(declin\w*|trend\w*|chang\w*|fastest|rising|falling)\b",
+        r"\b(declin\w*|trend\w*|chang\w*)\b.*\b(well|wells|chart|data)\b",
+        r"\bwhat does that mean\b",
+    ]
+    return any(re.search(pattern, q, re.I) for pattern in contextual_patterns)
 
 
 def _context_hash(chart_context: Any, turn_history: list[dict[str, Any]]) -> str:
@@ -1632,6 +1723,21 @@ def chat_endpoint(query: dict):
         interpreted = _chart_interpreter.interpret_with_context(
             user_query,
             chart_context,
+            turn_history,
+            allow_llm_synthesis=allow_llm_synthesis,
+        )
+        return _finalize(interpreted)
+
+    # --- Conversational context recovery: vague follow-ups inherit recent wells ---
+    recovered_chart_context = (
+        _chart_context_from_turn_history(turn_history)
+        if chart_context is None and _is_contextual_followup(user_query)
+        else None
+    )
+    if recovered_chart_context is not None:
+        interpreted = _chart_interpreter.interpret_with_context(
+            user_query,
+            recovered_chart_context,
             turn_history,
             allow_llm_synthesis=allow_llm_synthesis,
         )
