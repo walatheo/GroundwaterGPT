@@ -1,0 +1,14 @@
+{
+  "description": "Phase 5 refusal matrix — each entry must route to UNSUPPORTED and produce an insufficient/refused GroundedAnswer via build_insufficient_from_decision. Target: 100% pass rate.",
+  "cases": [
+    {"id": "r_geo_01", "question": "how is groundwater in Antarctica?",   "expected_reason": "out_of_scope_geography", "expected_grounding_status": "refused"},
+    {"id": "r_geo_02", "question": "aquifer levels in Sahara",            "expected_reason": "out_of_scope_geography", "expected_grounding_status": "refused"},
+    {"id": "r_geo_03", "question": "what about Europe's aquifers",        "expected_reason": "out_of_scope_geography", "expected_grounding_status": "refused"},
+    {"id": "r_geo_04", "question": "groundwater in Japan",                "expected_reason": "out_of_scope_geography", "expected_grounding_status": "refused"},
+
+    {"id": "r_fut_01", "question": "will it drop next year?",             "expected_reason": "future_prediction",      "expected_grounding_status": "refused"},
+    {"id": "r_fut_02", "question": "forecast the trend for 2030",         "expected_reason": "future_prediction",      "expected_grounding_status": "refused"},
+    {"id": "r_fut_03", "question": "should I drill a well here?",         "expected_reason": "future_prediction",      "expected_grounding_status": "refused"},
+    {"id": "r_fut_04", "question": "predict water levels in 2035",        "expected_reason": "future_prediction",      "expected_grounding_status": "refused"}
+  ]
+}

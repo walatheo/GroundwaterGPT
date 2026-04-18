@@ -1,0 +1,31 @@
+{
+  "description": "Phase 5 route-accuracy matrix — each entry pairs a user question with the canonical route_mode the resolver is expected to produce. Target: >=95% pass rate against real detectors.",
+  "cases": [
+    {"id": "ew_01", "question": "tell me about G-3336",                          "expected_route_mode": "exact_well",     "expected_intent": "exact_well_lookup"},
+    {"id": "ew_02", "question": "what does G-5004 show?",                        "expected_route_mode": "exact_well",     "expected_intent": "exact_well_lookup"},
+    {"id": "ew_03", "question": "is G-3336 declining?",                          "expected_route_mode": "exact_well",     "expected_intent": "exact_well_lookup"},
+    {"id": "ew_04", "question": "summarize well G-3336 history",                 "expected_route_mode": "exact_well",     "expected_intent": "exact_well_lookup"},
+
+    {"id": "aq_01", "question": "how is the Biscayne aquifer?",                  "expected_route_mode": "cohort",         "expected_intent": "aquifer_cohort"},
+    {"id": "aq_02", "question": "summarize the surficial aquifer",               "expected_route_mode": "cohort",         "expected_intent": "aquifer_cohort"},
+    {"id": "aq_03", "question": "wells in the Floridan aquifer",                 "expected_route_mode": "cohort",         "expected_intent": "aquifer_cohort"},
+
+    {"id": "ml_01", "question": "compare Estero and Naples",                     "expected_route_mode": "cohort",         "expected_intent": "multi_location_comparison"},
+    {"id": "ml_02", "question": "Estero vs Naples trends",                       "expected_route_mode": "cohort",         "expected_intent": "multi_location_comparison"},
+
+    {"id": "lc_01", "question": "wells near Estero",                             "expected_route_mode": "cohort",         "expected_intent": "location_cohort"},
+    {"id": "lc_02", "question": "show me groundwater around Naples",             "expected_route_mode": "cohort",         "expected_intent": "location_cohort"},
+
+    {"id": "nw_01", "question": "which county has the most wells?",              "expected_route_mode": "network",        "expected_intent": "network_wide"},
+    {"id": "nw_02", "question": "across all monitored wells what is the trend?", "expected_route_mode": "network",        "expected_intent": "network_wide"},
+
+    {"id": "un_01", "question": "will aquifer levels rise in 2030?",             "expected_route_mode": "unsupported",    "expected_intent": "unsupported_question"},
+    {"id": "un_02", "question": "forecast groundwater through next year",        "expected_route_mode": "unsupported",    "expected_intent": "unsupported_question"},
+    {"id": "un_03", "question": "should I drill a well here?",                   "expected_route_mode": "unsupported",    "expected_intent": "unsupported_question"},
+    {"id": "un_04", "question": "how is groundwater in Antarctica?",             "expected_route_mode": "unsupported",    "expected_intent": "unsupported_question"},
+    {"id": "un_05", "question": "aquifer levels in Sahara",                      "expected_route_mode": "unsupported",    "expected_intent": "unsupported_question"},
+
+    {"id": "kb_01", "question": "how does irrigation affect groundwater?",       "expected_route_mode": "fallback",       "expected_intent": "kb_topic_match"},
+    {"id": "kb_02", "question": "what is a confined aquifer",                    "expected_route_mode": "fallback",       "expected_intent": "kb_topic_match"}
+  ]
+}

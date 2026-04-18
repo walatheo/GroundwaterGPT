@@ -1,0 +1,100 @@
+{
+  "description": "Phase 5 guardrail matrix — each entry presents an evidence set plus a candidate LLM narrative and the violations the validator must raise. Target: 100% pass rate.",
+  "cases": [
+    {
+      "id": "g_clean_01",
+      "evidence": {
+        "direct_answer": "G-3336 fell 0.8 ft over the record.",
+        "grounded_findings": ["Monthly mean fell 0.8 ft since 2018."],
+        "limits": ["Record covers 2010-2024."],
+        "supporting_evidence": [{"kind": "well", "site_id": "G-3336"}]
+      },
+      "narrative": "G-3336 has fallen 0.8 ft since 2018. The record covers 2010-2024.",
+      "expected_violations": []
+    },
+    {
+      "id": "g_clean_02",
+      "evidence": {
+        "direct_answer": "Biscayne aquifer wells show a cohort average change of -0.3 ft/yr.",
+        "grounded_findings": ["Cohort of 12 wells averaged -0.3 ft/yr."],
+        "supporting_evidence": [{"kind": "well", "site_id": "G-3336"}, {"kind": "well", "site_id": "G-5004"}]
+      },
+      "narrative": "The cohort of 12 wells in the Biscayne averaged -0.3 ft/yr.",
+      "expected_violations": []
+    },
+    {
+      "id": "g_invent_number_01",
+      "evidence": {
+        "direct_answer": "G-3336 fell 0.8 ft over the record.",
+        "grounded_findings": ["Monthly mean fell 0.8 ft since 2018."],
+        "supporting_evidence": [{"kind": "well", "site_id": "G-3336"}]
+      },
+      "narrative": "G-3336 dropped a dramatic 3.5 ft since 2018.",
+      "expected_violations": ["unsupported_number:3.5"]
+    },
+    {
+      "id": "g_invent_number_02",
+      "evidence": {
+        "direct_answer": "G-3336 fell 0.8 ft over the record.",
+        "grounded_findings": ["Monthly mean fell 0.8 ft since 2018."],
+        "supporting_evidence": [{"kind": "well", "site_id": "G-3336"}]
+      },
+      "narrative": "G-3336 shows a 0.8 ft decline. The slope is -0.125 ft per year.",
+      "expected_violations": ["unsupported_number:-0.125"]
+    },
+    {
+      "id": "g_invent_year_01",
+      "evidence": {
+        "direct_answer": "G-3336 fell 0.8 ft over the record.",
+        "grounded_findings": ["Monthly mean fell 0.8 ft since 2018."],
+        "supporting_evidence": [{"kind": "well", "site_id": "G-3336"}]
+      },
+      "narrative": "G-3336 has fallen 0.8 ft, starting back in 2005.",
+      "expected_violations": ["unsupported_year:2005"]
+    },
+    {
+      "id": "g_invent_site_id_01",
+      "evidence": {
+        "direct_answer": "G-3336 fell 0.8 ft over the record.",
+        "grounded_findings": ["Monthly mean fell 0.8 ft since 2018."],
+        "supporting_evidence": [{"kind": "well", "site_id": "G-3336"}]
+      },
+      "narrative": "G-3336 fell 0.8 ft, while G-9999 held steady.",
+      "expected_violations": ["unsupported_site_id:G9999"]
+    },
+    {
+      "id": "g_empty_narrative",
+      "evidence": {
+        "direct_answer": "G-3336 fell 0.8 ft over the record.",
+        "grounded_findings": [],
+        "supporting_evidence": []
+      },
+      "narrative": "",
+      "expected_violations": []
+    },
+    {
+      "id": "g_multiple_violations",
+      "evidence": {
+        "direct_answer": "G-3336 fell 0.8 ft.",
+        "grounded_findings": ["Mean fell 0.8 ft since 2018."],
+        "supporting_evidence": [{"kind": "well", "site_id": "G-3336"}]
+      },
+      "narrative": "G-3336 fell 2.4 ft starting in 1995, and G-7777 also declined.",
+      "expected_violations": [
+        "unsupported_number:2.4",
+        "unsupported_year:1995",
+        "unsupported_site_id:G7777"
+      ]
+    },
+    {
+      "id": "g_site_id_digits_not_leaked_as_number",
+      "evidence": {
+        "direct_answer": "G-3336 fell.",
+        "grounded_findings": ["Mean fell."],
+        "supporting_evidence": [{"kind": "well", "site_id": "G-3336"}]
+      },
+      "narrative": "G-3336 shows a clear decline.",
+      "expected_violations": []
+    }
+  ]
+}
