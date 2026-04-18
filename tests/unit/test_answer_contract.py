@@ -129,6 +129,21 @@ class TestStampContractFields:
         assert payload["route_mode"] == RouteMode.FALLBACK
         assert payload["grounding_status"] == GroundingStatus.INSUFFICIENT
 
+    def test_route_decision_overrides_internal_mode_mapping(self):
+        # Multi-location comparison uses the historical "network_fallback"
+        # internal tag, but Phase 1 RouteDecision correctly classifies it as
+        # COHORT. The stamp must honor that over the internal-mode table.
+        payload = {
+            "mode": "network_fallback",
+            "wells": [{"site_id": "G-3336"}],
+            "route_decision": {
+                "route_mode": RouteMode.COHORT,
+                "intent": "multi_location_comparison",
+            },
+        }
+        stamp_contract_fields(payload)
+        assert payload["route_mode"] == RouteMode.COHORT
+
 
 @pytest.mark.parametrize(
     "mode,expected_route",

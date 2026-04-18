@@ -93,6 +93,7 @@ _ROUTE_MODE_BY_INTERNAL: dict[str, str] = {
     "deep_research": RouteMode.RESEARCH,
     "research": RouteMode.RESEARCH,
     "research_agent": RouteMode.RESEARCH,
+    "research_chat": RouteMode.RESEARCH,
     "fallback": RouteMode.FALLBACK,
     "kb_fallback": RouteMode.FALLBACK,
     "chat": RouteMode.FALLBACK,
@@ -210,7 +211,16 @@ def stamp_contract_fields(
         payload["answer_type"] = derive_answer_type(payload)
 
     if force or payload.get("route_mode") not in RouteMode.ALL:
-        payload["route_mode"] = canonical_route_mode(payload.get("mode"))
+        # Prefer the RouteDecision's canonical value when the resolver already
+        # stamped it on the payload — its answer is more specific than the
+        # internal-mode mapping (e.g. multi-location comparison uses the
+        # "network_fallback" internal tag but should be COHORT).
+        decision = payload.get("route_decision") or {}
+        decision_mode = decision.get("route_mode") if isinstance(decision, dict) else None
+        if decision_mode in RouteMode.ALL:
+            payload["route_mode"] = decision_mode
+        else:
+            payload["route_mode"] = canonical_route_mode(payload.get("mode"))
 
     # ``grounding_status`` lives in two places in the existing envelope:
     # - inside ``interpretation_response`` as a rich dict of booleans (kept as-is).
