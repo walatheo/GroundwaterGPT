@@ -821,6 +821,34 @@ def _format_rate(rate: float | None) -> str:
     return f"{float(rate):+.3f} ft/yr"
 
 
+def _well_reference_tokens(name: str) -> set[str]:
+    text = str(name or "").strip()
+    if not text:
+        return set()
+    tokens = {text.lower()}
+    parts = re.findall(r"\b[A-Z]+-\d+[A-Z]?\b", text, flags=re.I)
+    tokens.update(part.lower() for part in parts if part)
+    return {token for token in tokens if token}
+
+
+def _mentioned_site_entries(question: str, site_computed: list[dict]) -> list[dict]:
+    lowered = str(question or "").lower()
+    matches: list[dict] = []
+    seen: set[str] = set()
+    for entry in site_computed:
+        name = str(entry.get("name") or "")
+        site_id = str(entry.get("site_id") or "")
+        tokens = _well_reference_tokens(name)
+        if site_id:
+            tokens.add(site_id.lower())
+        if any(token and token in lowered for token in tokens):
+            key = site_id or name.lower()
+            if key not in seen:
+                matches.append(entry)
+                seen.add(key)
+    return matches
+
+
 def _supply_unit_matches_entry(supply_unit: dict, entry: dict) -> bool:
     """Return True when a monitored aquifer entry can proxy a supply unit."""
     zone = str(supply_unit.get("zone", "")).lower()
@@ -963,6 +991,7 @@ def _build_supply_interpretation(
 
 def _build_answer_brief(
     *,
+    question: str,
     location_name: str,
     sites: list[dict],
     site_computed: list[dict],
@@ -986,6 +1015,8 @@ def _build_answer_brief(
     risk = str(cross_well.get("risk_level", "unknown")).lower()
     cohort = str(cross_well.get("cohort_trend", "unknown")).lower()
     dist = cross_well.get("trend_distribution", {})
+    mentioned_sites = _mentioned_site_entries(question, site_computed)
+    cohort_mean = cross_well.get("mean_annual_change_ft_yr")
 
     lines: list[str] = []
     interpretation_details: dict = {
@@ -995,6 +1026,7 @@ def _build_answer_brief(
         "cohort_trend": cohort,
         "risk_level": risk,
         "supply_interpretation": supply_interpretation,
+        "focused_wells": [site.get("name") for site in mentioned_sites[:4]],
     }
 
     if supply_interpretation:
@@ -1052,6 +1084,53 @@ def _build_answer_brief(
                 + "; ".join(risks[:3])
                 + ". These risks are screening concerns, not a permit-grade finding."
             )
+    elif len(sites) == 1 and site_computed:
+        site = site_computed[0]
+        lines.append(
+            f"**Plain-language answer:** {site.get('name')} is the identified USGS monitoring well for this request. "  # noqa: E501
+            f"It monitors {site.get('aq_label')} / {site.get('aq_zone')} and the loaded record shows a "  # noqa: E501
+            f"{site.get('trend')} trend from {site.get('start_date')} to {site.get('end_date')} "
+            f"at {_format_rate(site.get('annual_change'))}."
+        )
+        lines.append(
+            f"- **Trend focus:** net change {float(site.get('net_change', 0.0)):+.2f} ft over "
+            f"{float(site.get('years', 0.0)):.1f} years in a "
+            f"{'confined' if site.get('confined') else 'shallow/unconfined'} monitoring setting."
+        )
+        if aquifer_summaries:
+            lines.append(f"- **Aquifer context:** {_aquifer_summary_sentence(aquifer_summaries)}")
+    elif mentioned_sites:
+        focus = mentioned_sites[0]
+        lines.append(
+            f"**Plain-language answer:** Anchoring on {focus.get('name')}, the named USGS monitoring well shows a "  # noqa: E501
+            f"{focus.get('trend')} trend from {focus.get('start_date')} to {focus.get('end_date')} "
+            f"at {_format_rate(focus.get('annual_change'))} in {focus.get('aq_label')} / {focus.get('aq_zone')}."  # noqa: E501
+        )
+        if len(mentioned_sites) >= 2:
+            comparison_bits = [
+                f"{entry.get('name')} {_format_rate(entry.get('annual_change'))}"
+                for entry in mentioned_sites[:3]
+            ]
+            lines.append("- **Named well comparison:** " + "; ".join(comparison_bits) + ".")
+        elif cross_well.get("n_total", 0) >= 2 and cohort_mean is not None:
+            focus_rate = float(focus.get("annual_change", 0.0))
+            if abs(focus_rate - float(cohort_mean)) >= 0.05:
+                relation = (
+                    "more negative than"
+                    if focus_rate < float(cohort_mean)
+                    else "more positive than"
+                )
+                lines.append(
+                    f"- **Cross-well context:** {focus.get('name')} is {relation} the cohort mean "
+                    f"({_format_rate(float(cohort_mean))}), so it stands out from the broader chart."  # noqa: E501
+                )
+            else:
+                lines.append(
+                    f"- **Cross-well context:** {focus.get('name')} is close to the cohort mean "
+                    f"({_format_rate(float(cohort_mean))}), so it looks representative rather than an outlier."  # noqa: E501
+                )
+        if aquifer_summaries:
+            lines.append(f"- **Aquifer context:** {_aquifer_summary_sentence(aquifer_summaries)}")
     else:
         lines.append(
             f"**Plain-language answer:** I found {len(sites)} USGS monitoring well"
@@ -1068,12 +1147,16 @@ def _build_answer_brief(
             f"{dist.get('rising', 0)} rising; mean change "
             f"{_format_rate(cross_well.get('mean_annual_change_ft_yr'))}."
         )
-    if strongest_decline:
+    if strongest_decline and cross_well.get("n_total", 0) >= 2:
         lines.append(
             f"- **Most negative trend:** {strongest_decline['name']} "
             f"at {_format_rate(strongest_decline['annual_change_ft_yr'])}."
         )
-    if strongest_rise and strongest_rise is not strongest_decline:
+    if (
+        strongest_rise
+        and strongest_rise is not strongest_decline
+        and cross_well.get("n_total", 0) >= 2
+    ):
         lines.append(
             f"- **Most positive trend:** {strongest_rise['name']} "
             f"at {_format_rate(strongest_rise['annual_change_ft_yr'])}."
@@ -1493,22 +1576,54 @@ def _site_research_fallback(
                 }
             )
 
-    # Build aquifer-aware implications based on confinement types present
+    # Build aquifer-aware implications with special handling for identified single wells
     confinement_types = {("confined" if s.get("confined") else "unconfined") for s in sites}
-    if "unconfined" in confinement_types:
-        implication_note = (
-            "Unconfined (water-table) aquifers are directly sensitive to "
-            "recharge variability, drought, and over-pumping."
-        )
+    if len(site_computed) == 1:
+        only = site_computed[0]
+        trend = str(only.get("trend") or "unknown")
+        aq_label = str(only.get("aq_label") or "the monitored aquifer")
+        confined = bool(only.get("confined"))
+        if trend == "falling":
+            implication_note = (
+                f"This well shows a localized decline signal in {aq_label}. "
+                + (
+                    "Because it is unconfined, that pattern can reflect recharge variability, drought, or pumping stress."  # noqa: E501
+                    if not confined
+                    else "Because it is confined, the chart is showing pressure-head decline rather than a shallow water-table response."  # noqa: E501
+                )
+                + " A single well is useful for screening, but it does not define aquifer-wide conditions by itself."  # noqa: E501
+            )
+        elif trend == "rising":
+            implication_note = (
+                f"This well does not currently show a drawdown-style decline signal; the monitored record is rising in {aq_label}. "  # noqa: E501
+                + (
+                    "For an unconfined aquifer, that often means local recharge conditions matter more than a persistent decline narrative."  # noqa: E501
+                    if not confined
+                    else "For a confined aquifer, that suggests pressure conditions are not showing sustained deterioration in this record."  # noqa: E501
+                )
+                + " One well still cannot stand in for the whole aquifer or county."
+            )
+        else:
+            implication_note = (
+                f"This well is relatively stable in the loaded record for {aq_label}. "
+                "That means the main pattern to watch is variability over time rather than a strong long-term directional change."  # noqa: E501
+            )
+        implications_claim = implication_note
     else:
-        implication_note = (
-            "Confined artesian aquifers show pressure-head decline; "
-            "sustained drawdown may reduce artesian flow and increase pumping costs."
+        if "unconfined" in confinement_types:
+            implication_note = (
+                "Unconfined (water-table) aquifers are directly sensitive to "
+                "recharge variability, drought, and over-pumping."
+            )
+        else:
+            implication_note = (
+                "Confined artesian aquifers show pressure-head decline; "
+                "sustained drawdown may reduce artesian flow and increase pumping costs."
+            )
+        implications_claim = (
+            f"Observed trends imply sustainability risk. {implication_note} "
+            "Saltwater intrusion risk increases under persistent decline in coastal zones."
         )
-    implications_claim = (
-        f"Observed trends imply sustainability risk. {implication_note} "
-        "Saltwater intrusion risk increases under persistent decline in coastal zones."
-    )
     claim_citations.append(
         {
             "claim_id": f"claim_{len(claim_citations) + 1:03d}",
@@ -1792,6 +1907,7 @@ def _site_research_fallback(
     )
 
     answer_brief, interpretation_details = _build_answer_brief(
+        question=question,
         location_name=location_name,
         sites=sites,
         site_computed=site_computed,
@@ -1806,121 +1922,71 @@ def _site_research_fallback(
 
     # --- LLM synthesis (hybrid mode) ---
     synthesis_section = ""
+    reasoning_trace: list[dict] = []
+    from api.routes._grounded_reasoning import grounded_reasoning_enabled
+
     needs_synthesis = (
         allow_llm_synthesis
         and _llm_synthesis_enabled()
-        and (is_supply_query or bool(_SYNTHESIS_TRIGGER_RE.search(question)))
+        and (
+            grounded_reasoning_enabled()  # grounded path handles all questions
+            or is_supply_query
+            or bool(_SYNTHESIS_TRIGGER_RE.search(question))
+        )
     )
     if needs_synthesis:
-        synthesis_data = {
-            "location": location_name,
-            "aquifer_summaries": aquifer_summaries,
-            "supply_info": supply_info if is_supply_query and supply_info else None,
-            "cohort_trend": cross_well.get("cohort_trend", "unknown"),
-            "risk_level": cross_well.get("risk_level", "unknown"),
-            "n_wells": len(sites),
-        }
         try:
-            import httpx
-
-            supply_context = ""
-            if synthesis_data.get("supply_info"):
-                si = synthesis_data["supply_info"]
-                supply_names = ", ".join(
-                    f"{sa['aquifer']} ({sa['usage']})" for sa in si.get("supply_aquifers", [])
-                )
-                supply_context = (
-                    f"\nWater supply context: {si['municipality']} is served by "
-                    f"{si['utility']}. Supply aquifers: {supply_names}. "
-                    f"Known risks: {'; '.join(si.get('known_risks', []))}."
-                )
-                if supply_interpretation:
-                    proxy_lines = []
-                    for unit in supply_interpretation.get("supply_units", []):
-                        proxy_names = ", ".join(
-                            proxy.get("name", "")
-                            for proxy in unit.get("proxy_wells", [])[:4]
-                            if proxy.get("name")
-                        )
-                        proxy_lines.append(
-                            f"{unit.get('zone')}: {proxy_names or 'no matching proxy'}"
-                        )
-                    supply_context += (
-                        "\nProxy monitoring wells by supply unit: " + "; ".join(proxy_lines) + "."
-                    )
-
-            aq_data_lines = []
-            for aq_s in synthesis_data["aquifer_summaries"]:
-                nf = aq_s["n_falling"]
-                ns = aq_s["n_stable"]
-                nr = aq_s["n_rising"]
-                aq_data_lines.append(
-                    f"- {aq_s['aquifer']} "
-                    f"({aq_s['confinement']}, {aq_s['depth_label']}): "
-                    f"mean {aq_s['mean_annual_change']:+.3f} ft/yr, "
-                    f"{nf} falling / {ns} stable / {nr} rising"
-                )
-
-            prompt = (
-                f"Hydrogeologist and chart interpreter: synthesize USGS data for {location_name}, "
-                "FL in 2 short paragraphs.\n\n"
-                + "\n".join(aq_data_lines)
-                + f"\n\nCohort: {synthesis_data['n_wells']} wells, "
-                f"{synthesis_data['cohort_trend']}, risk: {synthesis_data['risk_level']}."
-                f"{supply_context}\n\n"
-                "Chart context: "
-                f"{chart_payload.get('explainability', {}).get('summary', '')} "
-                "The chart uses monthly means, dashed trend overlays, highlighted divergent "
-                "or fast-changing wells, and a cohort average when multiple wells are present.\n\n"
-                "Cover: 1) how to read the chart, 2) most concerning aquifer trends, "
-                "3) shallow vs deep comparison, 4) sustainability/saltwater intrusion "
-                "implications. For supply questions, explicitly identify the supply "
-                "aquifer units, proxy wells, trend direction by unit, and limitations. "
-                "Under 180 words. Use only data above. Do not add new measurements."
+            from api.routes._grounded_reasoning import (
+                grounded_reasoning_enabled,
+                invoke_grounded_synthesis,
             )
-            synthesis_model = os.environ.get("SYNTHESIS_MODEL", "llama3.2")
-            ollama_resp = httpx.post(
-                "http://localhost:11434/api/generate",
-                json={
-                    "model": synthesis_model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "think": False,
-                    "options": {"num_predict": 180},
-                    "keep_alive": "10m",
-                },
-                timeout=120.0,
-            )
-            ollama_resp.raise_for_status()
-            llm_text = ollama_resp.json().get("response", "").strip()
-            # Strip any residual <think> blocks
-            llm_text = re.sub(r"<think>.*?</think>", "", llm_text, flags=re.DOTALL).strip()
-            if llm_text and len(llm_text) > 50:
-                synthesis_section = llm_text
-                answer_brief = llm_text
-                interpretation_details["llm_brief"] = llm_text
-                claim_citations.append(
-                    {
-                        "claim_id": f"claim_{len(claim_citations) + 1:03d}",
-                        "claim": llm_text[:200],
-                        "confidence": 0.50,
-                        "citations": [
+
+            if grounded_reasoning_enabled():
+                grounded = invoke_grounded_synthesis(
+                    question,
+                    site_computed=site_computed,
+                    aquifer_summaries=aquifer_summaries,
+                    cross_well=cross_well,
+                    supply_info=supply_info if is_supply_query and supply_info else None,
+                    location_name=location_name,
+                )
+                if grounded is not None:
+                    llm_text = grounded.direct_answer
+                    if llm_text and len(llm_text) > 50:
+                        synthesis_section = llm_text
+                        answer_brief = llm_text
+                        interpretation_details["llm_brief"] = llm_text
+                        interpretation_details["reasoning_trace"] = [
+                            step.model_dump() for step in grounded.reasoning_steps
+                        ]
+                        interpretation_details["reasoning_source"] = "grounded_llm"
+                        interpretation_details["grounded_implications"] = (
+                            grounded.implications or grounded.why_it_matters
+                        )
+                        interpretation_details["grounded_limitations"] = grounded.limitations
+                        reasoning_trace = interpretation_details["reasoning_trace"]
+                        claim_citations.append(
                             {
-                                "url": "local://eagle/deterministic-chart-context",
-                                "source": "deterministic_chart_context",
-                                "basis": (
-                                    "LLM synthesis constrained to chart payload, "
-                                    "USGS-derived aquifer summaries, and cohort metrics"
-                                ),
-                                "verified": True,
-                                "trust_level": "moderate",
+                                "claim_id": f"claim_{len(claim_citations) + 1:03d}",
+                                "claim": llm_text[:200],
+                                "confidence": 0.65,
+                                "citations": [
+                                    {
+                                        "url": "local://eagle/grounded-reasoning",
+                                        "source": "grounded_reasoning",
+                                        "basis": (
+                                            "Grounded LLM reasoning over raw USGS evidence pack "
+                                            f"via {grounded.llm_provider}/{grounded.llm_model}"
+                                        ),
+                                        "verified": True,
+                                        "trust_level": "moderate",
+                                    }
+                                ],
+                                "source_type": "grounded_llm_synthesis",
                             }
-                        ],
-                        "source_type": "llm_synthesis",
-                    }
-                )
+                        )
         except Exception as exc:
-            logger.debug("LLM synthesis unavailable, using deterministic fallback: %s", exc)
+            logger.debug("Grounded reasoning unavailable: %s", exc)
 
     # Build full report
     aquifer_summary = ", ".join(sorted_aquifers)
@@ -1960,6 +2026,8 @@ def _site_research_fallback(
             "has_llm_synthesis": bool(synthesis_section),
         },
         "llm_synthesis": synthesis_section.strip() if synthesis_section else None,
+        "reasoning_trace": reasoning_trace,
+        "reasoning_source": interpretation_details.get("reasoning_source", "deterministic"),
         "divergent_pairs": cross_well.get("divergent_pairs", []),
         "changepoints": cross_well.get("changepoints", []),
         "cross_well_clusters": cross_well.get("clusters", []),

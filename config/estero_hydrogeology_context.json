@@ -1,0 +1,102 @@
+{
+  "schema_version": "hydrogeology_context_v1",
+  "description": "Location-specific hydrogeology context for grounded LLM reasoning. Sourced from config/usgs_sites.json, config/water_supply_sources.json, and standard USGS SW Florida hydrogeologic framework.",
+  "locations": {
+    "estero": {
+      "display_name": "Village of Estero",
+      "reference_point": {"lat": 26.4381, "lng": -81.8068},
+      "county": "Lee",
+      "incorporated": 2014,
+      "utility": "Lee County Utilities",
+      "regulatory_authority": "South Florida Water Management District (SFWMD)",
+      "aquifer_framework": {
+        "Intermediate Aquifer System": {
+          "zone": "Sand and Shell",
+          "supply_role": "Primary municipal supply for Lee County Utilities service area including Estero",
+          "depth_range_ft": [100, 200],
+          "confined": true,
+          "usgs_aqfr_cd": "122SNDS",
+          "proxy_wells": [
+            {"name": "Lee L-2194", "site_id": "261957081432201", "depth_ft": 137, "lat": 26.33286, "lng": -81.72258, "miles_from_estero": 8.95},
+            {"name": "Lee L-2550", "site_id": "262711081413701", "depth_ft": 134, "lat": 26.45369, "lng": -81.69342, "miles_from_estero": 7.10},
+            {"name": "Lee L-729",  "site_id": "263335081394301", "depth_ft": 103, "lat": 26.56063, "lng": -81.66174, "miles_from_estero": 12.33},
+            {"name": "Lee L-1998", "site_id": "263041081433102", "depth_ft": 160, "lat": 26.51202, "lng": -81.72536, "miles_from_estero": 7.17}
+          ],
+          "proxy_limitations": "Monitoring wells are 7-13 miles from Estero center. They represent regional aquifer trends in the Sand and Shell production zone, but do not capture local drawdown cones near actual production wellfields. Screened intervals (103-160 ft) span the target zone but may not match exact production well construction.",
+          "hydrogeologic_notes": "Confined sand-and-shell permeable unit between the surficial aquifer above and the Hawthorn Group below. Receives vertical recharge through the surficial system. Production zone for most Lee County municipal wells.",
+          "risk_factors": [
+            "Saltwater intrusion risk in coastal portions along Estero Bay — chloride monitoring not available from these wells",
+            "Seasonal drawdown during dry season (Nov-May) from increased municipal pumping",
+            "Over-pumping of Sand and Shell production zone when demand exceeds recharge"
+          ]
+        },
+        "Hawthorn Group": {
+          "zone": "Hawthorn",
+          "supply_role": "Supplemental confined zone; deeper alternative when Intermediate capacity is insufficient",
+          "depth_range_ft": [177, 420],
+          "confined": true,
+          "usgs_aqfr_cd": "122HTRN",
+          "proxy_wells": [
+            {"name": "Lee L-581",  "site_id": "263532081592201", "depth_ft": 177, "lat": 26.59256, "lng": -81.98906, "miles_from_estero": 15.52},
+            {"name": "Lee L-2644", "site_id": "263440082022001", "depth_ft": 180, "lat": 26.57896, "lng": -82.03731, "miles_from_estero": 17.26}
+          ],
+          "proxy_limitations": "Both monitoring wells are 15-17 miles northwest of Estero, near the Cape Coral/Pine Island area. They represent Hawthorn conditions in western Lee County but may not reflect conditions near Estero production zones. Limited to 2 wells — trend confidence is lower than Intermediate (4 wells).",
+          "hydrogeologic_notes": "Clastic and carbonate confining/producing unit that forms the primary aquitard between the Intermediate and Floridan systems. Acts as both a confining layer and a monitored productive zone at 177-420 ft depth.",
+          "risk_factors": [
+            "Lower recharge rates than Intermediate — more sensitive to sustained withdrawal",
+            "Fewer monitoring wells reduces confidence in trend estimates"
+          ]
+        },
+        "Floridan Aquifer System": {
+          "zone": "Upper Floridan",
+          "supply_role": "Brackish supply via reverse osmosis (RO) treatment and aquifer storage-recovery (ASR); not a freshwater source",
+          "depth_range_ft": [500, 1000],
+          "confined": true,
+          "usgs_aqfr_cd": "120FLRD",
+          "proxy_wells": [
+            {"name": "Lee L-588",  "site_id": "262538082045701", "depth_ft": 557, "lat": 26.42795, "lng": -82.08174, "miles_from_estero": 17.03},
+            {"name": "Lee L-2525", "site_id": "263117082051001", "depth_ft": 645, "lat": 26.52167, "lng": -82.08589, "miles_from_estero": 18.20}
+          ],
+          "proxy_limitations": "Both wells are 17-18 miles west of Estero, monitoring the regional Floridan system. The Floridan is a regional artesian system with more spatially uniform trends than shallow aquifers, so distance is less problematic. However, L-2525 has only 24 years of record (2002-2026), shorter than the 30-year target.",
+          "hydrogeologic_notes": "Deep confined artesian carbonate aquifer. Strong artesian pressure — head often rises above land surface. Water is brackish in Lee County and requires RO treatment for potable use. Used for ASR (injecting treated surface water for later recovery).",
+          "risk_factors": [
+            "Pressure-head decline from regional pumping reduces artesian flow and increases pumping costs",
+            "Brackish source — any increase in dissolved solids increases RO treatment costs",
+            "ASR operations depend on maintaining sufficient artesian pressure"
+          ]
+        },
+        "Surficial Aquifer": {
+          "zone": "Surficial Sand",
+          "supply_role": "Not used for municipal supply — serves as recharge indicator for deeper systems and supports ecosystem base flow",
+          "depth_range_ft": [15, 80],
+          "confined": false,
+          "usgs_aqfr_cd": "112NRSD",
+          "proxy_wells": [
+            {"name": "Lee L-5667", "site_id": "262513081432601", "depth_ft": 32, "lat": 26.42175, "lng": -81.72369, "miles_from_estero": 5.26},
+            {"name": "Lee L-1999", "site_id": "263041081433103", "depth_ft": 26, "lat": 26.51202, "lng": -81.72536, "miles_from_estero": 7.17},
+            {"name": "Lee L-2195", "site_id": "261957081432202", "depth_ft": 15, "lat": 26.33286, "lng": -81.72258, "miles_from_estero": 8.95}
+          ],
+          "proxy_limitations": "Closest wells to Estero (5-9 miles). Surficial conditions are highly localized — land use, drainage, and impervious surface cover affect the water table. Regional trends may not reflect conditions at specific recharge zones serving Estero.",
+          "hydrogeologic_notes": "Shallow unconfined water-table aquifer. Recharged directly by rainfall. Water table responds quickly to seasonal precipitation. Changes in the surficial aquifer affect vertical recharge to the underlying Intermediate system. High seasonal variability — wet season Jun-Oct, dry season Nov-May.",
+          "risk_factors": [
+            "Development and impervious surfaces reduce infiltration and recharge to Intermediate supply aquifer",
+            "Drought conditions directly lower water table",
+            "Surficial decline may reduce vertical recharge to Intermediate supply aquifer"
+          ]
+        }
+      },
+      "regional_context": {
+        "setting": "Southwest Florida coastal plain. Flat topography, subtropical climate with distinct wet (Jun-Oct) and dry (Nov-May) seasons. Rainfall averages 50-55 inches/year, concentrated in wet season.",
+        "growth_pressure": "Estero and Bonita Springs corridor is one of the fastest-growing areas in Lee County. Population growth increases municipal water demand and converts pervious recharge areas to impervious development.",
+        "saltwater_context": "Estero borders Estero Bay on the Gulf coast. Coastal portions of the Intermediate Aquifer are vulnerable to lateral saltwater intrusion. Persistent decline in the Intermediate head increases the rate of landward migration of the saltwater interface.",
+        "sustainability_framework": "SFWMD evaluates sustainability through consumptive use permits. Permit conditions typically require monitoring of production-zone water levels and chloride concentrations. Sustained decline trends may trigger permit review or cutback requirements."
+      },
+      "usage_notes": [
+        "Use this context to explain what aquifer units mean hydrogeologically and why trends in them matter.",
+        "Do not use this file as a source of numeric trend values — all numbers must come from the deterministic evidence pack.",
+        "Proxy limitations should be stated when discussing well-to-supply-aquifer comparisons.",
+        "Risk factors should be mentioned as potential implications, not confirmed impacts."
+      ]
+    }
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "schema_version": "interpretation_rubric_v1",
+  "purpose": "Reusable answer-quality rules for turning deterministic groundwater metrics into useful interpretation.",
+  "intents": {
+    "cohort_meaning": {
+      "goal": "Explain the value and limits of a cohort average for monitored wells.",
+      "required_moves": [
+        "Define the cohort average as a group summary, not a physical well.",
+        "Explain whether the group-level signal is broadly falling, rising, or near stable.",
+        "Warn that the average can hide divergent individual wells.",
+        "Use fastest-declining and strongest-rising wells to show why outliers matter.",
+        "Frame screening risk as a prioritization flag, not a forecast.",
+        "Tell the reader what to check next."
+      ],
+      "weak_answer_signals": [
+        "Only lists rates or site IDs.",
+        "Treats the average as if every well behaves the same way.",
+        "Does not explain why highlighted or divergent wells matter.",
+        "Does not separate observed data from interpretation."
+      ],
+      "student_takeaway": "Start with the cohort average to understand the group, then inspect individual wells to see whether the average is hiding stress, recovery, or divergence."
+    },
+    "decline_explanation": {
+      "goal": "Explain a falling groundwater signal without overclaiming causation.",
+      "required_moves": [
+        "State the observed decline from deterministic metrics.",
+        "Explain that decline can suggest drawdown or reduced aquifer pressure.",
+        "Refuse to prove pumping or recharge change from the chart alone.",
+        "Name external evidence needed to test causes.",
+        "Explain why the pattern matters for monitoring or sustainability."
+      ],
+      "weak_answer_signals": [
+        "Only repeats the annual rate.",
+        "Claims a cause without pumping, rainfall, recharge, or model evidence.",
+        "Leaves out caveats."
+      ],
+      "student_takeaway": "A declining line is an observation; drawdown, pumping stress, recharge change, and saltwater concern are hypotheses that need more evidence."
+    },
+    "shallow_deep_comparison": {
+      "goal": "Compare aquifer-depth groups while respecting proxy limits.",
+      "required_moves": [
+        "Compare group mean rates directly.",
+        "Explain why shallow and deep/confined wells can behave differently.",
+        "Mention seasonal variability when available.",
+        "Warn that depth alone does not prove hydraulic connection.",
+        "Identify what construction or screened-interval evidence would confirm the comparison."
+      ],
+      "weak_answer_signals": [
+        "Dumps well metadata without saying whether the groups diverge.",
+        "Assumes shallow/deep wells represent the same aquifer behavior.",
+        "Ignores seasonal or confinement context."
+      ],
+      "student_takeaway": "Compare the groups first, then ask whether aquifer setting, screened interval, and seasonality make them fair proxies for each other."
+    },
+    "fastest_changing": {
+      "goal": "Identify the most rapidly changing well and contextualize it within the cohort.",
+      "required_moves": [
+        "Name the fastest-changing well and its annual rate.",
+        "Compare it to the next most negative or strongest rising well.",
+        "Relate it to the cohort mean to show whether it is an outlier or representative.",
+        "Explain what 'fastest' means for monitoring priority, not for proving a cause."
+      ],
+      "weak_answer_signals": [
+        "Only lists rates without interpreting what they mean.",
+        "Does not compare to any other well or the cohort.",
+        "Claims a cause for the fast change without evidence."
+      ],
+      "student_takeaway": "The fastest-changing well tells you where to focus investigation, not what is causing the change."
+    },
+    "risk_explanation": {
+      "goal": "Explain cohort screening risk as a triage flag, not a diagnosis.",
+      "required_moves": [
+        "Quantify the percentage of wells falling.",
+        "Name the strongest contributor to the risk level.",
+        "Explain that screening risk prioritizes follow-up, it does not prove harm.",
+        "Suggest what additional evidence would clarify the risk."
+      ],
+      "weak_answer_signals": [
+        "Treats risk level as a definitive assessment rather than a screening flag.",
+        "Does not name specific wells contributing to the risk.",
+        "Omits caveats about what the risk level cannot tell you."
+      ],
+      "student_takeaway": "Screening risk is a prioritization tool: it tells you which cohorts deserve follow-up, not which are in danger."
+    },
+    "trend_change": {
+      "goal": "Explain detected changepoints as observed pattern shifts, not proven causes.",
+      "required_moves": [
+        "Name the well and approximate date of the trend shift.",
+        "Compare pre-shift and post-shift annual rates.",
+        "Explain that a changepoint is a statistical detection, not proof of a specific event.",
+        "Note what outside data (land-use change, policy, drought) would confirm the timing."
+      ],
+      "weak_answer_signals": [
+        "Claims a specific cause for the trend shift without evidence.",
+        "Only mentions the changepoint date without comparing rates.",
+        "Does not explain what a changepoint detection means statistically."
+      ],
+      "student_takeaway": "A trend shift tells you when the pattern changed, but proving why requires overlaying outside data like pumping records or rainfall."
+    },
+    "seasonal": {
+      "goal": "Explain seasonal patterns and their relationship to long-term trends.",
+      "required_moves": [
+        "Compare wet-season and dry-season averages.",
+        "Report the seasonal amplitude and whether it varies across wells.",
+        "Explain whether per-season trends are worsening, recovering, or stable.",
+        "Warn that large seasonal swings can mask or mimic long-term trends."
+      ],
+      "weak_answer_signals": [
+        "Only reports seasonal means without discussing their significance.",
+        "Does not mention the risk of confusing seasonal variation with long-term decline.",
+        "Ignores per-season trend directions."
+      ],
+      "student_takeaway": "Separate the seasonal cycle from the multi-year signal before drawing conclusions about long-term change."
+    },
+    "cause_or_why": {
+      "goal": "Distinguish observed signals from unproven causal claims.",
+      "required_moves": [
+        "State the observed signal clearly from deterministic metrics.",
+        "List plausible explanations as hypotheses, not conclusions.",
+        "Name the external evidence needed to test each hypothesis.",
+        "Explicitly refuse to confirm causation from the chart alone."
+      ],
+      "weak_answer_signals": [
+        "Claims a cause without mentioning evidence requirements.",
+        "Skips the observation step and jumps to speculation.",
+        "Does not name specific external data sources needed."
+      ],
+      "student_takeaway": "The chart shows the pattern; proving the cause requires pumping records, rainfall data, recharge models, or water-quality evidence."
+    },
+    "general": {
+      "goal": "Provide a grounded interpretation that connects observed data to aquifer context.",
+      "required_moves": [
+        "State the observed signal from chart metrics.",
+        "Connect it to the relevant hydrogeologic setting.",
+        "Mention any notable patterns (changepoints, divergent pairs, seasonal swings) if present.",
+        "State what the chart cannot tell you."
+      ],
+      "weak_answer_signals": [
+        "Returns a single generic sentence without referencing specific data.",
+        "Does not connect the signal to aquifer context.",
+        "Omits caveats about the limits of the available data."
+      ],
+      "student_takeaway": "Start with what the data shows, connect it to the aquifer setting, then note what additional evidence would strengthen the interpretation."
+    }
+  }
+}

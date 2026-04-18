@@ -19,6 +19,7 @@ import re
 import threading
 import traceback
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 import pandas as pd
@@ -28,6 +29,8 @@ from fastapi.responses import StreamingResponse
 from api.helpers import calculate_stats, load_site_data
 from api.routes import _chart_interpreter
 from api.routes._agent_chart_hook import attach_chart_from_agent_result
+from api.routes._answer_contract import stamp_contract_fields
+from api.routes._chart_interpreter import LEARNER_TERM_LIBRARY, misconception_warnings
 from api.routes._citation import (  # noqa: E402
     MIN_CLAIM_CITATION_COVERAGE,
     MIN_SECTION_CITATION_COVERAGE,
@@ -54,7 +57,14 @@ from api.routes._detection import (  # noqa: E402
     _sites_for_aquifer,
     _usgs_site_url,
 )
+from api.routes._evidence_guided_ai import (
+    build_evidence_guided_progression,
+    clean_sentence,
+    questionize,
+)
+from api.routes._grounded_answer import attach_grounded_answer
 from api.routes._provenance import build_research_provenance
+from api.routes._route_decision import RouteDecision, resolve_route
 from api.routes._site_analysis import (  # noqa: E402
     _cross_well_analysis,
     _half_trend,
@@ -100,6 +110,8 @@ logger = logging.getLogger(__name__)
 _MONTHLY_SITE_CACHE: dict[str, pd.DataFrame | None] = {}
 _INTERPRETATION_CACHE: dict[tuple[str, str, bool, str], dict[str, Any]] = {}
 _INTERPRETATION_CACHE_MAX = 24
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LEARNER_EVENTS_DIR = PROJECT_ROOT / "outputs" / "research" / "learner_events"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -359,9 +371,19 @@ def _is_contextual_followup(question: str) -> bool:
         r"\bwhich wells?\b",
         r"\b(well|wells)\b.*\b(declin\w*|trend\w*|chang\w*|fastest|rising|falling)\b",
         r"\b(declin\w*|trend\w*|chang\w*)\b.*\b(well|wells|chart|data)\b",
+        r"\b(compare|comparison|versus|vs\.?|diverg\w*|different|outlier|stand out)\b",
+        r"\bpattern\b.*\b(chart|well|wells|mean|matter\w*)\b",
         r"\bwhat does that mean\b",
     ]
-    return any(re.search(pattern, q, re.I) for pattern in contextual_patterns)
+    if any(re.search(pattern, q, re.I) for pattern in contextual_patterns):
+        return True
+    if _detect_site_names(question) and re.search(
+        r"\b(why|how|explain|interpret|compare|diverg\w*|pattern|trend|change|mean)\b",
+        q,
+        re.I,
+    ):
+        return True
+    return False
 
 
 def _context_hash(chart_context: Any, turn_history: list[dict[str, Any]]) -> str:
@@ -372,16 +394,46 @@ def _context_hash(chart_context: Any, turn_history: list[dict[str, Any]]) -> str
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
+_SUPPLY_QUERY_RE = re.compile(
+    r"\b(supply|utility|utilities|public\s+supply|water\s+supply|production\s+well"
+    r"|withdraw\w*|pump\w*|allocation|drinking\s+water|municipal)\b",
+    re.I,
+)
+
+
 def _is_open_ended_chart_followup(question: str) -> bool:
     """Return true for chart-context questions that need interpretation."""
     return bool(
         re.search(
             r"\b(why|how|explain|interpret|what does|does this|which is|what should"
             r"|which well|which wells|fastest|highlighted|cohort|average|trend line"
-            r"|diverge|divergent|proxy|source|supply|compare)\b"
+            r"|diverge|divergent|proxy|source|supply|compare|pattern|dataset"
+            r"|most stressed|which aquifer|which unit|what matters)\b"
             r"|\b(this chart|the chart|on the chart|using the chart)\b"
             r"|caus\w*|overpump\w*|\bpumping\b|\bclimate change\b|\brun dry\b"
             r"|\bmanagement claim\b",
+            question,
+            re.I,
+        )
+    )
+
+
+def _should_prefer_chart_context(question: str, chart_context: dict[str, Any] | None) -> bool:
+    """Prefer the chart interpreter when an active chart is being discussed."""
+    if not isinstance(chart_context, dict):
+        return False
+    if _is_open_ended_chart_followup(question):
+        return True
+    named_sites = _detect_site_names(question)
+    if named_sites and _is_contextual_followup(question):
+        return True
+    if _detect_aquifer(question) is not None:
+        return True
+    if _SUPPLY_QUERY_RE.search(question):
+        return True
+    return bool(
+        re.search(
+            r"\b(dataset|chart|aquifer|unit|stress|pattern|matters|context)\b",
             question,
             re.I,
         )
@@ -1205,6 +1257,8 @@ def _augment_research_payload(
         question=question,
         route_mode=payload.get("mode", default_mode),
     )
+    attach_grounded_answer(payload, question=question)
+    stamp_contract_fields(payload)
 
     return payload
 
@@ -1231,6 +1285,11 @@ def _build_chat_payload(
     citation_summary: Optional[dict[str, Any]] = None,
     section_confidence: Optional[dict[str, Any]] = None,
     citation_integrity: Optional[dict[str, Any]] = None,
+    next_goal: Optional[str] = None,
+    follow_up_groups: Optional[list[dict[str, Any]]] = None,
+    follow_up_questions: Optional[list[str]] = None,
+    progression_source: Optional[str] = None,
+    progression_guardrail_flags: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Normalize chat responses so quick-chat exposes the same grounding signals."""
     claim_citations = claim_citations or []
@@ -1273,10 +1332,104 @@ def _build_chat_payload(
         "citation_summary": citation_summary,
         "section_confidence": section_confidence,
         "citation_integrity": citation_integrity,
+        "next_goal": next_goal,
+        "follow_up_groups": follow_up_groups or [],
+        "follow_up_questions": follow_up_questions or [],
+        "progression_source": progression_source,
+        "progression_guardrail_flags": progression_guardrail_flags or [],
     }
 
 
-def _augment_chat_payload(payload: dict[str, Any], *, question: str) -> dict[str, Any]:
+def _chat_supporting_evidence(payload: dict[str, Any]) -> list[str]:
+    evidence: list[str] = []
+    chart = payload.get("chart") or {}
+    for item in chart.get("insights") or []:
+        text = " ".join(str(item or "").split()).strip()
+        if text and text not in evidence:
+            evidence.append(text)
+        if len(evidence) >= 3:
+            return evidence
+    for claim in payload.get("claim_citations") or []:
+        text = " ".join(str(claim.get("claim") or "").split()).strip()
+        if text and text not in evidence:
+            evidence.append(text)
+        if len(evidence) >= 3:
+            return evidence
+    meaning_brief = (payload.get("interpretation_details") or {}).get("meaning_brief") or {}
+    for item in (meaning_brief.get("headline"), meaning_brief.get("plain_language")):
+        text = " ".join(str(item or "").split()).strip()
+        if text and text not in evidence:
+            evidence.append(text)
+        if len(evidence) >= 3:
+            return evidence
+    return evidence
+
+
+def _progression_seed_from_chat_payload(question: str, payload: dict[str, Any]) -> dict[str, Any]:
+    details = payload.get("interpretation_details") or {}
+    meaning_brief = details.get("meaning_brief") or {}
+    supply = details.get("supply_interpretation") or {}
+    answer_text = str(
+        payload.get("answer_brief") or payload.get("llm_synthesis") or payload.get("response") or ""
+    )
+    caveat = (
+        (details.get("confidence_notes") or [None])[0]
+        or (supply.get("limitations") or [None])[0]
+        or "This answer reflects observed groundwater records rather than a proven cause."
+    )
+    follow_up_questions = payload.get("follow_up_questions") or []
+    interpretation_response = payload.get("interpretation_response") or {}
+    if not follow_up_questions:
+        follow_up_questions = interpretation_response.get("follow_up_questions") or []
+    evidence_needed = details.get("evidence_needed") or []
+    if not evidence_needed and re.search(r"\b(why|cause|caused|pumping|prove)\b", question, re.I):
+        evidence_needed = [
+            "pumping records, rainfall data, recharge estimates, and groundwater-flow context",
+        ]
+    return {
+        "question": question,
+        "mode": payload.get("mode", "chat"),
+        "question_intent": interpretation_response.get("question_intent"),
+        "direct_answer": answer_text.split("\n", 1)[0].strip(),
+        "answer_text": answer_text,
+        "supporting_evidence": _chat_supporting_evidence(payload),
+        "caveat": caveat,
+        "evidence_needed": evidence_needed,
+        "follow_up_questions": follow_up_questions,
+        "well_names": [
+            well.get("name") or well.get("well_name")
+            for well in payload.get("wells") or []
+            if isinstance(well, dict)
+        ],
+        "wells": payload.get("wells") or [],
+        "divergent_pairs": payload.get("divergent_pairs") or [],
+        "supply_units": supply.get("supply_units") or [],
+        "date_references": re.findall(r"\b(?:19|20)\d{2}\b", f"{question} {answer_text}")[:4],
+        "meaning_brief": meaning_brief,
+    }
+
+
+def _progression_llm_enabled(payload: dict[str, Any], *, allow_llm_rewrite: bool) -> bool:
+    if not allow_llm_rewrite:
+        return False
+    if payload.get("llm_synthesis") or (payload.get("interpretation_response") or {}).get(
+        "grounding_status", {}
+    ).get("has_llm_synthesis"):
+        return True
+    return os.getenv("GROUNDWATERGPT_ENABLE_PROGRESSION_LLM", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _augment_chat_payload(
+    payload: dict[str, Any],
+    *,
+    question: str,
+    allow_llm_rewrite: bool = False,
+) -> dict[str, Any]:
     """Attach manuscript-safe structured response and provenance to chat outputs."""
     claim_citations = payload.get("claim_citations", [])
     claim_verdicts = payload.get("claim_verdicts") or _build_claim_verdicts(claim_citations)
@@ -1306,7 +1459,123 @@ def _augment_chat_payload(payload: dict[str, Any], *, question: str) -> dict[str
         question=question,
         route_mode=payload.get("mode", "chat"),
     )
+    interpretation_response = payload.get("interpretation_response") or {}
+    if interpretation_response:
+        payload["next_goal"] = payload.get("next_goal") or interpretation_response.get("next_goal")
+        payload["follow_up_groups"] = payload.get(
+            "follow_up_groups"
+        ) or interpretation_response.get(
+            "follow_up_groups",
+            [],
+        )
+        payload["follow_up_questions"] = payload.get(
+            "follow_up_questions"
+        ) or interpretation_response.get(
+            "follow_up_questions",
+            [],
+        )
+        payload["progression_source"] = payload.get(
+            "progression_source"
+        ) or interpretation_response.get("progression_source")
+        payload["progression_guardrail_flags"] = payload.get(
+            "progression_guardrail_flags"
+        ) or interpretation_response.get("progression_guardrail_flags", [])
+    if not payload.get("next_goal") or not payload.get("follow_up_groups"):
+        progression = build_evidence_guided_progression(
+            _progression_seed_from_chat_payload(question, payload),
+            allow_llm_rewrite=_progression_llm_enabled(
+                payload,
+                allow_llm_rewrite=allow_llm_rewrite,
+            ),
+        )
+        payload["next_goal"] = progression["next_goal"]
+        payload["follow_up_groups"] = progression["follow_up_groups"]
+        payload["follow_up_questions"] = progression["follow_up_questions"]
+        payload["progression_source"] = progression["progression_source"]
+        payload["progression_guardrail_flags"] = progression["progression_guardrail_flags"]
+    attach_grounded_answer(payload, question=question)
+    stamp_contract_fields(payload)
     return payload
+
+
+def _learner_terms_from_text(text_blob: str) -> list[dict[str, str]]:
+    text_lower = text_blob.lower()
+    terms = []
+    for entry in LEARNER_TERM_LIBRARY:
+        if any(trigger in text_lower for trigger in entry["triggers"]):
+            terms.append(
+                {
+                    "term": entry["term"],
+                    "plain_definition": entry["plain_definition"],
+                    "why_it_matters_here": entry["why_it_matters_here"],
+                }
+            )
+    deduped = []
+    seen = set()
+    for item in terms:
+        if item["term"] in seen:
+            continue
+        deduped.append(item)
+        seen.add(item["term"])
+    return deduped[:4]
+
+
+def _build_generic_learner_brief(
+    *,
+    question: str,
+    explanation: str,
+    key_observations: list[str],
+    interpretation_details: dict[str, Any],
+    limits: list[str],
+    follow_up_questions: list[str],
+) -> dict[str, str]:
+    explainability = (interpretation_details or {}).get("chart_explainability") or {}
+    meaning_brief = interpretation_details.get("meaning_brief") or {}
+    direct_answer = clean_sentence(explanation.split("\n", 1)[0] if explanation else "")
+    what_to_notice = clean_sentence(
+        key_observations[0]
+        if key_observations
+        else meaning_brief.get("headline") or explainability.get("summary")
+    )
+    why_it_matters = clean_sentence(
+        meaning_brief.get("why_it_matters")
+        or meaning_brief.get("plain_language")
+        or (interpretation_details.get("management_implications") or [None])[0]
+        or explainability.get("summary")
+        or "This helps you separate what the monitoring record shows from what still needs outside evidence."  # noqa: E501
+    )
+    important_limit = clean_sentence(
+        (interpretation_details.get("confidence_notes") or [None])[0]
+        or (limits[0] if limits else "")
+        or "The chart shows observed monitoring patterns, not a proven cause."
+    )
+    next_best_question = questionize(
+        (follow_up_questions[0] if follow_up_questions else "")
+        or meaning_brief.get("next_best_check")
+        or "What outside data would strengthen this interpretation"
+    )
+    return {
+        "direct_answer": direct_answer,
+        "what_to_notice": what_to_notice,
+        "why_it_matters": why_it_matters,
+        "important_limit": important_limit,
+        "next_best_question": next_best_question,
+    }
+
+
+def _append_learner_event(payload: dict[str, Any]) -> str:
+    LEARNER_EVENTS_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc)
+    event_id = payload.get("event_id") or f"learner_{timestamp.strftime('%Y%m%dT%H%M%S%f')}"
+    record = {
+        "event_id": event_id,
+        "created_at": timestamp.isoformat(),
+        **payload,
+    }
+    day_path = LEARNER_EVENTS_DIR / f"{timestamp.strftime('%Y-%m-%d')}.jsonl"
+    with day_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, sort_keys=True) + "\n")
+    return event_id
 
 
 def _build_interpretation_response(
@@ -1405,12 +1674,50 @@ def _build_interpretation_response(
             "Do nearby wells in different aquifers move together or diverge?",
             "What outside data would help test a possible cause, such as pumping or rainfall?",
         ]
+    limits = [
+        (
+            "This is an interpretation of observed monitoring records, "
+            "not a groundwater-flow model."
+        ),
+        "Trend lines are screening summaries over available records, not forecasts.",
+        "The LLM may explain deterministic outputs but must not invent measurements.",
+    ]
+    learner_text_blob = " ".join(
+        [
+            question,
+            explanation,
+            " ".join(key_observations),
+            str(explainability.get("summary", "")),
+            " ".join(str(item) for item in explainability.get("how_to_read", []) or []),
+            json.dumps(interpretation_details, default=str)[:1200],
+        ]
+    )
+    learner_brief = _build_generic_learner_brief(
+        question=question,
+        explanation=explanation,
+        key_observations=key_observations,
+        interpretation_details=interpretation_details,
+        limits=limits,
+        follow_up_questions=follow_up_questions,
+    )
+    terms_to_know = _learner_terms_from_text(learner_text_blob)
+    misconceptions = misconception_warnings(question, text_blob=learner_text_blob)
+    progression = build_evidence_guided_progression(
+        _progression_seed_from_chat_payload(question, payload),
+        allow_llm_rewrite=_progression_llm_enabled(payload, allow_llm_rewrite=False),
+    )
+    if progression.get("follow_up_questions"):
+        follow_up_questions = progression["follow_up_questions"]
+        learner_brief["next_best_question"] = questionize(follow_up_questions[0])
 
     return {
         "schema_version": "interpretation_response_v1",
         "question": question,
         "audience": audience,
         "interpretation": explanation,
+        "learner_brief": learner_brief,
+        "terms_to_know": terms_to_know,
+        "misconceptions_to_avoid": misconceptions,
         "chart_context": {
             "title": chart.get("title"),
             "summary": explainability.get("summary"),
@@ -1436,14 +1743,11 @@ def _build_interpretation_response(
         ],
         "evidence": evidence[:10],
         "follow_up_questions": follow_up_questions[:4],
-        "limits": [
-            (
-                "This is an interpretation of observed monitoring records, "
-                "not a groundwater-flow model."
-            ),
-            "Trend lines are screening summaries over available records, not forecasts.",
-            "The LLM may explain deterministic outputs but must not invent measurements.",
-        ],
+        "follow_up_groups": progression["follow_up_groups"],
+        "next_goal": progression["next_goal"],
+        "progression_source": progression["progression_source"],
+        "progression_guardrail_flags": progression["progression_guardrail_flags"],
+        "limits": limits,
         "grounding_status": {
             "uses_chart_context": bool(explainability),
             "uses_usgs_data": bool(wells or sources or claim_citations),
@@ -1519,12 +1823,47 @@ def chat_endpoint(query: dict):
         chart_context = None
     turn_history = _trim_turn_history(query.get("turn_history"))
 
-    def _finalize(response_payload: dict[str, Any]) -> dict[str, Any]:
+    def _finalize(response_payload: dict[str, Any], decision: RouteDecision) -> dict[str, Any]:
         enriched = _enrich_with_usgs_data(user_query, response_payload)
-        return _augment_chat_payload(enriched, question=user_query)
+        enriched.setdefault("route_decision", decision.to_observable())
+        return _augment_chat_payload(
+            enriched,
+            question=user_query,
+            allow_llm_rewrite=allow_llm_synthesis,
+        )
+
+    # Single entry-point for route selection. Detection runs once here,
+    # downstream branches read what they need off the decision.
+    decision = resolve_route(
+        user_query,
+        chart_context,
+        turn_history,
+        detectors={
+            "should_prefer_chart_context": _should_prefer_chart_context,
+            "is_contextual_followup": _is_contextual_followup,
+            "chart_context_from_turn_history": _chart_context_from_turn_history,
+            "detect_site_names": _detect_site_names,
+            "detect_aquifer": _detect_aquifer,
+            "detect_locations": _detect_locations,
+            "is_multi_location_compare_query": _is_multi_location_compare_query,
+            "detect_location": _detect_location,
+            "is_network_wide_query": _is_network_wide_query,
+            "kb_topic_matches": _kb_topic_matches,
+        },
+    )
+
+    # --- Chart-context interpretation (either caller-supplied or recovered) ---
+    if decision.chart_context_to_use is not None:
+        interpreted = _chart_interpreter.interpret_with_context(
+            user_query,
+            decision.chart_context_to_use,
+            turn_history,
+            allow_llm_synthesis=allow_llm_synthesis,
+        )
+        return _finalize(interpreted, decision)
 
     # --- Site-name fast path: explicit well names / site IDs (most specific) ---
-    named_sites = _detect_site_names(user_query)
+    named_sites = decision.named_sites
     if named_sites:
         label = " vs ".join(s["name"] for s in named_sites)
         ns_result = _site_research_fallback(
@@ -1557,11 +1896,12 @@ def chat_endpoint(query: dict):
                     ns_result["claim_citations"],
                     ns_result.get("section_confidence", {}),
                 ),
-            )
+            ),
+            decision,
         )
 
     # --- Aquifer fast path: named aquifer -> all cohort sites (runs before location) ---
-    aq_hit = _detect_aquifer(user_query)
+    aq_hit = decision.aquifer_hit
     if aq_hit is not None:
         aq_key, aq_display_name = aq_hit
         aq_sites = _sites_for_aquifer(aq_key, max_sites=8)
@@ -1596,14 +1936,14 @@ def chat_endpoint(query: dict):
                     aq_result["claim_citations"],
                     aq_result.get("section_confidence", {}),
                 ),
-            )
+            ),
+            decision,
         )
 
     # --- Multi-location comparison fast path: compare counties/areas in one answer ---
-    locations = _detect_locations(user_query, max_matches=4)
-    if len(locations) >= 2 and _is_multi_location_compare_query(user_query):
+    if decision.is_multi_location:
         multi_sites, multi_label = _sites_for_multiple_locations(
-            locations, max_sites_per_location=4
+            decision.locations, max_sites_per_location=4
         )
         if multi_sites:
             multi_result = _site_research_fallback(
@@ -1636,11 +1976,12 @@ def chat_endpoint(query: dict):
                         multi_result["claim_citations"],
                         multi_result.get("section_confidence", {}),
                     ),
-                )
+                ),
+                decision,
             )
 
     # --- Location fast path: return deterministic USGS-backed answer immediately ---
-    loc = _detect_location(user_query)
+    loc = decision.location_hit
     if loc is not None:
         ref_lat, ref_lng, loc_name, county_hint = loc
         sites = _best_sites_near(ref_lat, ref_lng, county_hint, max_sites=10)
@@ -1679,10 +2020,10 @@ def chat_endpoint(query: dict):
         )
         if _is_aquifer_query(user_query) and wells_payload:
             response_dict["aquifer_info"] = _build_aquifer_info(wells_payload[0]["aquifer"])
-        return _finalize(response_dict)
+        return _finalize(response_dict, decision)
 
     # --- Network-wide fast path: all-wells / all-county / confined-vs-unconfined queries ---
-    if _is_network_wide_query(user_query):
+    if decision.is_network_wide:
         nw_sites = _all_sites_with_data(max_sites=36)
         if nw_sites:
             nw_result = _site_research_fallback(
@@ -1715,37 +2056,16 @@ def chat_endpoint(query: dict):
                         nw_result["claim_citations"],
                         nw_result.get("section_confidence", {}),
                     ),
-                )
+                ),
+                decision,
             )
 
-    # --- Chart-context interpretation: open-ended follow-up about the prior chart ---
-    if chart_context is not None and _is_open_ended_chart_followup(user_query):
-        interpreted = _chart_interpreter.interpret_with_context(
-            user_query,
-            chart_context,
-            turn_history,
-            allow_llm_synthesis=allow_llm_synthesis,
-        )
-        return _finalize(interpreted)
-
-    # --- Conversational context recovery: vague follow-ups inherit recent wells ---
-    recovered_chart_context = (
-        _chart_context_from_turn_history(turn_history)
-        if chart_context is None and _is_contextual_followup(user_query)
-        else None
-    )
-    if recovered_chart_context is not None:
-        interpreted = _chart_interpreter.interpret_with_context(
-            user_query,
-            recovered_chart_context,
-            turn_history,
-            allow_llm_synthesis=allow_llm_synthesis,
-        )
-        return _finalize(interpreted)
-
     # --- Groundwater KB fast path: keep lightweight chat queries deterministic ---
-    if _kb_topic_matches(user_query):
-        return _finalize(_ground_fallback_chat_response(_fallback_response(user_query)))
+    if decision.kb_matches:
+        return _finalize(
+            _ground_fallback_chat_response(_fallback_response(user_query)),
+            decision,
+        )
 
     # --- Evidence-bound synthesis path for generic open-ended questions ---
     if _research_agent is not None:
@@ -1807,6 +2127,7 @@ def chat_endpoint(query: dict):
                         _build_citation_integrity(claim_citations, section_confidence),
                     ),
                 ),
+                decision,
             )
         except Exception as exc:
             logger.error("Evidence-bound chat synthesis error: %s", exc)
@@ -1814,7 +2135,28 @@ def chat_endpoint(query: dict):
             # Fall through to rule-based fallback
 
     # --- Fallback ---
-    return _finalize(_ground_fallback_chat_response(_fallback_response(user_query)))
+    return _finalize(
+        _ground_fallback_chat_response(_fallback_response(user_query)),
+        decision,
+    )
+
+
+@router.post("/learner-events")
+def learner_event_endpoint(event: dict[str, Any]):
+    """Persist lightweight learner-feedback and explanation-usage events."""
+    event_type = str(event.get("event_type") or "").strip()
+    if not event_type:
+        raise HTTPException(status_code=400, detail="event_type is required")
+    stored_id = _append_learner_event(
+        {
+            "event_type": event_type[:80],
+            "question": str(event.get("question") or "")[:500],
+            "message_id": str(event.get("message_id") or "")[:120] or None,
+            "chart_id": str(event.get("chart_id") or "")[:240] or None,
+            "details": event.get("details") if isinstance(event.get("details"), dict) else {},
+        }
+    )
+    return {"status": "ok", "event_id": stored_id}
 
 
 # ---------------------------------------------------------------------------
@@ -1890,6 +2232,8 @@ def interpret_endpoint(query: dict):
         question=question,
         route_mode=payload["mode"],
     )
+    attach_grounded_answer(payload, question=question, force=True)
+    stamp_contract_fields(payload, force=True)
     if len(_INTERPRETATION_CACHE) >= _INTERPRETATION_CACHE_MAX:
         _INTERPRETATION_CACHE.pop(next(iter(_INTERPRETATION_CACHE)))
     _INTERPRETATION_CACHE[cache_key] = copy.deepcopy(payload)
