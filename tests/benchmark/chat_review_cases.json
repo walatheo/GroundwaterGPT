@@ -1,0 +1,491 @@
+[
+  {
+    "id": "REV_01_exact_well_g3336",
+    "category": "exact_well",
+    "goal": "Exact well lookup should stay grounded and specific.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "What is happening at G-3336?",
+        "review_focus": [
+          "exact well grounding",
+          "specific monitored-well answer",
+          "no generic aquifer lecture"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_02_compare_g3336_g5004",
+    "category": "comparison",
+    "goal": "Direct two-well comparison should name both wells and expose contrast.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "Compare G-3336 and G-5004.",
+        "review_focus": [
+          "cross-well comparison",
+          "both wells named",
+          "usable contrast"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_03_l729_depth_and_change",
+    "category": "exact_well",
+    "goal": "Metadata plus trend should be reported together.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "How deep is Lee L-729 and how fast is it changing?",
+        "review_focus": [
+          "well depth",
+          "trend rate",
+          "no invented precision"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_04_fastest_well_dataset",
+    "category": "ranking",
+    "goal": "Dataset-wide ranking should return a named well and clear rate.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "Which well is changing fastest in this dataset?",
+        "review_focus": [
+          "ranking answer",
+          "named well",
+          "numeric rate"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_05_estero_30_years",
+    "category": "location_cohort",
+    "goal": "Location answer should synthesize multiple monitored wells with limits.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "What has happened to groundwater in Estero over the last 30 years?",
+        "review_focus": [
+          "multiple wells",
+          "period transparency",
+          "clear cohort caveat"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_06_lee_county_compare",
+    "category": "cohort",
+    "goal": "County-level comparison should stay at cohort scope.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "Compare groundwater trends across Lee County wells.",
+        "review_focus": [
+          "county cohort scope",
+          "not a single-site fallback",
+          "cross-well language"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_07_biscayne_vs_floridan",
+    "category": "aquifer_compare",
+    "goal": "Cross-aquifer answer should compare groups and keep caveats.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "How do Biscayne and Floridan monitoring trends differ?",
+        "review_focus": [
+          "cross-aquifer comparison",
+          "group-level answer",
+          "comparability caveat"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_08_most_stressed_aquifer",
+    "category": "interpretation",
+    "goal": "Stress language should remain screening-oriented, not causal certainty.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "Which aquifer looks most stressed in this dataset?",
+        "review_focus": [
+          "screening risk framing",
+          "comparative answer",
+          "no overclaim"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_09_estero_chart_sponsor",
+    "category": "interpretation",
+    "goal": "Sponsor interpretation should produce a strong explanation artifact.",
+    "turns": [
+      {
+        "endpoint": "interpret",
+        "prompt": "Interpret the Estero groundwater chart for a sponsor.",
+        "audience": "sponsor",
+        "expect_interpretation_response": true,
+        "review_focus": [
+          "learner brief",
+          "grounded interpretation",
+          "sponsor clarity"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_10_cohort_average_followup",
+    "category": "chart_followup",
+    "goal": "Follow-up should keep chart context and explain cohort average clearly.",
+    "turns": [
+      {
+        "endpoint": "interpret",
+        "prompt": "Interpret the Estero groundwater chart for a sponsor.",
+        "audience": "sponsor"
+      },
+      {
+        "endpoint": "interpret",
+        "prompt": "What does the cohort average mean on this chart?",
+        "audience": "general",
+        "followup": true,
+        "expect_chart_context": true,
+        "expect_interpretation_response": true,
+        "review_focus": [
+          "chart-context retention",
+          "cohort average explanation",
+          "plain language"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_11_highlighted_fastest_followup",
+    "category": "chart_followup",
+    "goal": "Highlighted-well follow-up should stay anchored in the active chart.",
+    "turns": [
+      {
+        "endpoint": "interpret",
+        "prompt": "Interpret the Estero groundwater chart for a sponsor.",
+        "audience": "sponsor"
+      },
+      {
+        "endpoint": "interpret",
+        "prompt": "Which highlighted well is changing fastest, and why does that matter?",
+        "audience": "general",
+        "followup": true,
+        "expect_chart_context": true,
+        "expect_interpretation_response": true,
+        "review_focus": [
+          "highlighted well answer",
+          "chart-context retention",
+          "why-it-matters usefulness"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_12_divergence_followup",
+    "category": "chart_followup",
+    "goal": "Open-ended divergence follow-up should not lose prior chart context.",
+    "turns": [
+      {
+        "endpoint": "interpret",
+        "prompt": "Interpret the Estero groundwater chart for a sponsor.",
+        "audience": "sponsor"
+      },
+      {
+        "endpoint": "chat",
+        "prompt": "Why do these wells diverge?",
+        "followup": true,
+        "expect_chart_context": true,
+        "review_focus": [
+          "chart-context recovery",
+          "cross-well reasoning",
+          "no generic fallback"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_13_named_well_inside_chart",
+    "category": "chart_followup",
+    "goal": "Named well inside an active comparison should remain chart-aware.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "Compare G-3336 and G-5004."
+      },
+      {
+        "endpoint": "interpret",
+        "prompt": "On G-3336, what matters most in this chart and why?",
+        "audience": "general",
+        "followup": true,
+        "expect_chart_context": true,
+        "expect_interpretation_response": true,
+        "review_focus": [
+          "named well inside chart",
+          "comparison context retained",
+          "not reduced to single-well lookup"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_14_why_declining",
+    "category": "vague_followup",
+    "goal": "Causal-style follow-up should hedge properly.",
+    "turns": [
+      {
+        "endpoint": "interpret",
+        "prompt": "Interpret the Estero groundwater chart for a sponsor.",
+        "audience": "sponsor"
+      },
+      {
+        "endpoint": "interpret",
+        "prompt": "Why is it declining?",
+        "audience": "general",
+        "followup": true,
+        "expect_chart_context": true,
+        "expect_interpretation_response": true,
+        "review_focus": [
+          "hedged causation",
+          "useful explanation",
+          "evidence-needed language"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_15_is_that_bad",
+    "category": "vague_followup",
+    "goal": "Risk explanation should be useful without overclaiming.",
+    "turns": [
+      {
+        "endpoint": "interpret",
+        "prompt": "Interpret the Estero groundwater chart for a sponsor.",
+        "audience": "sponsor"
+      },
+      {
+        "endpoint": "interpret",
+        "prompt": "Is that bad?",
+        "audience": "general",
+        "followup": true,
+        "expect_chart_context": true,
+        "expect_interpretation_response": true,
+        "review_focus": [
+          "risk framing",
+          "plain language",
+          "no false certainty"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_16_check_next",
+    "category": "followup",
+    "goal": "Next-check question should move the user toward evidence, not filler.",
+    "turns": [
+      {
+        "endpoint": "interpret",
+        "prompt": "Interpret the Estero groundwater chart for a sponsor.",
+        "audience": "sponsor"
+      },
+      {
+        "endpoint": "interpret",
+        "prompt": "What should I check next?",
+        "audience": "general",
+        "followup": true,
+        "expect_chart_context": true,
+        "expect_interpretation_response": true,
+        "review_focus": [
+          "next evidence step",
+          "specificity",
+          "usefulness"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_17_estero_supply_sources",
+    "category": "supply_proxy",
+    "goal": "Supply-source answer should include proxy limitations.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "What groundwater sources does Estero use, and how have levels changed?",
+        "review_focus": [
+          "supply units",
+          "proxy caveat",
+          "trend summary"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_18_overpumping_guardrail",
+    "category": "causation_guardrail",
+    "goal": "Overpumping ask should not be answered as proven.",
+    "turns": [
+      {
+        "endpoint": "interpret",
+        "prompt": "Interpret the Estero groundwater chart for a sponsor.",
+        "audience": "technical"
+      },
+      {
+        "endpoint": "interpret",
+        "prompt": "Does this prove overpumping?",
+        "audience": "technical",
+        "followup": true,
+        "expect_chart_context": true,
+        "expect_interpretation_response": true,
+        "review_focus": [
+          "no causal certainty",
+          "evidence needed",
+          "guardrail strength"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_19_saltwater_intrusion_guardrail",
+    "category": "causation_guardrail",
+    "goal": "Saltwater question should stay appropriately cautious.",
+    "turns": [
+      {
+        "endpoint": "interpret",
+        "prompt": "Interpret the Estero groundwater chart for a sponsor.",
+        "audience": "technical"
+      },
+      {
+        "endpoint": "interpret",
+        "prompt": "Is this saltwater intrusion?",
+        "audience": "technical",
+        "followup": true,
+        "expect_chart_context": true,
+        "expect_interpretation_response": true,
+        "review_focus": [
+          "saltwater caveat",
+          "no unsupported diagnosis",
+          "needed evidence"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_20_monitoring_vs_drinking",
+    "category": "proxy_guardrail",
+    "goal": "Monitoring wells versus supply wells should be framed as proxy logic.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "Can these monitoring wells stand in for drinking-water wells?",
+        "review_focus": [
+          "proxy framing",
+          "screened interval caveat",
+          "location caveat"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_21_upper_floridan_stressed",
+    "category": "supply_proxy",
+    "goal": "Supply-unit stress should remain a screening interpretation.",
+    "turns": [
+      {
+        "endpoint": "interpret",
+        "prompt": "Interpret the Estero groundwater chart for a sponsor.",
+        "audience": "general"
+      },
+      {
+        "endpoint": "interpret",
+        "prompt": "Why is Upper Floridan the most stressed supply unit in this dataset?",
+        "audience": "general",
+        "followup": true,
+        "expect_chart_context": true,
+        "expect_interpretation_response": true,
+        "review_focus": [
+          "supply-unit comparison",
+          "screening-risk framing",
+          "no overclaim"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_22_out_of_scope_geography",
+    "category": "insufficient",
+    "goal": "Out-of-scope geography should refuse cleanly.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "How is groundwater doing in Antarctica?",
+        "review_focus": [
+          "explicit refusal",
+          "scope honesty",
+          "useful redirect"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_23_future_prediction",
+    "category": "insufficient",
+    "goal": "Forecast ask should refuse and redirect to observed trend.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "Will groundwater levels drop next year in Estero?",
+        "review_focus": [
+          "no forecast claim",
+          "observed-trend redirect",
+          "scope honesty"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_24_decision_advice",
+    "category": "insufficient",
+    "goal": "Land-buying advice should stay within dataset scope.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "Should I buy land there based on this groundwater risk?",
+        "review_focus": [
+          "no decision advice overreach",
+          "scope honesty",
+          "useful redirect"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV_25_ambiguous_there",
+    "category": "ambiguity",
+    "goal": "Ambiguous deictic reference should either recover context or ask for clarification honestly.",
+    "turns": [
+      {
+        "endpoint": "chat",
+        "prompt": "Tell me about groundwater there.",
+        "review_focus": [
+          "clarification or honest insufficiency",
+          "no fabricated location",
+          "useful next step"
+        ]
+      }
+    ]
+  }
+]

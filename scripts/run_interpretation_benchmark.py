@@ -23,6 +23,43 @@ DEFAULT_THRESHOLDS_PATH = (
     PROJECT_ROOT / "tests" / "benchmark" / "interpretation_eval_thresholds.json"
 )
 
+VISIBLE_ECHO_PHRASES = (
+    "this chart connects",
+    "context site ids include",
+    "key deterministic rates are",
+    "highlighted wells mark",
+)
+
+EXTRA_CHART_CASES = [
+    {
+        "id": "INT_failure_upper_floridan_supply_unit",
+        "base_id": "INT_hydro_supply_proxy_caveat",
+        "question": "Why is Upper Floridan the most stressed supply unit in this dataset?",
+    },
+    {
+        "id": "INT_failure_g3764_pattern",
+        "base_id": "INT_followup_chart_meaning",
+        "question": "On G-3764, what matters most in this chart and why?",
+    },
+    {
+        "id": "INT_failure_lee_divergence_pair",
+        "base_id": "INT_followup_why_declining",
+        "question": "Why do Lee L-1998 and Lee L-729 diverge?",
+        "expected_scope_type": "cross_well",
+        "expected_focus_entities": ["Lee L-1998", "Lee L-729"],
+        "forbidden_phrases": [
+            "true shallow-vs-deep divergence comparison",
+            "contains 0 deep/confined wells",
+        ],
+        "forbidden_question_intents": ["shallow_deep_comparison"],
+    },
+    {
+        "id": "INT_failure_not_just_rates",
+        "base_id": "INT_followup_chart_meaning",
+        "question": "Explain what matters most in this chart, not just the rates.",
+    },
+]
+
 
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments."""
@@ -56,6 +93,86 @@ def parse_args() -> argparse.Namespace:
 def _load_json(path: Path) -> Any:
     with open(path) as fh:
         return json.load(fh)
+
+
+def _lower_first(text: str) -> str:
+    if not text:
+        return text
+    return text[0].lower() + text[1:]
+
+
+def _question_variants(question: str) -> list[str]:
+    core = question.strip().rstrip("?").rstrip(".")
+    if not core:
+        return []
+    lowered = _lower_first(core)
+    variants = [
+        f"Using the current groundwater chart, {lowered}?",
+        f"From this dataset, {lowered}?",
+        f"In plain language, {lowered}?",
+    ]
+    return list(dict.fromkeys(variants))
+
+
+def _case_by_id(cases: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {str(case.get("id")): case for case in cases}
+
+
+def _expand_case_suite(cases: list[dict[str, Any]], minimum: int = 100) -> list[dict[str, Any]]:
+    expanded = [dict(case) for case in cases]
+    by_id = _case_by_id(expanded)
+    seen_questions = {str(case.get("question", "")).strip().lower() for case in expanded}
+
+    for extra in EXTRA_CHART_CASES:
+        base = by_id.get(extra["base_id"])
+        if not base:
+            continue
+        question_key = extra["question"].strip().lower()
+        if question_key in seen_questions:
+            continue
+        clone = dict(base)
+        clone.update({k: v for k, v in extra.items() if k != "base_id"})
+        expanded.append(clone)
+        seen_questions.add(question_key)
+
+    for case in list(cases):
+        base_question = str(case.get("question", "")).strip()
+        for idx, variant in enumerate(_question_variants(base_question), start=1):
+            if len(expanded) >= minimum:
+                break
+            if variant.strip().lower() in seen_questions:
+                continue
+            clone = dict(case)
+            clone["id"] = f"{case.get('id')}_v{idx}"
+            clone["question"] = variant
+            expanded.append(clone)
+            seen_questions.add(variant.strip().lower())
+        if len(expanded) >= minimum:
+            break
+
+    if len(expanded) < minimum:
+        wrappers = [
+            "For the current chart, {question}?",
+            "Staying inside this dataset, {question}?",
+            "Using only the monitored wells in this chart, {question}?",
+        ]
+        seed_index = 0
+        wrapper_index = 0
+        while len(expanded) < minimum and cases:
+            base = dict(cases[seed_index % len(cases)])
+            core = _lower_first(str(base.get("question", "")).strip().rstrip("?").rstrip("."))
+            variant = wrappers[wrapper_index % len(wrappers)].format(question=core)
+            wrapper_index += 1
+            seed_index += 1
+            key = variant.strip().lower()
+            if key in seen_questions:
+                continue
+            base["id"] = f"{base.get('id')}_x{wrapper_index}"
+            base["question"] = variant
+            expanded.append(base)
+            seen_questions.add(key)
+
+    return expanded
 
 
 def _text_blob(body: dict[str, Any]) -> str:
@@ -152,6 +269,144 @@ def _free_text_numbers_are_claimed(interpretation: dict[str, Any]) -> bool:
     )
 
 
+def _visible_interpretation_text(interpretation: dict[str, Any]) -> str:
+    return str(interpretation.get("interpretation") or interpretation.get("answer") or "")
+
+
+def _visible_interpretation_not_summary_echo(
+    interpretation: dict[str, Any], case: dict[str, Any]
+) -> bool:
+    text_lower = _visible_interpretation_text(interpretation).lower()
+    if not text_lower.strip():
+        return False
+    banned = [str(term).lower() for term in case.get("visible_must_not_contain", [])]
+    return not any(phrase in text_lower for phrase in [*VISIBLE_ECHO_PHRASES, *banned])
+
+
+def _visible_interpretation_is_explainer(
+    case: dict[str, Any],
+    interpretation: dict[str, Any],
+    outbound_body: dict[str, Any] | None,
+) -> bool:
+    if not case.get("require_visible_explainer"):
+        return True
+    if not bool((outbound_body or {}).get("use_llm")):
+        return True
+
+    text = _visible_interpretation_text(interpretation)
+    text_lower = text.lower()
+    if not _visible_interpretation_not_summary_echo(interpretation, case):
+        return False
+
+    sentences = [part for part in re.split(r"[.!?]+", text) if part.strip()]
+    if len(sentences) < 2:
+        return False
+    if not any(
+        term in text_lower
+        for term in (
+            "means",
+            "shows",
+            "matters",
+            "because",
+            "contrast",
+            "overall",
+            "rather than",
+            "screening",
+            "cohort",
+            "follow-up",
+        )
+    ):
+        return False
+
+    expected_claims = case.get("expected_numeric_claims") or []
+    if expected_claims and re.search(
+        r"\bfastest|changing fastest|which one\b", str(case.get("question", "")), re.I
+    ):
+        target_site = str(expected_claims[0].get("site", "")).lower()
+        if target_site and target_site not in text_lower:
+            return False
+        if not any(
+            term in text_lower for term in ("ft/yr", "feet per year", "foot per year", "per year")
+        ):
+            return False
+    return True
+
+
+def _learner_brief(interpretation: dict[str, Any]) -> dict[str, Any]:
+    brief = interpretation.get("learner_brief")
+    return brief if isinstance(brief, dict) else {}
+
+
+def _has_plain_language_meaning(interpretation: dict[str, Any]) -> bool:
+    brief = _learner_brief(interpretation)
+    candidates = [
+        brief.get("what_to_notice"),
+        brief.get("why_it_matters"),
+        ((interpretation.get("meaning_brief") or {}).get("plain_language")),
+        _visible_interpretation_text(interpretation),
+    ]
+    text = " ".join(str(item or "").lower() for item in candidates)
+    return any(
+        term in text
+        for term in (
+            "means",
+            "matters",
+            "shows",
+            "screening",
+            "follow-up",
+            "group-level",
+            "not a forecast",
+        )
+    )
+
+
+def _jargon_explained(
+    case: dict[str, Any], interpretation: dict[str, Any], text_lower: str
+) -> bool:
+    required_terms = [str(term).lower() for term in case.get("required_jargon_terms", [])]
+    if not required_terms:
+        return True
+    terms_to_know = interpretation.get("terms_to_know") or []
+    covered = set()
+    for item in terms_to_know:
+        if not isinstance(item, dict):
+            continue
+        blob = " ".join(
+            [
+                str(item.get("term", "")),
+                str(item.get("plain_definition", "")),
+                str(item.get("why_it_matters_here", "")),
+            ]
+        ).lower()
+        for term in required_terms:
+            if term in blob:
+                covered.add(term)
+    for term in required_terms:
+        if term in text_lower and term in (
+            "cohort average",
+            "screening risk",
+            "drawdown",
+            "confined aquifer",
+            "depth-to-water",
+            "trend line",
+        ):
+            covered.add(term)
+    return all(term in covered for term in required_terms)
+
+
+def _misconceptions_present(
+    case: dict[str, Any], interpretation: dict[str, Any], text_lower: str
+) -> bool:
+    required = [str(term).lower() for term in case.get("required_misconceptions", [])]
+    if not required:
+        return True
+    misconceptions = [
+        str(item).lower() for item in interpretation.get("misconceptions_to_avoid", []) or []
+    ]
+    combined = " ".join([*misconceptions, text_lower])
+    return all(term in combined for term in required)
+
+
 def _guardrail_compliant(
     case: dict[str, Any], interpretation: dict[str, Any], text_lower: str
 ) -> bool:
@@ -213,6 +468,50 @@ def _not_data_only(case: dict[str, Any], interpretation: dict[str, Any], text_lo
     return any(term in text_lower for term in interpretive_terms)
 
 
+def _scope_type_match(case: dict[str, Any], interpretation: dict[str, Any]) -> bool:
+    expected = str(case.get("expected_scope_type", "")).strip()
+    if not expected:
+        return True
+    return str(interpretation.get("scope_type", "")).strip() == expected
+
+
+def _focus_entities_match(
+    case: dict[str, Any], interpretation: dict[str, Any], text_lower: str
+) -> bool:
+    expected = [
+        str(item).strip().lower()
+        for item in case.get("expected_focus_entities", [])
+        if str(item).strip()
+    ]
+    if not expected:
+        return True
+    focus = [str(item).strip().lower() for item in interpretation.get("focus_entities", []) or []]
+    combined = " ".join([*focus, text_lower])
+    return all(entity in combined for entity in expected)
+
+
+def _forbidden_phrases_absent(case: dict[str, Any], text_lower: str) -> bool:
+    forbidden = [
+        str(item).strip().lower() for item in case.get("forbidden_phrases", []) if str(item).strip()
+    ]
+    if not forbidden:
+        return True
+    return all(item not in text_lower for item in forbidden)
+
+
+def _forbidden_question_intents_absent(
+    case: dict[str, Any], interpretation: dict[str, Any]
+) -> bool:
+    forbidden = {
+        str(item).strip()
+        for item in case.get("forbidden_question_intents", [])
+        if str(item).strip()
+    }
+    if not forbidden:
+        return True
+    return str(interpretation.get("question_intent", "")).strip() not in forbidden
+
+
 def evaluate_case(
     case: dict[str, Any],
     body: dict[str, Any],
@@ -242,10 +541,22 @@ def evaluate_case(
     concept_text = " ".join(
         str(item).lower() for item in interpretation.get("groundwater_concepts", []) or []
     )
+    learner_brief = _learner_brief(interpretation)
     checks = {
         "ok_status": status_code == 200 and body.get("status") == "ok",
         "has_schema": interpretation.get("schema_version") == "interpretation_response_v1",
         "has_interpretation": bool(str(interpretation.get("interpretation", "")).strip()),
+        "has_learner_brief": bool(learner_brief),
+        "learner_direct_answer_present": bool(str(learner_brief.get("direct_answer", "")).strip()),
+        "learner_meaning_present": _has_plain_language_meaning(interpretation),
+        "learner_limit_present": bool(str(learner_brief.get("important_limit", "")).strip()),
+        "learner_next_step_present": bool(str(learner_brief.get("next_best_question", "")).strip()),
+        "visible_interpretation_not_summary_echo": _visible_interpretation_not_summary_echo(
+            interpretation, case
+        ),
+        "visible_interpretation_explainer": _visible_interpretation_is_explainer(
+            case, interpretation, outbound_body
+        ),
         "has_chart_context": bool(chart_context.get("summary")),
         "has_data_references": len(data_references) >= int(case.get("min_data_references", 1)),
         "has_evidence": bool(evidence),
@@ -263,8 +574,18 @@ def evaluate_case(
         "must_not_contain_absent": all(term not in text_lower for term in must_not_contain),
         "numeric_match": _numeric_match(case, interpretation),
         "free_text_numbers_claimed": _free_text_numbers_are_claimed(interpretation),
+        "jargon_explained": _jargon_explained(case, interpretation, text_lower),
+        "misconception_guardrail_present": _misconceptions_present(
+            case, interpretation, text_lower
+        ),
         "not_generic_contextual": _not_generic_contextual(case, text_lower),
         "not_data_only": _not_data_only(case, interpretation, text_lower),
+        "scope_type_match": _scope_type_match(case, interpretation),
+        "focus_entities_match": _focus_entities_match(case, interpretation, text_lower),
+        "forbidden_phrases_absent": _forbidden_phrases_absent(case, text_lower),
+        "forbidden_question_intents_absent": _forbidden_question_intents_absent(
+            case, interpretation
+        ),
         "turn_context_bound": (
             not case.get("prior_turn")
             or (
@@ -327,6 +648,22 @@ def evaluate_thresholds(
             "has_chart_context",
             thresholds.get("min_chart_context_coverage", 0.0),
         ),
+        "learner_brief_coverage": (
+            "has_learner_brief",
+            thresholds.get("min_learner_brief_coverage", 0.0),
+        ),
+        "learner_meaning_coverage": (
+            "learner_meaning_present",
+            thresholds.get("min_learner_meaning_coverage", 0.0),
+        ),
+        "learner_limit_coverage": (
+            "learner_limit_present",
+            thresholds.get("min_learner_limit_coverage", 0.0),
+        ),
+        "learner_next_step_coverage": (
+            "learner_next_step_present",
+            thresholds.get("min_learner_next_step_coverage", 0.0),
+        ),
         "data_reference_coverage": (
             "has_data_references",
             thresholds.get("min_data_reference_coverage", 0.0),
@@ -342,6 +679,14 @@ def evaluate_thresholds(
         "guardrail_pass_rate": (
             "guardrail_compliant",
             thresholds.get("min_guardrail_pass_rate", 0.0),
+        ),
+        "jargon_explanation_coverage": (
+            "jargon_explained",
+            thresholds.get("min_jargon_explanation_coverage", 0.0),
+        ),
+        "misconception_guardrail_pass_rate": (
+            "misconception_guardrail_present",
+            thresholds.get("min_misconception_guardrail_pass_rate", 0.0),
         ),
     }
     coverage_summary: dict[str, float] = {}
@@ -395,6 +740,7 @@ def main() -> int:
     thresholds = _load_json(args.thresholds)
     if not isinstance(cases, list):
         raise ValueError("Interpretation cases file must be a JSON array.")
+    cases = _expand_case_suite(cases, minimum=100)
     if args.limit > 0:
         cases = cases[: args.limit]
     if not isinstance(thresholds, dict):

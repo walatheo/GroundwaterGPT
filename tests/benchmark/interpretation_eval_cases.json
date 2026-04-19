@@ -84,6 +84,13 @@
     "question": "Which one is changing fastest?",
     "audience": "general",
     "max_seconds": 75,
+    "require_visible_explainer": true,
+    "visible_must_not_contain": [
+      "This chart connects",
+      "Context site IDs include",
+      "Key deterministic rates are",
+      "Highlighted wells mark"
+    ],
     "expected_numeric_claims": [
       {"site": "Lee L-729", "unit": "ft/yr", "value": -0.355, "tolerance": 0.1}
     ],
@@ -279,6 +286,64 @@
     "audience": "general",
     "max_seconds": 75,
     "expected_terms": ["shallow", "deep", "wells"],
+    "must_hedge": true,
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_learner_new_to_this",
+    "level": "learner",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "I'm new to this, what does this chart mean?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["screening", "follow-up"],
+    "required_misconceptions": ["proof of causation"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_learner_why_care_decline",
+    "level": "learner",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "Why should I care about this decline?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["matters", "follow-up"],
+    "required_misconceptions": ["proof of causation"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_learner_screening_risk_plain_english",
+    "level": "learner",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "What does screening risk mean in plain English?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["screening risk", "follow-up"],
+    "required_jargon_terms": ["screening risk"],
+    "required_misconceptions": ["not a forecast"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_learner_cohort_average_beginner",
+    "level": "learner",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "What does the cohort average mean for a beginner?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["cohort average", "group"],
+    "required_jargon_terms": ["cohort average"],
+    "required_misconceptions": ["not a physical well"],
+    "min_data_references": 4
+  },
+  {
+    "id": "INT_learner_causation_difference",
+    "level": "learner",
+    "prior_turn": {"question": "Estero trends", "audience": "general"},
+    "question": "What's the difference between a falling well and proving a cause?",
+    "audience": "general",
+    "max_seconds": 75,
+    "expected_terms": ["does not prove", "outside data"],
+    "required_misconceptions": ["proof of causation"],
     "must_hedge": true,
     "min_data_references": 4
   }
