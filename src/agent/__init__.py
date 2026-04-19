@@ -1,7 +1,7 @@
 """GroundwaterGPT Agent Module.
 
 Agentic RAG system for groundwater research and analysis.
-Supports multiple LLM providers (Ollama, OpenAI, Anthropic, Gemini).
+Supports the Qwen backends only: Ollama (local Qwen) and DashScope (hosted Qwen).
 Includes source verification for data quality assurance.
 
 Source Priority:

@@ -16,21 +16,21 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from .llm_factory import get_llm
 from .research_agent import DeepResearchAgent
 from .research_optimizer import (
-    ResearchPlanner,
     PriorityRanker,
-    SelfReflectionEvaluator,
-    StructuredReportBuilder,
+    ResearchPlan,
+    ResearchPlanner,
     ResearchSessionPersistence,
     SearchBudget,
-    ResearchPlan,
+    SelfReflectionEvaluator,
+    StructuredReportBuilder,
 )
 from .source_verification import verify_source
 
@@ -103,8 +103,7 @@ class GroundwaterResearchContext:
 
 
 class GroundwaterResearchWorkflow:
-    """
-    Orchestrates agentic deep research for groundwater questions.
+    """Orchestrate agentic deep research for groundwater questions.
 
     Combines research optimization, domain knowledge, and data integration
     to produce high-quality research reports about groundwater topics.
@@ -121,7 +120,7 @@ class GroundwaterResearchWorkflow:
         """Initialize the groundwater research workflow.
 
         Args:
-            llm_provider: LLM provider (openai, anthropic, etc.)
+            llm_provider: LLM backend — one of ``ollama`` or ``qwen`` (Qwen-only policy).
             llm_model: LLM model name
             max_iterations: Max research iterations for reflection loop
             session_dir: Directory for session persistence
@@ -134,9 +133,7 @@ class GroundwaterResearchWorkflow:
         # Initialize components
         self.planner = ResearchPlanner(llm_provider=llm_provider, llm_model=llm_model)
         self.ranker = PriorityRanker(llm_provider=llm_provider, llm_model=llm_model)
-        self.evaluator = SelfReflectionEvaluator(
-            llm_provider=llm_provider, llm_model=llm_model
-        )
+        self.evaluator = SelfReflectionEvaluator(llm_provider=llm_provider, llm_model=llm_model)
         self.report_builder = StructuredReportBuilder(
             llm_provider=llm_provider, llm_model=llm_model
         )
@@ -154,16 +151,13 @@ class GroundwaterResearchWorkflow:
         """Default progress callback - just log."""
         logger.info(f"📊 {message}")
 
-    def _update_progress(
-        self, context: GroundwaterResearchContext, message: str
-    ) -> None:
+    def _update_progress(self, context: GroundwaterResearchContext, message: str) -> None:
         """Update progress and call callback."""
         context.progress_messages.append(message)
         self.progress_callback(message)
 
     def research(self, query: str, session_id: str | None = None) -> dict:
-        """
-        Conduct comprehensive groundwater research.
+        """Conduct comprehensive groundwater research.
 
         Args:
             query: The groundwater research question
@@ -185,9 +179,7 @@ class GroundwaterResearchWorkflow:
         try:
             # Phase 1: Research Planning
             self._update_progress(context, "📋 Decomposing research question...")
-            context.research_plan = self.planner.plan_research(
-                query, domain="groundwater"
-            )
+            context.research_plan = self.planner.plan_research(query, domain="groundwater")
             context.plan_created_at = datetime.now()
 
             logger.info(f"📋 Main Question: {context.research_plan.main_question}")
@@ -200,9 +192,7 @@ class GroundwaterResearchWorkflow:
                 logger.info(f"\n🔄 ITERATION {iteration_num}/{context.max_iterations}")
 
                 # 2a: Execute prioritized searches
-                self._update_progress(
-                    context, f"🔍 Searching (iteration {iteration_num})..."
-                )
+                self._update_progress(context, f"🔍 Searching (iteration {iteration_num})...")
                 self._execute_searches(context)
 
                 # 2b: Extract and verify insights
@@ -231,10 +221,7 @@ class GroundwaterResearchWorkflow:
                 logger.info(f"🤔 Coverage Score: {reflection.coverage_score:.2f}/1.0")
 
                 # Check if we should stop or continue
-                if (
-                    reflection.is_high_quality
-                    or context.iteration_count >= context.max_iterations
-                ):
+                if reflection.is_high_quality or context.iteration_count >= context.max_iterations:
                     context.final_report = report
                     context.report_generated_at = datetime.now()
                     logger.info("✅ Research quality threshold met")
@@ -242,13 +229,11 @@ class GroundwaterResearchWorkflow:
 
                 # Plan follow-up searches based on gaps
                 if reflection.follow_up_queries:
-                    logger.info(f"⚠️  Gaps identified. Follow-up queries:")
+                    logger.info("⚠️  Gaps identified. Follow-up queries:")
                     for q in reflection.follow_up_queries[:3]:
                         logger.info(f"  - {q}")
                     # Add follow-up queries to search priority
-                    context.research_plan.search_priority.extend(
-                        reflection.follow_up_queries[:3]
-                    )
+                    context.research_plan.search_priority.extend(reflection.follow_up_queries[:3])
 
                 context.iteration_count += 1
 
@@ -317,9 +302,7 @@ class GroundwaterResearchWorkflow:
 
         # Use only queries from research plan that haven't been searched yet
         queries_to_search = [
-            q
-            for q in context.research_plan.search_priority
-            if q not in context.search_results
+            q for q in context.research_plan.search_priority if q not in context.search_results
         ]
 
         for query in queries_to_search:
@@ -425,8 +408,7 @@ async def research_async(
     max_iterations: int = 3,
     progress_callback: Callable[[str], None] | None = None,
 ) -> dict:
-    """
-    Async wrapper for groundwater research.
+    """Async wrapper for groundwater research.
 
     Args:
         query: Research question
@@ -453,8 +435,7 @@ def conduct_groundwater_research(
     max_iterations: int = 3,
     session_id: str | None = None,
 ) -> dict:
-    """
-    Convenience function for groundwater research.
+    """Run the full groundwater research workflow and return results.
 
     Args:
         query: Groundwater research question
@@ -497,6 +478,4 @@ if __name__ == "__main__":
 
     if results.get("report"):
         print(f"\n📋 Report Title: {results['report'].get('title', 'N/A')}")
-        print(
-            f"📋 Summary: {results['report'].get('executive_summary', 'N/A')[:200]}..."
-        )
+        print(f"📋 Summary: {results['report'].get('executive_summary', 'N/A')[:200]}...")
