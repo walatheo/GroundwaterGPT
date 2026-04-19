@@ -1,5 +1,11 @@
 """Phase 4: structured insufficient-evidence / refusal answers.
 
+The geography template echoes the queried place when we can extract it, so
+"how is groundwater in Antarctica?" gets a refusal that names Antarctica
+(rather than a generic Florida-scope sentence). That keeps the refusal
+specific without inventing data — we acknowledge what was asked and why we
+can't serve it.
+
 Previously, when a question had no deterministic evidence backing it (no
 matched site, no aquifer hit, no chart context) or was out of scope, each
 branch improvised a response. Sometimes it was an empty payload with a
@@ -30,7 +36,7 @@ from typing import Any, Optional
 
 from api.routes._answer_contract import GroundingStatus, RouteMode
 from api.routes._grounded_answer import GroundedAnswer
-from api.routes._route_decision import RouteDecision
+from api.routes._route_decision import RouteDecision, extract_out_of_scope_geo
 
 # ---------------------------------------------------------------------------
 # Reason-specific templates.
@@ -46,12 +52,11 @@ from api.routes._route_decision import RouteDecision
 _TEMPLATES: dict[str, dict[str, str]] = {
     "out_of_scope_geography": {
         "direct": (
-            "I don't have groundwater data outside the Florida USGS NWIS sites "
-            "this project is built on."
+            "I don't have groundwater data for {geo} — this project covers "
+            "Florida USGS NWIS sites only."
         ),
         "limit": (
-            "This dataset covers Florida monitoring wells — the requested "
-            "geography is not in scope."
+            "{geo_caveat} is outside the Florida monitoring network this " "dataset is built on."
         ),
         "redirect": "Would you like to compare Florida wells in a specific county or aquifer?",
         "status": GroundingStatus.REFUSED,
@@ -91,6 +96,15 @@ def _template_for(reason: Optional[str]) -> dict[str, str]:
     return _TEMPLATES.get(reason or "", _TEMPLATES[_DEFAULT_REASON])
 
 
+def _format_template(text: str, *, question: str, reason: Optional[str]) -> str:
+    """Substitute the ``{geo}`` placeholder for geography refusals."""
+    if reason != "out_of_scope_geography" or "{" not in text:
+        return text
+    geo = extract_out_of_scope_geo(question) or "that location"
+    geo_lower = geo.lower()
+    return text.format(geo=geo_lower, geo_caveat=geo)
+
+
 def build_insufficient_answer(
     *,
     question: str,
@@ -100,16 +114,15 @@ def build_insufficient_answer(
 
     ``reason`` should match one of the template keys
     (``out_of_scope_geography``, ``future_prediction``, ``no_evidence``).
-    Unknown reasons fall back to the generic no-evidence template.
-    ``question`` is accepted for symmetry with the explainer signature and
-    so future templates can quote the user back; it is unused today.
+    Unknown reasons fall back to the generic no-evidence template. The
+    geography template echoes the queried place so the refusal stays
+    specific.
     """
-    del question
     template = _template_for(reason)
     return GroundedAnswer(
-        direct_answer=template["direct"],
+        direct_answer=_format_template(template["direct"], question=question, reason=reason),
         grounded_findings=[],
-        limits=[template["limit"]],
+        limits=[_format_template(template["limit"], question=question, reason=reason)],
         next_best_question=template["redirect"],
         supporting_evidence=[],
         grounding_status=template["status"],

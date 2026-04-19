@@ -337,6 +337,7 @@ class TestChatEndpoint:
         assert resp.status_code == 200
         body = resp.json()
         text = body["response"].lower()
+        assert "antarctica" in text
         assert "florida" in text or "outside" in text or "scope" in text
         assert "net change" not in text
         assert "ft/yr" not in text
@@ -1050,14 +1051,14 @@ class TestFarmerUseCases:
         assert resp.status_code == 200
 
     def test_farmer_well_planning(self):
-        """Drilling-decision questions should refuse with monitoring-record framing."""
+        """Practical 'how deep should I drill' questions should answer, not refuse."""
         resp = client.post(
             "/api/chat",
             json={"message": "How deep should I drill my irrigation well?"},
         )
         body = resp.json()
         text = body["response"].lower()
-        assert "monitoring" in text or "forecast" in text or "can't" in text or "cannot" in text
+        assert "well" in text or "depth" in text or "aquifer" in text
 
     def test_farmer_seasonal_planning(self):
         """Farmer asking about seasonal water availability."""

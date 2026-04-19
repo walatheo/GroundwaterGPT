@@ -24,9 +24,10 @@ class TestBuildInsufficientAnswer:
         )
         assert answer.grounding_status == GroundingStatus.REFUSED
         assert "Florida" in answer.direct_answer
+        assert "antarctica" in answer.direct_answer.lower()
         assert answer.grounded_findings == []
         assert answer.next_best_question is not None
-        assert any("geography is not in scope" in line for line in answer.limits)
+        assert any("Antarctica" in line for line in answer.limits)
 
     def test_future_prediction_is_refused(self):
         answer = build_insufficient_answer(

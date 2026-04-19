@@ -42,10 +42,18 @@ _OUT_OF_SCOPE_GEO = re.compile(
 # ``_mentions_future_year`` below, which checks the year against today.
 _FUTURE_PREDICTION = re.compile(
     r"\b(forecast|predict|will\s+(?:it|the|water|levels?|drop|rise|fall)"
-    r"|going to|next (?:year|decade|century)"
-    r"|should i (?:drill|buy|invest|plant|water))\b",
+    r"|going to|next (?:year|decade|century))\b",
     re.IGNORECASE,
 )
+
+# Yes/no decision asks ("should I drill a well here?") — refused because we
+# observe, we don't advise. Practical info questions that happen to contain the
+# same verb ("how deep should I drill?") are left alone via ``_WH_LEAD``.
+_DECISION_QUESTION = re.compile(
+    r"\bshould\s+i\s+(?:drill|buy|invest|plant|water)\b",
+    re.IGNORECASE,
+)
+_WH_LEAD = re.compile(r"^\s*(?:how|what|where|when|why|which)\b", re.IGNORECASE)
 
 _YEAR_RE = re.compile(r"\b(19|20|21)\d{2}\b")
 _PAST_TENSE_HINT = re.compile(
@@ -70,6 +78,25 @@ def _mentions_future_year(question: str) -> bool:
     return False
 
 
+def _is_decision_question(question: str) -> bool:
+    """True when the question is a yes/no decision ask, not an info ask.
+
+    "should I drill a well here?" is a decision; "how deep should I drill?" is
+    a depth question. The wh-word lead distinguishes the two cheaply.
+    """
+    if not _DECISION_QUESTION.search(question or ""):
+        return False
+    return _WH_LEAD.match(question or "") is None
+
+
+def extract_out_of_scope_geo(question: str) -> Optional[str]:
+    """Return the matched out-of-scope geography (title-cased) or ``None``."""
+    match = _OUT_OF_SCOPE_GEO.search(question or "")
+    if match is None:
+        return None
+    return match.group(0).title()
+
+
 def _detect_unsupported_reason(question: str) -> Optional[str]:
     """Return a short tag when the question cannot be answered from the dataset.
 
@@ -79,7 +106,11 @@ def _detect_unsupported_reason(question: str) -> Optional[str]:
         return None
     if _OUT_OF_SCOPE_GEO.search(question):
         return "out_of_scope_geography"
-    if _FUTURE_PREDICTION.search(question) or _mentions_future_year(question):
+    if (
+        _FUTURE_PREDICTION.search(question)
+        or _mentions_future_year(question)
+        or _is_decision_question(question)
+    ):
         return "future_prediction"
     return None
 
@@ -293,4 +324,4 @@ def resolve_route(
     )
 
 
-__all__ = ["RouteDecision", "resolve_route"]
+__all__ = ["RouteDecision", "extract_out_of_scope_geo", "resolve_route"]
