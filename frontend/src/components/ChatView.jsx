@@ -617,7 +617,16 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
               turnHistory,
             })
         const { text: replyText } = extractChart(data.response)
-        const answerBrief = data.answer_brief || data.interpretation_response?.interpretation || data.llm_synthesis || null
+        // Canonical contract first: grounded_answer.direct_answer is the
+        // backend's product-level reply. Legacy fields are fallbacks for
+        // payloads from paths that haven't been stamped yet.
+        const groundedAnswer = data.grounded_answer || null
+        const directFromContract = groundedAnswer?.direct_answer || ''
+        const answerBrief = directFromContract
+          || data.answer_brief
+          || data.interpretation_response?.interpretation
+          || data.llm_synthesis
+          || null
         const chart = data.chart || null
         const chartContextRef = chartContextFromPayload(chart) || requestChartContext
         if (chartContextRef) setActiveChartContext(chartContextRef)
@@ -627,6 +636,10 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
           role: 'assistant',
           content: answerBrief || replyText,
           rawContent: answerBrief && replyText && answerBrief.trim() !== replyText.trim() ? replyText : '',
+          groundedAnswer,
+          answerType: data.answer_type || '',
+          groundingStatus: data.grounding_status || '',
+          routeMode: data.route_mode || '',
           questionAsked: text,
           chart,
           chartContextRef,
@@ -789,12 +802,50 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
                   ? 'bg-red-50 border border-red-200 text-red-800'
                   : msg.isProgress
                   ? 'bg-amber-50 border border-amber-200 text-amber-800'
+                  : msg.answerType === 'insufficient_evidence'
+                  ? 'bg-slate-50 border border-slate-300 text-slate-700'
                   : 'bg-white border border-slate-200 text-slate-800'
               }`}
             >
+              {msg.role === 'assistant' && msg.groundingStatus && (
+                <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide">
+                  <span
+                    className={`rounded-full px-2 py-0.5 ${
+                      msg.groundingStatus === 'grounded'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : msg.groundingStatus === 'partial'
+                        ? 'bg-amber-100 text-amber-800'
+                        : msg.groundingStatus === 'refused'
+                        ? 'bg-slate-200 text-slate-700'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {msg.groundingStatus}
+                  </span>
+                  {msg.routeMode && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{msg.routeMode}</span>
+                  )}
+                </div>
+              )}
               <div className="text-sm leading-relaxed">
                 <ReactMarkdown components={markdownComponents}>{msg.content}</ReactMarkdown>
               </div>
+              {msg.groundedAnswer && Array.isArray(msg.groundedAnswer.limits) && msg.groundedAnswer.limits.length > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-slate-600">
+                  {msg.groundedAnswer.limits.slice(0, 3).map((limit, i) => (
+                    <li key={i}>{limit}</li>
+                  ))}
+                </ul>
+              )}
+              {msg.groundedAnswer?.next_best_question && msg.answerType === 'insufficient_evidence' && (
+                <button
+                  type="button"
+                  onClick={() => sendMessage(msg.groundedAnswer.next_best_question)}
+                  className="mt-3 inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Try: {msg.groundedAnswer.next_best_question}
+                </button>
+              )}
 
               {msg.rawContent && (
                 <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
