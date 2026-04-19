@@ -231,6 +231,8 @@ class TestChatEndpoint:
         assert "proxy" in brief.lower()
         assert supply
         assert len(supply["supply_units"]) >= 3
+        assert body.get("next_goal")
+        assert body.get("follow_up_groups")
 
     def test_chat_supply_interpretation_is_not_estero_only(self):
         """The supply brief should use the configured municipality mapping generically."""
@@ -335,7 +337,7 @@ class TestChatEndpoint:
         assert resp.status_code == 200
         body = resp.json()
         text = body["response"].lower()
-        assert "antarctica" in text
+        assert "florida" in text or "outside" in text or "scope" in text
         assert "net change" not in text
         assert "ft/yr" not in text
 
@@ -407,6 +409,180 @@ class TestChatEndpoint:
         assert body["mode"] == "chart_interpreter"
         assert body["interpretation_response"]["grounding_status"]["uses_chart_context"] is True
 
+    def test_chart_context_named_well_followup_stays_in_chart_interpreter(self, monkeypatch):
+        """Named wells inside an active chart should keep cross-well chart context."""
+        from api.routes import chat as chat_routes
+
+        def _stub_interpreter(question, chart_context, turn_history, **_kwargs):
+            return {
+                "response": "Stubbed named-well chart interpretation.",
+                "context": "Chart-context interpretation",
+                "sources": [],
+                "mode": "chart_interpreter",
+                "status": "ok",
+                "claim_citations": [],
+                "interpretation_response": {
+                    "schema_version": "interpretation_response_v1",
+                    "question": question,
+                    "audience": "general",
+                    "interpretation": "The named well is compared against the rest of the chart.",
+                    "follow_up_questions": [],
+                    "grounding_status": {
+                        "uses_chart_context": True,
+                        "uses_usgs_data": True,
+                        "invented_measurements_allowed": False,
+                    },
+                    "chart_context": {"summary": "Stub chart"},
+                    "data_references": [],
+                },
+                "chart_context_used": chart_context,
+                "turn_history_used": turn_history,
+            }
+
+        def _stub_site_fallback(*_args, **_kwargs):
+            raise AssertionError("site fallback should not run for named well chart follow-ups")
+
+        monkeypatch.setattr(
+            chat_routes._chart_interpreter,
+            "interpret_with_context",
+            _stub_interpreter,
+        )
+        monkeypatch.setattr(chat_routes, "_site_research_fallback", _stub_site_fallback)
+        resp = client.post(
+            "/api/chat",
+            json={
+                "message": "On G-3764, explain how it compares to the other wells in this chart.",
+                "chart_context": {
+                    "chart_id": "Miami-Dade comparison",
+                    "site_ids": ["254815080343801", "255055080304801"],
+                    "chart_type": "comparison",
+                    "summary_metrics": {"title": "Miami-Dade comparison"},
+                },
+                "allow_llm_synthesis": False,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["mode"] == "chart_interpreter"
+        assert body["interpretation_response"]["grounding_status"]["uses_chart_context"] is True
+
+    def test_named_well_divergence_followup_recovers_recent_chart_context(self, monkeypatch):
+        """Named-well comparison follow-ups should recover recent chart context from history."""
+        from api.routes import chat as chat_routes
+
+        def _stub_interpreter(question, chart_context, turn_history, **_kwargs):
+            return {
+                "response": "Stubbed recovered chart interpretation.",
+                "context": "Recovered chart context",
+                "sources": [],
+                "mode": "chart_interpreter",
+                "status": "ok",
+                "claim_citations": [],
+                "interpretation_response": {
+                    "schema_version": "interpretation_response_v1",
+                    "question": question,
+                    "audience": "general",
+                    "interpretation": "Recovered chart context was used.",
+                    "follow_up_questions": [],
+                    "grounding_status": {
+                        "uses_chart_context": True,
+                        "uses_usgs_data": True,
+                        "invented_measurements_allowed": False,
+                    },
+                    "chart_context": {"summary": "Recovered chart"},
+                    "data_references": [],
+                },
+                "chart_context_used": chart_context,
+                "turn_history_used": turn_history,
+            }
+
+        def _stub_site_fallback(*_args, **_kwargs):
+            raise AssertionError("site fallback should not run when chart context is recovered")
+
+        monkeypatch.setattr(
+            chat_routes._chart_interpreter,
+            "interpret_with_context",
+            _stub_interpreter,
+        )
+        monkeypatch.setattr(chat_routes, "_site_research_fallback", _stub_site_fallback)
+        resp = client.post(
+            "/api/chat",
+            json={
+                "message": "Why do Lee L-1998 and Lee L-729 diverge?",
+                "turn_history": [
+                    {
+                        "role": "assistant",
+                        "content": "Recent Lee County chart",
+                        "chart_id": "Estero Monthly Groundwater Levels",
+                        "wells": [
+                            {"site_id": "263532081592201", "name": "Lee L-1998"},
+                            {"site_id": "263335081394301", "name": "Lee L-729"},
+                        ],
+                    }
+                ],
+                "allow_llm_synthesis": False,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["mode"] == "chart_interpreter"
+        assert body["interpretation_response"]["grounding_status"]["uses_chart_context"] is True
+
+    def test_chart_context_named_aquifer_followup_stays_in_chart_interpreter(self, monkeypatch):
+        """Named aquifers inside an active chart should stay in chart interpretation mode."""
+        from api.routes import chat as chat_routes
+
+        def _stub_interpreter(question, chart_context, turn_history, **_kwargs):
+            return {
+                "response": "Stubbed aquifer chart interpretation.",
+                "context": "Chart-context interpretation",
+                "sources": [],
+                "mode": "chart_interpreter",
+                "status": "ok",
+                "claim_citations": [],
+                "interpretation_response": {
+                    "schema_version": "interpretation_response_v1",
+                    "question": question,
+                    "audience": "general",
+                    "interpretation": "The named aquifer is interpreted inside the active chart.",
+                    "follow_up_questions": [],
+                    "grounding_status": {
+                        "uses_chart_context": True,
+                        "uses_usgs_data": True,
+                        "invented_measurements_allowed": False,
+                    },
+                    "chart_context": {"summary": "Stub chart"},
+                    "data_references": [],
+                },
+            }
+
+        def _stub_site_fallback(*_args, **_kwargs):
+            raise AssertionError("site fallback should not run for named aquifer chart follow-ups")
+
+        monkeypatch.setattr(
+            chat_routes._chart_interpreter,
+            "interpret_with_context",
+            _stub_interpreter,
+        )
+        monkeypatch.setattr(chat_routes, "_site_research_fallback", _stub_site_fallback)
+        resp = client.post(
+            "/api/chat",
+            json={
+                "message": "Why is Upper Floridan the most stressed supply unit in this dataset?",
+                "chart_context": {
+                    "chart_id": "Estero Monthly Groundwater Levels",
+                    "site_ids": ["263335081394301", "263532081592201", "262538082045701"],
+                    "chart_type": "comparison",
+                    "summary_metrics": {"title": "Estero Monthly Groundwater Levels"},
+                },
+                "allow_llm_synthesis": False,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["mode"] == "chart_interpreter"
+        assert body["interpretation_response"]["grounding_status"]["uses_chart_context"] is True
+
 
 # ===================================================================
 # POST /api/interpret endpoint integration tests
@@ -443,11 +619,15 @@ class TestInterpretEndpoint:
         assert interpretation["chart_context"]["how_to_read"]
         assert interpretation["data_references"]
         assert interpretation["follow_up_questions"]
+        assert interpretation["next_goal"]
+        assert interpretation["follow_up_groups"]
         assert grounding["uses_chart_context"] is True
         assert grounding["uses_usgs_data"] is True
         assert grounding["invented_measurements_allowed"] is False
         assert grounding["llm_requested"] is False
         assert grounding["cache_hit"] is False
+        assert interpretation["learner_brief"]["direct_answer"]
+        assert interpretation["learner_brief"]["why_it_matters"]
 
     def test_interpret_empty_question_returns_400(self):
         """Blank interpretation questions are rejected."""
@@ -492,6 +672,47 @@ class TestInterpretEndpoint:
         assert "Village of Estero" in interpretation["interpretation"]
         assert interpretation["supply_interpretation"]["municipality"] == "Village of Estero"
         assert interpretation["grounding_status"]["uses_usgs_data"] is True
+
+    def test_interpret_exposes_terms_and_misconceptions_for_learner_queries(self):
+        """Learner-oriented interpretation responses should expose definitions and caveats."""
+        resp = client.post(
+            "/api/interpret",
+            json={
+                "question": "What does screening risk mean in plain English?",
+                "audience": "general",
+                "use_llm": False,
+            },
+        )
+        assert resp.status_code == 200
+        interpretation = resp.json()["interpretation_response"]
+        assert interpretation["terms_to_know"]
+        assert interpretation["misconceptions_to_avoid"]
+        assert any(item["term"] == "screening risk" for item in interpretation["terms_to_know"])
+        assert "High screening risk is not a forecast." in interpretation["misconceptions_to_avoid"]
+
+
+class TestLearnerEventsEndpoint:
+    """Integration tests for lightweight learner-event storage."""
+
+    def test_learner_events_endpoint_requires_event_type(self):
+        resp = client.post("/api/learner-events", json={})
+        assert resp.status_code == 400
+
+    def test_learner_events_endpoint_persists_event(self):
+        resp = client.post(
+            "/api/learner-events",
+            json={
+                "event_type": "learner_brief_shown",
+                "question": "What does this chart mean?",
+                "message_id": "msg_test_001",
+                "chart_id": "Estero Monthly Groundwater Levels",
+                "details": {"has_terms_to_know": True},
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert body["event_id"].startswith("learner_")
 
 
 # ===================================================================
@@ -829,14 +1050,14 @@ class TestFarmerUseCases:
         assert resp.status_code == 200
 
     def test_farmer_well_planning(self):
-        """Farmer asking about well installation."""
+        """Drilling-decision questions should refuse with monitoring-record framing."""
         resp = client.post(
             "/api/chat",
             json={"message": "How deep should I drill my irrigation well?"},
         )
         body = resp.json()
         text = body["response"].lower()
-        assert "well" in text or "depth" in text
+        assert "monitoring" in text or "forecast" in text or "can't" in text or "cannot" in text
 
     def test_farmer_seasonal_planning(self):
         """Farmer asking about seasonal water availability."""
