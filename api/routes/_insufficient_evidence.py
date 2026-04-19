@@ -81,6 +81,35 @@ _TEMPLATES: dict[str, dict[str, str]] = {
         "redirect": "Could you rephrase with a specific well ID, county, or aquifer?",
         "status": GroundingStatus.INSUFFICIENT,
     },
+    "monitoring_vs_supply_proxy": {
+        "direct": (
+            "Monitoring wells in this dataset measure aquifer head, not pumpable "
+            "supply — they can't stand in for drinking-water or production wells."
+        ),
+        "limit": (
+            "Head trends reflect pressure in the aquifer; yield, water quality, "
+            "and drawdown under pumping come from supply-well records we don't "
+            "have here."
+        ),
+        "redirect": (
+            "Would you like the observed head trend for the aquifer your supply "
+            "well draws from instead?"
+        ),
+        "status": GroundingStatus.REFUSED,
+    },
+    "ambiguous_reference": {
+        "direct": ("I can't tell which site, county, or aquifer you mean from " "'{question}'."),
+        "limit": (
+            "This dataset only answers when a Florida location, aquifer, or "
+            "monitoring well is named — or when a chart is active in the "
+            "conversation."
+        ),
+        "redirect": (
+            "Could you name a Florida county, aquifer (e.g. Biscayne, "
+            "Floridan), or well (e.g. G-3336)?"
+        ),
+        "status": GroundingStatus.INSUFFICIENT,
+    },
 }
 
 
@@ -97,12 +126,18 @@ def _template_for(reason: Optional[str]) -> dict[str, str]:
 
 
 def _format_template(text: str, *, question: str, reason: Optional[str]) -> str:
-    """Substitute the ``{geo}`` placeholder for geography refusals."""
-    if reason != "out_of_scope_geography" or "{" not in text:
+    """Substitute per-template placeholders (``{geo}`` / ``{question}``)."""
+    if "{" not in text:
         return text
-    geo = extract_out_of_scope_geo(question) or "that location"
-    geo_lower = geo.lower()
-    return text.format(geo=geo_lower, geo_caveat=geo)
+    if reason == "out_of_scope_geography":
+        geo = extract_out_of_scope_geo(question) or "that location"
+        return text.format(geo=geo.lower(), geo_caveat=geo)
+    if reason == "ambiguous_reference":
+        snippet = (question or "").strip().rstrip("?.!").strip()
+        if len(snippet) > 60:
+            snippet = snippet[:57].rstrip() + "…"
+        return text.format(question=snippet or "that")
+    return text
 
 
 def build_insufficient_answer(

@@ -29,7 +29,7 @@ benchmark-llm:
 	python3 scripts/run_agent_benchmark.py --output agent_benchmark_report.json
 
 test:
-	GROUNDWATERGPT_SKIP_AGENT_INIT=1 python3 -m pytest tests/unit/ -q
+	GROUNDWATERGPT_SKIP_AGENT_INIT=1 python3 -m pytest tests/unit/ -ra --durations=15
 
 build:
 	cd frontend && npm run build

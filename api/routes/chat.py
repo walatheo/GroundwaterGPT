@@ -428,9 +428,6 @@ def _should_prefer_chart_context(question: str, chart_context: dict[str, Any] | 
         return False
     if _is_open_ended_chart_followup(question):
         return True
-    named_sites = _detect_site_names(question)
-    if named_sites and _is_contextual_followup(question):
-        return True
     if _detect_aquifer(question) is not None:
         return True
     if _SUPPLY_QUERY_RE.search(question):

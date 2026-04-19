@@ -61,6 +61,77 @@ _PAST_TENSE_HINT = re.compile(
     r"historic(?:ally)?|previously|back in|since|until|before)\b",
     re.IGNORECASE,
 )
+_NAMED_SITE_CHART_COMPARISON = re.compile(
+    r"\b(compare|compares?|comparison|diverge|divergent|other wells?|rest of the chart|"
+    r"this chart|the chart|using the chart|cohort|average|highlighted)\b",
+    re.IGNORECASE,
+)
+
+# Dataset-wide "which is the fastest/most stressed" asks. We route these
+# through the network-wide deterministic path so the ranking signal is
+# computed from the monitored record, not improvised. Two scopes:
+#   - well_rate: "which well is changing fastest" / "biggest drop"
+#   - aquifer_stress: "which aquifer is most stressed"
+_RANKING_WELL = re.compile(
+    r"\bwhich\s+(?:well|site|monitoring\s+well)\b[^?]*"
+    r"\b(?:fastest|slowest|most|biggest|largest|worst|steepest|sharpest)\b"
+    r"|\b(?:fastest|biggest|steepest|worst|sharpest)\s+"
+    r"(?:declining|changing|rising|falling|drop(?:ping)?|drawdown)\s+(?:well|site)\b"
+    r"|\bchanging\s+fastest\b|\bdeclining\s+(?:the\s+)?most\b",
+    re.IGNORECASE,
+)
+_RANKING_AQUIFER = re.compile(
+    r"\bwhich\s+aquifer\b[^?]*"
+    r"\b(?:most\s+stressed|least\s+stable|most\s+depleted|worst|biggest\s+decline|"
+    r"declining\s+fastest|stressed|in\s+trouble)\b"
+    r"|\bmost\s+stressed\s+aquifer\b|\bwhich\s+aquifer\s+looks\s+(?:most\s+)?stressed\b",
+    re.IGNORECASE,
+)
+
+# Proxy / supply guardrail: "can monitoring wells stand in for drinking-water
+# wells?". Monitoring wells measure head, not pumpable supply — we hedge
+# honestly rather than routing this to a data path that would imply yes.
+_PROXY_SUPPLY = re.compile(
+    r"\bmonitoring\s+wells?\b[^.?]*"
+    r"\b(?:stand\s+in|stand-in|proxy|substitute|instead\s+of|replace|predict|"
+    r"answer\s+for|represent|tell\s+us\s+about)\b"
+    r"[^.?]*"
+    r"\b(?:drinking|supply|pumping|production|irrigation|withdrawal|public\s+water)\b"
+    r"|\bcan\s+(?:these\s+)?monitoring\s+wells?\s+"
+    r"(?:stand\s+in|substitute|proxy|replace|answer\s+for)\b",
+    re.IGNORECASE,
+)
+
+# Ambiguous deictic: "groundwater there", "is that bad?", "why is it declining?"
+# with no resolvable referent (no named site, aquifer, location, or active
+# chart context). We ask the user to narrow, rather than inventing a subject.
+_DEICTIC_TOKENS = re.compile(r"\b(?:there|here|that|this|it)\b", re.IGNORECASE)
+
+
+def _detect_ranking_ask(question: str) -> Optional[str]:
+    """Return ``'well_rate'`` / ``'aquifer_stress'`` when the question is a ranking ask."""
+    if _RANKING_WELL.search(question or ""):
+        return "well_rate"
+    if _RANKING_AQUIFER.search(question or ""):
+        return "aquifer_stress"
+    return None
+
+
+def _is_proxy_question(question: str) -> bool:
+    """True when the question asks whether monitoring wells stand in for supply wells."""
+    return bool(_PROXY_SUPPLY.search(question or ""))
+
+
+def _is_ambiguous_deictic(question: str) -> bool:
+    """True for short follow-ups whose subject is only a pronoun/deictic.
+
+    Called at the end of route resolution — only fires when no named entity,
+    aquifer, location, or chart context resolved the referent.
+    """
+    q = (question or "").strip()
+    if not q or len(q) > 160:
+        return False
+    return bool(_DEICTIC_TOKENS.search(q))
 
 
 def _mentions_future_year(question: str) -> bool:
@@ -150,6 +221,12 @@ class RouteDecision:
     is_network_wide: bool = False
     kb_matches: list[tuple[str, str]] = field(default_factory=list)
 
+    # Ranking asks ride the network-wide deterministic path but need to be
+    # observable separately so transcripts/tests can distinguish a generic
+    # "all-wells" ask from a "which well is fastest" ranking ask.
+    is_ranking_ask: bool = False
+    ranking_scope: Optional[str] = None  # 'well_rate' | 'aquifer_stress'
+
     # Honest refusal metadata. When set, the route_mode is UNSUPPORTED.
     unsupported_reason: Optional[str] = None
 
@@ -169,6 +246,8 @@ class RouteDecision:
             "multi_location_labels": [loc[2] for loc in self.locations],
             "is_multi_location": self.is_multi_location,
             "is_network_wide": self.is_network_wide,
+            "is_ranking_ask": self.is_ranking_ask,
+            "ranking_scope": self.ranking_scope,
             "unsupported_reason": self.unsupported_reason,
         }
 
@@ -209,6 +288,63 @@ def resolve_route(
 
     unsupported_reason = _detect_unsupported_reason(user_query)
 
+    # --- Proxy/supply guardrail (explicit hedge, not a data path) ---
+    # Monitoring wells measure head, not pumpable supply. An honest answer
+    # names that caveat rather than running the same trend path and letting
+    # the user draw the wrong conclusion.
+    if unsupported_reason is None and _is_proxy_question(user_query):
+        return RouteDecision(
+            route_mode=RouteMode.UNSUPPORTED,
+            internal_mode="fallback",
+            intent="monitoring_vs_supply_proxy",
+            unsupported_reason="monitoring_vs_supply_proxy",
+            hints=hints,
+        )
+
+    named_sites = detectors["detect_site_names"](user_query)
+    explicit_named_chart_followup = bool(_NAMED_SITE_CHART_COMPARISON.search(user_query or ""))
+
+    # --- Named site within an explicitly comparative chart question ---
+    if (
+        named_sites
+        and explicit_named_chart_followup
+        and detectors["should_prefer_chart_context"](user_query, chart_context)
+    ):
+        return RouteDecision(
+            route_mode=RouteMode.CHART_FOLLOWUP,
+            internal_mode="chart_interpreter",
+            intent="chart_followup_with_named_site",
+            chart_context_to_use=chart_context,
+            named_sites=named_sites,
+            unsupported_reason=unsupported_reason,
+            hints=hints,
+        )
+
+    recovered = None
+    if chart_context is None and detectors["is_contextual_followup"](user_query):
+        recovered = detectors["chart_context_from_turn_history"](turn_history)
+    if named_sites and explicit_named_chart_followup and recovered is not None:
+        return RouteDecision(
+            route_mode=RouteMode.CHART_FOLLOWUP,
+            internal_mode="chart_interpreter",
+            intent="chart_followup_named_site_recovered_from_history",
+            chart_context_to_use=recovered,
+            named_sites=named_sites,
+            unsupported_reason=unsupported_reason,
+            hints=hints,
+        )
+
+    # --- Exact well / site lookup ---
+    if named_sites:
+        return RouteDecision(
+            route_mode=(RouteMode.UNSUPPORTED if unsupported_reason else RouteMode.EXACT_WELL),
+            internal_mode="site_fallback",
+            intent="exact_well_lookup",
+            named_sites=named_sites,
+            unsupported_reason=unsupported_reason,
+            hints=hints,
+        )
+
     # --- Chart-context interpretation (caller-supplied) ---
     if detectors["should_prefer_chart_context"](user_query, chart_context):
         return RouteDecision(
@@ -221,27 +357,12 @@ def resolve_route(
         )
 
     # --- Contextual follow-up recovery (inherit prior chart context) ---
-    recovered = None
-    if chart_context is None and detectors["is_contextual_followup"](user_query):
-        recovered = detectors["chart_context_from_turn_history"](turn_history)
     if recovered is not None:
         return RouteDecision(
             route_mode=RouteMode.CHART_FOLLOWUP,
             internal_mode="chart_interpreter",
             intent="chart_followup_recovered_from_history",
             chart_context_to_use=recovered,
-            unsupported_reason=unsupported_reason,
-            hints=hints,
-        )
-
-    # --- Exact well / site lookup ---
-    named_sites = detectors["detect_site_names"](user_query)
-    if named_sites:
-        return RouteDecision(
-            route_mode=(RouteMode.UNSUPPORTED if unsupported_reason else RouteMode.EXACT_WELL),
-            internal_mode="site_fallback",
-            intent="exact_well_lookup",
-            named_sites=named_sites,
             unsupported_reason=unsupported_reason,
             hints=hints,
         )
@@ -283,13 +404,30 @@ def resolve_route(
             hints=hints,
         )
 
-    # --- Network-wide ---
+    # --- Network-wide (generic all-fleet asks) ---
     if detectors["is_network_wide_query"](user_query):
         return RouteDecision(
             route_mode=(RouteMode.UNSUPPORTED if unsupported_reason else RouteMode.NETWORK),
             internal_mode="network_fallback",
             intent="network_wide",
             is_network_wide=True,
+            unsupported_reason=unsupported_reason,
+            hints=hints,
+        )
+
+    # --- Dataset-wide ranking ask ("fastest well", "most stressed aquifer") ---
+    # These ride the network-wide deterministic path (which already computes
+    # per-site trends) but we stamp ranking_scope so the response surface and
+    # transcripts can see the user asked for a ranking, not a summary.
+    ranking_scope = _detect_ranking_ask(user_query)
+    if ranking_scope is not None:
+        return RouteDecision(
+            route_mode=(RouteMode.UNSUPPORTED if unsupported_reason else RouteMode.NETWORK),
+            internal_mode="network_fallback",
+            intent=f"ranking_{ranking_scope}",
+            is_network_wide=True,
+            is_ranking_ask=True,
+            ranking_scope=ranking_scope,
             unsupported_reason=unsupported_reason,
             hints=hints,
         )
@@ -301,6 +439,19 @@ def resolve_route(
             internal_mode="fallback",
             intent="unsupported_question",
             unsupported_reason=unsupported_reason,
+            hints=hints,
+        )
+
+    # --- Ambiguous deictic ("groundwater there", "is that bad?") ---
+    # Nothing resolved the referent (no named site, aquifer, location, chart,
+    # or recovered chart context). Ask the user to narrow rather than letting
+    # a generic KB answer paper over the ambiguity.
+    if _is_ambiguous_deictic(user_query):
+        return RouteDecision(
+            route_mode=RouteMode.UNSUPPORTED,
+            internal_mode="fallback",
+            intent="ambiguous_reference",
+            unsupported_reason="ambiguous_reference",
             hints=hints,
         )
 

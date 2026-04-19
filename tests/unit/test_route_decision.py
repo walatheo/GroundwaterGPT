@@ -252,7 +252,7 @@ class TestToObservable:
 
 
 class TestOrderingAndPrecedence:
-    def test_chart_context_beats_named_sites(self):
+    def test_explicit_named_sites_beat_chart_context(self):
         decision = resolve_route(
             "why is G-3336 declining?",
             {"chart_id": "x", "site_ids": ["G-3336"]},
@@ -262,7 +262,7 @@ class TestOrderingAndPrecedence:
                 named_sites=[{"site_id": "G-3336", "name": "G-3336"}],
             ),
         )
-        assert decision.route_mode == RouteMode.CHART_FOLLOWUP
+        assert decision.route_mode == RouteMode.EXACT_WELL
 
     def test_named_sites_beat_aquifer(self):
         decision = resolve_route(
