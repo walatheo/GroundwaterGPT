@@ -170,7 +170,7 @@ def set_provider(provider: LLMProvider, model: Optional[str] = None):
 
 # Provider-specific model recommendations
 RECOMMENDED_MODELS = {
-    LLMProvider.OLLAMA: ["llama3.2", "qwen2.5:7b", "mistral", "deepseek-r1:7b"],
+    LLMProvider.OLLAMA: ["qwen3:32b", "qwen3:8b", "deepseek-r1:7b", "llama3.2", "mistral"],
     LLMProvider.OPENAI: ["gpt-4o", "gpt-4.1", "gpt-4o-mini"],
     LLMProvider.ANTHROPIC: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
     LLMProvider.GEMINI: ["gemini-2.0-flash", "gemini-1.5-pro"],
