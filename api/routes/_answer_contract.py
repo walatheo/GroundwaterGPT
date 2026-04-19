@@ -177,12 +177,34 @@ def derive_grounding_status(payload: dict[str, Any]) -> str:
        citation integrity passed → ``GROUNDED``;
        evidence present but no integrity signal → ``PARTIAL``.
     """
+    # Highest precedence: an explicit GroundedAnswer attached by the
+    # composer or refusal builder. Its status is the deliberate product
+    # decision; anything else is inference.
+    grounded = payload.get("grounded_answer")
+    if isinstance(grounded, dict):
+        explicit = grounded.get("grounding_status")
+        if isinstance(explicit, str):
+            normalized = explicit.strip().lower()
+            if normalized in GroundingStatus.ALL:
+                return normalized
+
     interp = payload.get("interpretation_response") or {}
     raw_status = interp.get("grounding_status")
     if isinstance(raw_status, str):
         status = raw_status.strip().lower()
         if status in GroundingStatus.ALL:
             return status
+    elif isinstance(raw_status, dict):
+        # The chart interpreter emits a rich dict; the canonical string lives
+        # under ``interpreter_status``. Honor it before falling back to the
+        # envelope-derived status.
+        nested = raw_status.get("interpreter_status")
+        if isinstance(nested, str):
+            status = nested.strip().lower()
+            if status in GroundingStatus.ALL:
+                return status
+        if raw_status.get("citation_integrity_passed") is True:
+            return GroundingStatus.GROUNDED
 
     integrity = payload.get("citation_integrity") or {}
     if integrity.get("passed") is True:

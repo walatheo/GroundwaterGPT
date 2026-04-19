@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Optional
 
 from api.routes._answer_contract import RouteMode
@@ -36,12 +37,37 @@ _OUT_OF_SCOPE_GEO = re.compile(
 )
 
 # Future prediction / forecast asks — dataset is historical observation.
+# Note: bare "in YYYY" was previously here but matched historical years too
+# (e.g., "what happened in 2015"). Future-year detection now lives in
+# ``_mentions_future_year`` below, which checks the year against today.
 _FUTURE_PREDICTION = re.compile(
     r"\b(forecast|predict|will\s+(?:it|the|water|levels?|drop|rise|fall)"
-    r"|going to|next (?:year|decade|century)|in \d{4}"
+    r"|going to|next (?:year|decade|century)"
     r"|should i (?:drill|buy|invest|plant|water))\b",
     re.IGNORECASE,
 )
+
+_YEAR_RE = re.compile(r"\b(19|20|21)\d{2}\b")
+_PAST_TENSE_HINT = re.compile(
+    r"\b(was|were|happened|did|had|occurred|recorded|observed|measured|past|history|"
+    r"historic(?:ally)?|previously|back in|since|until|before)\b",
+    re.IGNORECASE,
+)
+
+
+def _mentions_future_year(question: str) -> bool:
+    """True when the question references a year strictly in the future.
+
+    Past-tense framing ("what happened in 2015", "since 2020") is a strong
+    signal the user is asking about history, even if a year token is present.
+    """
+    if _PAST_TENSE_HINT.search(question):
+        return False
+    current_year = datetime.now().year
+    for match in _YEAR_RE.finditer(question):
+        if int(match.group(0)) > current_year:
+            return True
+    return False
 
 
 def _detect_unsupported_reason(question: str) -> Optional[str]:
@@ -53,7 +79,7 @@ def _detect_unsupported_reason(question: str) -> Optional[str]:
         return None
     if _OUT_OF_SCOPE_GEO.search(question):
         return "out_of_scope_geography"
-    if _FUTURE_PREDICTION.search(question):
+    if _FUTURE_PREDICTION.search(question) or _mentions_future_year(question):
         return "future_prediction"
     return None
 

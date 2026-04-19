@@ -26,6 +26,10 @@
     {"id": "un_05", "question": "aquifer levels in Sahara",                      "expected_route_mode": "unsupported",    "expected_intent": "unsupported_question"},
 
     {"id": "kb_01", "question": "how does irrigation affect groundwater?",       "expected_route_mode": "fallback",       "expected_intent": "kb_topic_match"},
-    {"id": "kb_02", "question": "what is a confined aquifer",                    "expected_route_mode": "fallback",       "expected_intent": "kb_topic_match"}
+    {"id": "kb_02", "question": "what is a confined aquifer",                    "expected_route_mode": "fallback",       "expected_intent": "kb_topic_match"},
+
+    {"id": "hist_01", "question": "What happened to groundwater in Estero in 2015?", "expected_route_mode": "cohort",     "expected_intent": "location_cohort"},
+    {"id": "hist_02", "question": "How were Naples wells in 2010?",              "expected_route_mode": "cohort",         "expected_intent": "location_cohort"},
+    {"id": "hist_03", "question": "levels since 2020",                           "expected_route_mode": "research",       "expected_intent": "research_intent"}
   ]
 }

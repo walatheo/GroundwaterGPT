@@ -63,6 +63,10 @@ from api.routes._evidence_guided_ai import (
     questionize,
 )
 from api.routes._grounded_answer import attach_grounded_answer
+from api.routes._insufficient_evidence import (
+    attach_insufficient_answer,
+    build_insufficient_from_decision,
+)
 from api.routes._provenance import build_research_provenance
 from api.routes._route_decision import RouteDecision, resolve_route
 from api.routes._site_analysis import (  # noqa: E402
@@ -1851,6 +1855,22 @@ def chat_endpoint(query: dict):
             "kb_topic_matches": _kb_topic_matches,
         },
     )
+
+    # --- Insufficient-evidence / refusal short-circuit ---
+    # Out-of-scope geography and forward-looking predictions never reach a
+    # data-dispatch branch; the router has already decided we cannot answer.
+    refusal = build_insufficient_from_decision(decision, question=user_query)
+    if refusal is not None:
+        refusal_payload = _build_chat_payload(
+            response_text=refusal.direct_answer,
+            context="",
+            sources=[],
+            mode="insufficient_evidence",
+        )
+        refusal_payload["route_decision"] = decision.to_observable()
+        attach_insufficient_answer(refusal_payload, refusal)
+        stamp_contract_fields(refusal_payload, force=True)
+        return refusal_payload
 
     # --- Chart-context interpretation (either caller-supplied or recovered) ---
     if decision.chart_context_to_use is not None:
