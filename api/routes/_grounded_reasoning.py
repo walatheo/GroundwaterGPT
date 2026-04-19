@@ -1026,43 +1026,23 @@ Rules:
 
 
 def _reasoning_providers() -> list[tuple[str, str]]:
-    """Return provider/model pairs for grounded reasoning, Claude first."""
+    """Return Qwen provider/model pairs for grounded reasoning.
+
+    Qwen is the project's only sanctioned synthesis model. Local Ollama Qwen is
+    tried first (no API key, no per-call cost), with hosted DashScope Qwen as
+    a higher-capability fallback when ``DASHSCOPE_API_KEY`` is configured.
+    """
     providers: list[tuple[str, str]] = []
     reasoning_model = os.getenv("GROUNDWATERGPT_REASONING_MODEL", "")
 
-    # Anthropic Claude (primary — fast, capable of reasoning)
-    if os.getenv("ANTHROPIC_API_KEY"):
-        model = reasoning_model or os.getenv("LLM_MODEL", "claude-sonnet-4-20250514")
-        # Only use anthropic model names for this provider
-        if "claude" in model.lower() or not reasoning_model:
-            providers.append(
-                ("anthropic", model if "claude" in model.lower() else "claude-sonnet-4-20250514")
-            )
+    # Local Qwen via Ollama — preferred (no key, no network egress).
+    ollama_model = reasoning_model or os.getenv("SYNTHESIS_MODEL") or os.getenv("LLM_MODEL", "")
+    providers.append(("ollama", ollama_model or "qwen3:8b"))
 
-    # OpenAI fallback
-    if os.getenv("OPENAI_API_KEY"):
-        model = reasoning_model or "gpt-4o"
-        if "gpt" in model.lower() or "o4" in model.lower() or not reasoning_model:
-            providers.append(
-                ("openai", model if ("gpt" in model.lower() or "o4" in model.lower()) else "gpt-4o")
-            )
-
-    # Gemini (free tier, capable of raw evidence reasoning)
-    if os.getenv("GOOGLE_API_KEY"):
-        model = (
-            reasoning_model
-            if reasoning_model and "gemini" in reasoning_model.lower()
-            else "gemini-2.0-flash"
-        )
-        providers.append(("gemini", model))
-
-    # Qwen fallback
+    # Hosted Qwen via DashScope — used when an API key is configured.
     if os.getenv("DASHSCOPE_API_KEY"):
-        model = reasoning_model or os.getenv("GROUNDWATERGPT_INTERPRETER_MODEL", "qwen-plus")
-        providers.append(("qwen", model if "qwen" in model.lower() else "qwen-plus"))
-
-    # Ollama last resort
-    providers.append(("ollama", reasoning_model or os.getenv("SYNTHESIS_MODEL", "llama3.2")))
+        hosted_model = reasoning_model or os.getenv("GROUNDWATERGPT_INTERPRETER_MODEL", "qwen-plus")
+        providers.append(("qwen", hosted_model if "qwen" in hosted_model.lower() else "qwen-plus"))
 
     return providers
 
@@ -1260,7 +1240,7 @@ def invoke_grounded_reasoning(
 ) -> GroundedInterpretation | None:
     """Invoke grounded reasoning with raw evidence.
 
-    Tries providers in priority order: Claude > OpenAI > Gemini > Qwen > Ollama.
+    Tries the Qwen provider chain: local Ollama Qwen first, hosted DashScope Qwen if configured.
     All providers receive raw evidence — the LLM must reason, not rephrase.
     Open reasoning models (qwen3, deepseek-r1) use a two-stage framing+reasoning
     pipeline; API models use a single raw-evidence prompt.

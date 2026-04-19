@@ -306,6 +306,8 @@ class TestLlmFactory:
 
     def test_providers_enum(self):
         assert LLMProvider.OLLAMA.value == "ollama"
-        assert LLMProvider.OPENAI.value == "openai"
-        assert LLMProvider.ANTHROPIC.value == "anthropic"
-        assert LLMProvider.GEMINI.value == "gemini"
+        assert LLMProvider.QWEN.value == "qwen"
+        # Anthropic / OpenAI / Gemini were removed — Qwen-only by policy.
+        assert not hasattr(LLMProvider, "ANTHROPIC")
+        assert not hasattr(LLMProvider, "OPENAI")
+        assert not hasattr(LLMProvider, "GEMINI")
