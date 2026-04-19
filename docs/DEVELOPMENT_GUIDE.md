@@ -25,12 +25,15 @@ deterministic text, chart, and evidence payloads. LLM output is allowed to
 summarize and organize the evidence, but measured groundwater facts come from the
 deterministic layer.
 
-The sponsor-facing LLM surface is now the chart/data interpretation path:
+The user-facing LLM surface is now the chart/data interpretation path:
 `POST /api/interpret` returns an `interpretation_response_v1` object with chart
-context, key observations, USGS data references, evidence, suggested follow-up
-questions, explicit limitations, and grounding status. It can request the local
-LLM narration layer with `use_llm=true`, or run in fast deterministic mode with
-`use_llm=false` for classroom/demo interactions where latency matters.
+context, key observations, USGS data references, evidence, `learner_brief`,
+`next_goal`, grouped `follow_up_groups`, flat compatibility
+`follow_up_questions`, explicit limitations, and grounding status. It can
+request the local LLM narration layer with `use_llm=true`, or run in fast
+deterministic mode with `use_llm=false` for classroom/demo interactions where
+latency matters. The new progression contract is backend-owned so the frontend
+does not have to invent the next-step logic client-side.
 
 ## Repository Map
 
@@ -56,7 +59,7 @@ frontend/
   tests/e2e/                   Playwright coverage for chart/workbench flows
 
 src/
-  agent/                       DeepResearchAgent, tools, knowledge, verification
+  agent/                       Experimental DeepResearchAgent, shared evidence-guided synthesis, tools, knowledge
   data/                        USGS download and pipeline utilities
   evaluation/                  Chat and retrieval benchmark helpers
   claim_disagreement.py        Claim-verdict normalization
@@ -87,6 +90,7 @@ Use these paths when deciding whether a file is still part of the system:
 | Frontend | `cd frontend && npm run dev` | Vite dev server |
 | Unit tests | `make test` | Runs `GROUNDWATERGPT_SKIP_AGENT_INIT=1 python3 -m pytest tests/unit/ -q` |
 | Fallback benchmark | `make benchmark` | Runs deterministic chat benchmark with thresholds |
+| Evidence-guided benchmark | `make benchmark-evidence-guided` | Runs the validated next-goal / grouped-follow-up benchmark |
 | Chart LLM benchmark | `make benchmark-chart-llm` | Runs the bounded local-LLM chart explanation smoke |
 | Interpretation benchmark | `make benchmark-interpretation` | Runs the fast interpretation question bank with thresholds |
 | Interpretation LLM benchmark | `make benchmark-interpretation-llm` | Runs the same question bank with local LLM synthesis enabled |
@@ -134,6 +138,7 @@ Common commands:
 make demo
 make test
 make benchmark
+make benchmark-evidence-guided
 make benchmark-chart-llm
 make benchmark-interpretation
 cd frontend && npm run build
@@ -185,6 +190,11 @@ Ignored/generated paths include:
 
 Generated benchmark reports can be regenerated with the scripts in `scripts/`.
 Only intentionally pinned reports should remain tracked.
+
+The pinned evidence-guided benchmark report now lives at
+`evidence_guided_synthesis_benchmark_report.json` and is the narrow proof path
+for the validated AI role. It should be interpreted separately from the dormant
+live-agent smoke.
 
 ## Refactor Notes
 

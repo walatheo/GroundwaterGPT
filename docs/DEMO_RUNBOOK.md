@@ -175,8 +175,8 @@ In the app, show these surfaces in order:
 - Chart explainability panel: show that the LLM receives bounded chart context and
   can explain how to read the data without inventing new measurements.
 - Interpretation brief: ask "Interpret the Estero groundwater chart for a sponsor"
-  and show the chart context, key observations, USGS references, limitations, and
-  follow-up questions.
+  and show the chart context, key observations, USGS references, limitations,
+  `next_goal`, and grouped follow-up questions.
 - Source/citation panel: point to USGS-backed sources and claim citations.
 - Any provenance/details panel: point to response hashes, method flags, and data snapshot references if visible.
 - Research workflow, if time allows: plan -> run -> draft as a reproducibility workflow rather than a scientific proof.
@@ -235,9 +235,43 @@ Expected:
 - `interpretation_response.schema_version` should be `interpretation_response_v1`.
 - `grounding_status.uses_chart_context` and `grounding_status.uses_usgs_data` should be true.
 - `grounding_status.invented_measurements_allowed` should be false.
+- `next_goal` should be populated.
+- `follow_up_groups` should be present with grouped questions.
 - `data_references` should point back to USGS NWIS wells.
 
 ### Cross-Cohort Query
+
+## 6. Learner Validation Protocol
+
+Use this when you want a modest but honest claim about user help, not a learning-science claim.
+
+### Task study
+
+- Recruit 5-8 novice or non-specialist users.
+- Give each person 5 chart-reading tasks:
+  - "What does this chart mean?"
+  - "Why should I care about this decline?"
+  - "What does screening risk mean in plain English?"
+  - "What does the cohort average mean?"
+  - "What should we check before making a cause claim?"
+- For each task, score three things:
+  - correct takeaway
+  - correct caveat
+  - correct next check
+
+### Evidence to collect
+
+- Benchmark pass from `scripts/run_interpretation_benchmark.py`
+- Lightweight learner events in `outputs/research/learner_events/`
+- Manual scorecard notes from the novice task study
+
+### Claim standard
+
+- After benchmark only:
+  - "The interpretation feature is designed to help curious non-expert users understand chart meaning, limits, and next checks."
+- After benchmark plus learner-event evidence and the small task study:
+  - "The interpretation feature can help curious non-expert users interpret chart-backed groundwater patterns."
+- Do not claim improved learning outcomes or teaching effectiveness without comparative user-study evidence.
 
 ```bash
 curl -s http://127.0.0.1:8000/api/research \
@@ -282,6 +316,20 @@ Shortcut:
 
 ```bash
 make benchmark
+```
+
+Run the narrow evidence-guided AI benchmark:
+
+```bash
+cd /Users/salatheoclay/Desktop/GroundwaterGPT/GroundwaterGPT
+python3 scripts/run_evidence_guided_synthesis_benchmark.py --enforce-thresholds
+jq '.summary' evidence_guided_synthesis_benchmark_report.json
+```
+
+Shortcut:
+
+```bash
+make benchmark-evidence-guided
 ```
 
 Current closeout result:

@@ -89,7 +89,8 @@ wait_for_backend
 
 (
   cd frontend
-  npm run dev -- --host 127.0.0.1 --port "${FRONTEND_PORT}"
+  VITE_GROUNDWATER_SHOWCASE_MODE="${VITE_GROUNDWATER_SHOWCASE_MODE:-true}" \
+    npm run dev -- --host 127.0.0.1 --port "${FRONTEND_PORT}"
 ) > >(tee -a "${FRONTEND_LOG}") 2>&1 &
 frontend_pid="$!"
 

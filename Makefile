@@ -10,11 +10,20 @@ benchmark-llm-smoke:
 benchmark-chart-llm:
 	python3 scripts/run_chart_explainability_benchmark.py --enforce-thresholds
 
+benchmark-evidence-guided:
+	python3 scripts/run_evidence_guided_synthesis_benchmark.py --enforce-thresholds
+
 benchmark-interpretation:
 	python3 scripts/run_interpretation_benchmark.py --disable-llm --enforce-thresholds
 
 benchmark-interpretation-llm:
 	python3 scripts/run_interpretation_benchmark.py --enforce-thresholds
+
+review-chat:
+	python3 scripts/run_chat_review.py --skip-agent-init
+
+review-chat-llm:
+	python3 scripts/run_chat_review.py --skip-agent-init --enable-llm
 
 benchmark-llm:
 	python3 scripts/run_agent_benchmark.py --output agent_benchmark_report.json

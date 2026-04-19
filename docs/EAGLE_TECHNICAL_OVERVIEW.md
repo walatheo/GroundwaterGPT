@@ -4,14 +4,14 @@
 
 > Naming note: the repository directory, Python module names, and `GROUNDWATERGPT_*` environment-variable prefix predate the EAGLE rename and are intentionally preserved as stable interfaces. "EAGLE" is the user-facing system name; file paths and env vars in this document still read `GROUNDWATERGPT_*` because they do on disk.
 
-**Central property the manuscript rests on.** EAGLE is primarily a **research utility for public Florida groundwater data**, not an LLM demonstration. Every user-facing conclusion about groundwater behaviour is emitted by a **deterministic hydrogeologic pipeline** running directly over USGS CSVs. When a language model is invoked, it is bound to that pipeline by typed claim-and-evidence identifiers and cryptographic provenance hashes: the LLM narrates, it does not independently conclude, and any claim whose IDs are not in the deterministic-layer registry is dropped by the parser before the response is emitted. The chart-follow-up interpreter and the full-screen chat surface expose this binding directly: users see the natural-language answer, numeric signal cards, limits/guardrails, and the raw evidence report from the same response object. The benchmark passes at 100% without the LLM active at all.
+**Central property the manuscript rests on.** EAGLE is primarily a **research utility for public Florida groundwater data**, not an LLM demonstration. Every quantitative claim about monitored groundwater behaviour is emitted by a **deterministic hydrogeologic pipeline** running directly over USGS CSVs. Retrieval and LLM components can help explain the hydrogeologic meaning of those measured patterns, but they do not create measured trend values, rates, charts, citations, or provenance. Structured LLM outputs are bound to deterministic claim-and-evidence identifiers; optional narration remains subordinate to the deterministic report and should not be treated as an independent evidence source. The recent chart-follow-up work mostly improves how deterministic interpretation is packaged on the chat surface (`learner_brief`, clearer caveats, grouped follow-ups); it should not be described as a new hydrogeologic inference engine or as evidence of a stronger LLM layer. The deterministic benchmark passes at 100% without the LLM active at all.
 
 **Document structure.**
 
 1. System purpose and scope
 2. Data substrate: USGS monitoring records, per-site metadata, and the local knowledge base
 3. Deterministic hydrogeologic analysis layer (the reference pipeline)
-4. Language-model synthesis layer and the evidence-ID binding
+4. Language-model layer — what is active vs dormant
 5. Join point, typed session contract, provenance, streaming, citation integrity
 6. Worked example: the Village of Estero question
 7. Auxiliary surfaces (research workflow, workbench, chat surface)
@@ -34,7 +34,7 @@ The system answers three broad classes of questions:
 
 - **Descriptive / comparative questions over the USGS record** ("what has been the change in groundwater level in Estero over the last 30 years"; "compare G-3336 and G-5004"; "which wells in Miami-Dade have the steepest decline"). These go through the deterministic fallback engine.
 - **Domain knowledge questions** ("which aquifer supplies Estero", "what confines the Floridan aquifer"). These retrieve from a local ChromaDB knowledge base grounded by a source-verification layer.
-- **Open-ended research questions** ("has groundwater in Lee County stabilized since 2015", "cross-aquifer comparison of Biscayne vs Floridan trends"). These can be routed to an LLM-backed `DeepResearchAgent` that plans sub-questions, iterates KB retrieval, and synthesizes a structured report — but only after the deterministic layer has produced the numeric conclusions the LLM is allowed to cite.
+- **Open-ended research questions** ("has groundwater in Lee County stabilized since 2015", "cross-aquifer comparison of Biscayne vs Floridan trends"). The codebase contains a `DeepResearchAgent` that plans sub-questions, iterates KB retrieval, and synthesizes a structured report — but this agent is **disabled in the demo and evaluation** (`GROUNDWATERGPT_SKIP_AGENT_INIT=1`). In practice, these questions fall through to the deterministic keyword routing and are answered by the same pipeline as descriptive questions. The agent is architecturally complete but operationally dormant (see §4).
 
 The design goal, stated across the code and in-repo docs, is **explainability**: every path that produces user-visible text also produces (a) a list of sources, (b) a per-claim citation record, (c) a verdict and confidence score, (d) a deterministic chart whenever the question can be backed by monitored well data, and (e) a reproducibility block (`research_provenance_v1`) with `code_commit`, `response_sha256`, per-CSV `data_snapshot` hashes, and config hashes. The LLM is an **enhancement**, not a **dependency** — the fallback path alone passes the benchmark suite to 68/68.
 
@@ -92,7 +92,7 @@ This is the layer the manuscript should describe as the reference-truth pipeline
 The backend is a FastAPI application defined in [api/main.py](api/main.py) (54 lines). Five routers are mounted at [api/main.py:34-38](api/main.py#L34-L38):
 
 - `data_router` — [api/routes/data.py](api/routes/data.py) (239 lines): `GET /api/sites`, `GET /api/sites/{site_id}`, `GET /api/sites/{site_id}/data`, `GET /api/sites/{site_id}/heatmap`, `GET /api/compare`, `GET /api/sites/{site_id}/chart`, `GET /api/compare/chart`.
-- `chat_router` — [api/routes/chat.py](api/routes/chat.py) (2686 lines): `POST /api/chat`, `POST /api/interpret`, `POST /api/research`, `POST /api/research/stream`, `GET /api/chat/status`. Hosts the routing chain, chart-follow-up interpreter handoff, response normalization, provenance attachment, and both deterministic and LLM paths.
+- `chat_router` — [api/routes/chat.py](api/routes/chat.py) (2793 lines): `POST /api/chat`, `POST /api/interpret`, `POST /api/research`, `POST /api/research/stream`, `GET /api/chat/status`. Hosts the routing chain, chart-follow-up interpreter handoff, response normalization, provenance attachment, and both deterministic and LLM paths.
 - `knowledge_router` — [api/routes/knowledge.py](api/routes/knowledge.py) (88 lines): `GET /api/knowledge/stats`, `GET /api/knowledge/status`, `POST /api/knowledge/ingest`.
 - `research_workflow_router` — [api/routes/research_workflow.py](api/routes/research_workflow.py) (255 lines): `POST /api/research/plans`, `GET /api/research/plans`, `GET /api/research/plans/{plan_id}`, `POST /api/research/plans/{plan_id}/runs`, `POST /api/research/plans/{plan_id}/draft`, plus the `POST /api/research/workbench` mount at [line 243](api/routes/research_workflow.py#L243) that delegates to `build_research_workbench_payload` in [api/routes/_research_workbench.py](api/routes/_research_workbench.py) (581 lines).
 - `wells_router` — [api/routes/wells.py](api/routes/wells.py) (176 lines): `GET /api/wells` — the canonical per-well metadata listing consumed by the frontend dashboard.
@@ -108,7 +108,7 @@ Every textual question enters through one of four chat-router endpoints — `POS
 3. **Multi-location comparison** (`_detect_locations` at [_detection.py:196](api/routes/_detection.py#L196) + `_is_multi_location_compare_query`): if two or more location tokens and the query reads like a comparison → merged cohort via `_sites_for_multiple_locations`.
 4. **Single-location detection** (`_detect_location` at [_detection.py:132](api/routes/_detection.py#L132)): word-boundary match against `_LOCATION_REFERENCE_POINTS` ([line 95](api/routes/_detection.py#L95)), a dict of Florida place names (Estero, Naples, Miami, Cape Coral, Immokalee, …) each mapping to `(lat, lng, display_name, county_hint)`. If hit → `_best_sites_near(lat, lng, county_hint, max_sites=10)` ([line 320](api/routes/_detection.py#L320)) → location-fallback branch.
 5. **Network-wide detection** (`_is_network_wide_query` at [_detection.py:538](api/routes/_detection.py#L538)): keyword check against `_NETWORK_WIDE_KEYWORDS` ([line 504](api/routes/_detection.py#L504), "all wells", "every county", "network-wide", "confined vs unconfined", …). If hit → `_all_sites_with_data(max_sites=36)` ([line 544](api/routes/_detection.py#L544)) → network-fallback branch.
-6. **LLM research agent** — the default when `/api/research*` is used and nothing above matches. If the agent is unreachable or empty, the chain falls back through the keyword filters.
+6. **LLM research agent (dormant)** — the code path when `/api/research*` is used and nothing above matches. In the demo and evaluation configuration (`GROUNDWATERGPT_SKIP_AGENT_INIT=1`), `_research_agent` is `None` and the chain falls back through the keyword filters. The agent path is exercised only in a manual one-case smoke test (§9.3).
 
 `_best_sites_near` uses Haversine distance plus a `-0.3` score bonus for county matches. It is deliberately crude — the manuscript should describe it as a reproducible proxy-selection rule, not a spatial interpolator.
 
@@ -153,102 +153,66 @@ The `insights` block (`_build_chart_insights`) is capped at **five** bullets and
 
 ---
 
-## 4. Language-model synthesis layer and the evidence-ID binding
+## 4. AI / language-model layer — what is active vs dormant
 
-The LLM layer exists to phrase deterministic findings as a direct answer to a free-form question. It does not independently conclude about hydrogeology. The manuscript should describe it as a **typed-binding narration layer**: whatever it writes is bound back to `claim_id`s and `evidence_id`s produced by §3, and any produced claim whose IDs are not in the registry is dropped by the parser.
+The AI layer exists to make deterministic groundwater analysis easier to ask about, interpret, and communicate. It does not independently conclude about monitored groundwater behaviour. The manuscript should describe the system as an **auditable interpretation pipeline** with **evidence-guided AI**: deterministic code owns the measured facts, and AI/RAG components help phrase, structure, explain, and progress to the next grounded question.
 
-The layer has two entry points, both active in the live demo:
+### 4.0 AI usage pipeline
 
-1. **Hybrid in-process narration** inside `_site_research_fallback`. Every keyword-routed chat branch (site / aquifer / multi-location / single-location / network-wide) now defaults `allow_llm_synthesis=True`, and the fallback posts a scoped hydrogeologist prompt to a local Ollama server (default `llama3.2` at `http://localhost:11434`) that narrates the deterministic numbers the pipeline has already produced. The narration is gated by `_llm_synthesis_enabled()` at [api/routes/_site_analysis.py](api/routes/_site_analysis.py), which reads the `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS` env var — set it to `1` and the response reverts to pure-deterministic output. The deterministic benchmark (`force_fallback_mode`) sets this flag; the live demo leaves it unset.
-2. **`DeepResearchAgent`** for open-ended `/api/research*` questions. This is the full evidence-bound research path described in §4.1–§4.6.
+For sponsor and manuscript purposes, AI is used in four bounded places:
 
-Both entry points write through the same `claim_citations` and `evidence_items` registries and are sanitized by the same parser, so the claim-to-evidence invariant holds regardless of which side served the question.
+1. **Optional natural-language narration of deterministic reports.** `_site_research_fallback` computes the wells, trends, charts, citations, claim verdicts, and provenance first. If local LLM synthesis is enabled and an Ollama daemon is available, the current/default model is local Ollama `llama3.2` (`SYNTHESIS_MODEL` can override it). The model narrates those deterministic findings in clearer hydrogeology language. This narration is subordinate to the deterministic report and is disabled during deterministic benchmark runs.
+2. **Intent-aware chart interpretation.** Chart follow-ups are routed to [api/routes/_chart_interpreter.py](api/routes/_chart_interpreter.py). The primary answer path is deterministic: the interpreter detects the user intent, builds an `EvidencePack` from current chart site IDs, and answers from cross-well metrics, site metadata, and chart context. Structured LLM synthesis is optional here and is requested by the sponsor UI only when `VITE_ENABLE_LLM_INTERPRETATION=true`; otherwise chart follow-ups use the fast deterministic interpreter. The deterministic answer builders already handle shallow/deep comparison, fastest-changing well, cohort-average meaning, and risk explanation.
+3. **Evidence-guided progression.** Grounded chat and interpretation replies now add a backend-owned `next_goal` plus grouped follow-up questions. These are derived deterministically from the current grounded answer, caveat, evidence-needed fields, chart context, well names, supply-unit mappings, and any surfaced date windows. An optional bounded LLM rewrite can sharpen wording, but it may not add new wells, dates, numbers, or causal claims; unsupported rewrites fall back to the deterministic progression contract.
+4. **Curated RAG-style hydro context.** [config/interpretation_answer_bank.json](config/interpretation_answer_bank.json) supplies local hydrogeology concepts — drawdown, recharge, seasonality, confinement, supply-proxy limits, saltwater-intrusion caveats, uncertainty, and evidence-needed language. These snippets explain what an observed pattern may mean; they are not numeric evidence.
+5. **Experimental research-agent architecture.** `DeepResearchAgent` remains in the repository as an architectural experiment for planned multi-step research, but it is hidden from the sponsor UI and disabled in the demo/evaluation startup path. It should be described as future work unless it is explicitly enabled and benchmarked.
 
-### 4.1 `DeepResearchAgent` — phases and budget
+The operational pipeline is therefore:
 
-`DeepResearchAgent` is defined at [src/agent/research_agent.py:246](src/agent/research_agent.py#L246) inside a 1952-line module and instantiated once at startup, wired through [api/routes/chat.py:413-417](api/routes/chat.py#L413-L417) as `_research_agent`, then reused across requests. Constructor knobs (defaults from [src/agent/research_agent.py:258](src/agent/research_agent.py#L258)): `max_depth=3`, `max_results_per_search=5`, `use_web_search`, `llm_provider`, `auto_learn`, `timeout_seconds=300.0`, plus the planning / reflection / budget / persistence toggles. The deployed configuration overrides `timeout_seconds=120` and pins `use_web_search=research_web_search_enabled` (defaults `False`), so the live agent stops a research call after two minutes regardless of class default.
+`User question` → `deterministic router/site selector` → `USGS CSV + metadata analysis` → `chart + numeric claims + citations + provenance` → `optional interpretation/narration layer` → `frontend answer + Analytical Depth panel`.
 
-The agent composes components from [src/agent/research_optimizer.py](src/agent/research_optimizer.py): `ResearchPlanner`, `PriorityRanker`, `SelfReflectionEvaluator`, `StructuredReportBuilder`, `ResearchSessionPersistence`. Each `research(...)` call proceeds through phases explicitly tracked in `ResearchContext.phase_offsets`: `planning 0.06`, `research_loop 0.12`, `query_optimization 0.18`, `searching 0.28`, `extracting_insights 0.42`, `follow_up_generation 0.56`, `synthesizing 0.82`, `learning 0.9`, `complete 1.0`. Progress events are pushed to a caller-supplied `progress_callback(message, progress, snapshot)`; the streaming endpoint uses this to drive SSE updates.
+The important boundary is that **numbers flow left-to-right from deterministic analysis into AI**, never the other way around.
 
-The search budget is a hard limit tracked by `SearchBudget` (built at [src/agent/research_agent.py:395](src/agent/research_agent.py#L395)): `max_web_searches = max(3, depth*2+2)`, `max_kb_searches = max(6, depth*4)`, `max_api_calls = max(10, depth*6)`, `max_total_cost = max(5.0, min(15.0, timeout_seconds/20))`. With the deployed `max_depth=3` / `timeout_seconds=120` this resolves to `max_web_searches=8`, `max_kb_searches=12`, `max_api_calls=18`, `max_total_cost=6.0`. When the budget is exhausted the agent stops iterating regardless of coverage — a deliberate backstop against runaway loops.
+**Operational status.** In the current sponsor/demo configuration, the research agent is hidden and disabled. The default visible chart-follow-up path is deterministic. If optional LLM narration or chart synthesis is enabled and available, the default local model is Ollama `llama3.2`; Qwen is not the default active model and is used only when `DASHSCOPE_API_KEY` is configured.
 
-The LLM itself is chosen through [src/agent/llm_factory.py](src/agent/llm_factory.py), which supports five providers: Ollama (local), OpenAI (GPT-4o, GPT-4.1, GPT-4o-mini), Anthropic (Claude 3.5 Sonnet by default), Google Gemini (2.0 Flash, 1.5 Pro), Qwen via Alibaba DashScope. Provider and model are read from `LLM_PROVIDER` / `LLM_MODEL` env vars at [src/agent/llm_factory.py:30](src/agent/llm_factory.py#L30) (`anthropic` + `claude-3-5-sonnet-20241022` as defaults). Missing credentials raise at construction time so operators discover failures immediately. Embeddings also go through the factory (`get_embeddings()`), falling back to the HuggingFace BGE model. If `_research_agent` reports `getattr(_research_agent, "llm", None) is None` after construction, [api/routes/chat.py:418-423](api/routes/chat.py#L418-L423) discards the agent and the system runs purely on the deterministic fallback — this is what happens whenever the demo is started without credentials.
+1. **Hybrid in-process narration (available in demo, disabled in benchmarks).** Inside `_site_research_fallback`, every keyword-routed chat branch (site / aquifer / multi-location / single-location / network-wide) defaults `allow_llm_synthesis=True`, and the fallback can post a scoped hydrogeologist prompt to a local Ollama server (default `llama3.2` at `http://localhost:11434`) that narrates the deterministic numbers the pipeline has already produced. The narration is gated by `_llm_synthesis_enabled()` at [api/routes/_site_analysis.py](api/routes/_site_analysis.py), which reads the `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS` env var — set it to `1` and the response reverts to pure-deterministic output. The deterministic benchmark sets this flag. If Ollama is not running, the deterministic answer still returns.
+2. **Structured chart-interpreter LLM synthesis (optional, not required).** `interpret_with_context` can call `_invoke_structured_llm` only when `allow_llm_synthesis=True`. The frontend sends that flag from `VITE_ENABLE_LLM_INTERPRETATION`; the default sponsor setting is false to keep chart follow-ups fast and reliable. With no external key configured, the optional structured path uses local Ollama (`SYNTHESIS_MODEL`, default `llama3.2`). If `DASHSCOPE_API_KEY` is present, the interpreter can try Qwen first (`GROUNDWATERGPT_INTERPRETER_MODEL`, default `qwen-plus`) through the DashScope OpenAI-compatible endpoint. The LLM does not receive the raw chart summary as its visible-answer template; instead it receives a compact deterministic explainer seed built from `question_intent`, `direct_answer`, `supporting_evidence`, `meaning_brief`, numeric claims, evidence-needed fields, and the current caveat. The LLM must return an `InterpretationResult`; numeric claims are reconciled against deterministic values before emission, and low-quality summary-echo answers are rejected in favor of the deterministic intent answer. `grounding_status` reports `llm_provider` and `llm_model` when synthesis succeeds.
+3. **`DeepResearchAgent` (dormant).** The demo startup script ([scripts/start_demo.sh:84](scripts/start_demo.sh#L84)) sets `GROUNDWATERGPT_SKIP_AGENT_INIT=1`, which prevents the agent from constructing ([api/routes/chat.py:558](api/routes/chat.py#L558)). All unit tests run with the same flag. The 68-case chat benchmark and the 25-case interpretation benchmark both run without the agent. A one-case manual smoke test exists (§9.3) but scored 0.200 and failed thresholds. **The manuscript should not describe the research agent as an active component of the evaluated system.**
 
-The agent runs **KB-first** against the local ChromaDB store; DuckDuckGo web search is gated by `GROUNDWATERGPT_ENABLE_WEB_SEARCH` (default `False` at [api/routes/chat.py:363](api/routes/chat.py#L363)) and does not run in the deployed demo. The manuscript should describe the LLM layer as operating over the local KB plus the deterministic-layer output.
+### 4.1 `DeepResearchAgent` — architectural note (dormant)
 
-### 4.2 Evidence registry — `_build_evidence_items`
+`DeepResearchAgent` is defined at [src/agent/research_agent.py:246](src/agent/research_agent.py#L246) (1980 lines). It composes a `ResearchPlanner`, `PriorityRanker`, `SelfReflectionEvaluator`, `StructuredReportBuilder`, and `ResearchSessionPersistence` from [src/agent/research_optimizer.py](src/agent/research_optimizer.py). It supports five LLM providers through [src/agent/llm_factory.py](src/agent/llm_factory.py) (Ollama, OpenAI, Anthropic, Google, Qwen). DuckDuckGo web search is off by default. The agent is wired into [api/routes/chat.py](api/routes/chat.py) as `_research_agent` and would handle open-ended questions that miss the keyword routing chain, but in the demo and evaluation configuration it is `None` and those questions fall back to the deterministic pipeline.
 
-The key change the manuscript rests on is in the synthesis step. Instead of asking the LLM for prose and hoping it cites correctly, the agent builds an **evidence registry** from `claim_citations` and asks the LLM to return strict JSON whose factual entries cite registered IDs.
+The default LLM provider for optional local synthesis is therefore Ollama `llama3.2`, used only for narration/synthesis over deterministic context when enabled and available. Qwen is a provider option, not a separate evidence source or active research mode. In [src/agent/llm_factory.py](src/agent/llm_factory.py), `LLMProvider.QWEN` wraps Alibaba DashScope through an OpenAI-compatible `ChatOpenAI` client using `DASHSCOPE_API_KEY` and model names such as `qwen-plus`, `qwen-max`, or `qwen-turbo`. In the chart-interpreter path, Qwen is used only if that key exists and `VITE_ENABLE_LLM_INTERPRETATION=true` causes the frontend to request structured synthesis; otherwise the system uses local Ollama or the deterministic interpreter.
 
-`_build_evidence_items` iterates over each `claim_citations[i]` entry (produced either by `_site_research_fallback` or by `_build_claim_citations` from retrieved insights). For each citation it emits:
+The agent's synthesis layer contains the evidence-registry and structured-response machinery (`_build_evidence_items`, `_parse_structured_response`, `_heuristic_structured_response`, `_render_structured_report`) that the evidence-binding argument depends on. These functions are unit-tested with mock LLMs in [tests/unit/test_agent.py](tests/unit/test_agent.py) — the tests verify that claim/evidence IDs survive the synthesis round-trip, that invalid IDs are dropped, and that the heuristic fallback produces valid `evidence_response_v1` objects. However, these tests use mock LLMs returning fixed strings, not real model outputs. The architectural guarantee (typed claim binding) is tested; the operational quality (does the agent produce good answers?) is not.
 
-```python
-{
-  "evidence_id": "evidence_001_source_1",   # from citation or derived from claim_id
-  "claim_id":    "claim_001",
-  "url":         citation.url,
-  "trust_level": citation.trust_level,
-  "verified":    bool(citation.verified),
-}
-```
+**What the 15 agent tests actually validate:**
 
-Every `evidence_id` is a stable handle into a known `{URL, trust level, verification bit}` record. Every `claim_id` is a stable handle into a known factual sentence + confidence score. The registry is passed into the LLM prompt verbatim as `Evidence ID registry:` followed by `json.dumps(evidence_items, indent=2)`.
+| Test | Validates |
+|---|---|
+| `TestLlmRetry` (3 tests) | Retry logic succeeds, retries on failure, raises after exhaustion |
+| `TestResearchContext` (3 tests) | `should_continue`, `request_stop`, `add_insight` control flow |
+| `TestResearchAgentConstruction` (3 tests) | Agent constructs with mock LLM, reports idle status, stops cleanly |
+| `TestResearchSectionConfidence` (1 test) | Section-confidence computation from claims |
+| `TestStructuredResearchSynthesis` (2 tests) | `_heuristic_structured_response` preserves claim/evidence IDs; `_parse_structured_response` deduplicates and drops invalid claims |
+| `TestClaimVerdicts` (1 test) | Claim verdicts are present in research output |
+| `TestHallucinationGuardrail` (1 test) | Uncited factual sentences are stripped |
+| `TestLlmFactory` (1 test) | Provider enum has expected members |
 
-### 4.3 The structured-JSON prompt — `evidence_response_v1`
+The tests prove the synthesis **machinery** works — not that the agent produces useful groundwater answers.
 
-The LLM is asked to return ONLY JSON of this shape:
+### 4.2 Evidence-binding contract — `evidence_response_v1`
 
-```json
-{
-  "answer": "direct answer in 2-4 sentences",
-  "claims": [
-    {
-      "claim": "one factual or interpretive statement",
-      "claim_type": "trend|metadata|literature|interpretation|limitation",
-      "claim_ids": ["claim_001"],
-      "evidence_ids": ["evidence_001_source_1"],
-      "confidence": 0.0,
-      "is_interpretive": false,
-      "uncertainty": "short caveat"
-    }
-  ],
-  "limitations": ["data or method limitation"],
-  "recommended_followup": ["specific follow-up analysis"]
-}
-```
+The evidence-binding design is the architectural invariant the manuscript rests on. The deterministic response always carries a `structured_response`; optional narration is constrained by the deterministic report and should not be treated as an independent evidence source. The dormant agent path uses the same registry-and-parser machinery when it is enabled, but its operational quality has not been evaluated at scale.
 
-Hard constraints in the prompt: every factual claim object MUST include at least one `claim_id` and one `evidence_id` from the registry; no quantitative values unless they appear in the evidence-backed claims; caveats go in `limitations` rather than inventing extra factual claims. Contradicted claims are marked `⚠ CONTRADICTED — flag this inline` and the LLM is explicitly instructed to surface them.
+**Evidence registry.** `_build_evidence_items` iterates over `claim_citations` entries (produced by `_site_research_fallback`) and emits `{evidence_id, claim_id, url, trust_level, verified}` records. Every `evidence_id` is a stable handle into a known source record. The registry is the source of the `structured_response` audit object and the constraint set for structured LLM synthesis paths.
 
-### 4.4 Parser sanitization — `_parse_structured_response`
+**Structured response.** When the structured synthesis path is active, the LLM is asked to return JSON with `answer`, `claims[*] = {claim, claim_type, claim_ids, evidence_ids, confidence, is_interpretive, uncertainty}`, `limitations`, and `recommended_followup`. The parser (`_parse_structured_response`) filters `claim_ids` and `evidence_ids` to the intersection with valid registries; claims with no surviving IDs are dropped. When no structured LLM output is available, `_heuristic_structured_response` builds the same `evidence_response_v1` directly from the deterministic claim registry.
 
-`_parse_structured_response` reads the LLM output, strips any ```json ... ``` fences, locates the outermost `{ ... }`, and `json.loads` it. It then sanitizes:
+Either branch produces `schema_version = "evidence_response_v1"`. This is returned on every response via `_augment_research_payload` / `_build_chat_payload` so downstream code can rely on its presence.
 
-- `valid_claim_ids = {c.claim_id for c in claim_citations}`
-- `valid_evidence_ids = {e.evidence_id for e in evidence_items}`
-- For each `claims[i]`, `claim_ids` is filtered to the intersection with `valid_claim_ids`, and `evidence_ids` is filtered to the intersection with `valid_evidence_ids`.
-- If **either** list is empty after filtering, the claim is dropped from the response.
-- Confidence is clamped to `[0, 1]`.
-- `limitations` and `recommended_followup` are reduced to trimmed non-empty strings.
-
-If the parser fails (invalid JSON, no surviving claims, unparseable object), the code falls back to `_heuristic_structured_response`, which builds an `evidence_response_v1` object directly from the deterministic claim registry — the first two claims become the answer, each claim gets its `claim_ids` and `evidence_ids`, and uncertainty text is derived from whether a verdict exists. The heuristic response is what ships when the LLM is unavailable, which is why `use_web_search=False` + no LLM still produces a valid structured response.
-
-Either branch produces a `context.structured_response` with `schema_version = "evidence_response_v1"`. This is returned as `payload["structured_response"]`, and [api/routes/chat.py](api/routes/chat.py) sets it as a default on every research payload so downstream code can rely on its presence.
-
-### 4.5 `_render_structured_report` — rendering back to markdown
-
-`_render_structured_report` converts the structured object back into citation-safe markdown for the report body:
-
-- The `answer` is prefixed with the first claim's first `claim_id` in brackets if the answer does not already contain a `CLAIM_REF_RE` match. The regex was widened to `\[claim_\d{3}(?:[;\],\s][^\]]*)?\]` to accept the `[claim_003; evidence: evidence_003_source_1]` form.
-- Each sanitized claim becomes a bullet under `## Evidence-Linked Claims`, rendered as `- {claim} [{claim_ids}; evidence: {evidence_ids}] Uncertainty: {text}`.
-- `limitations` and `recommended_followup` become their own sections.
-
-The final report is a markdown document in which **every factual sentence carries a claim-and-evidence reference** that resolves into the structured response, and the structured response itself is returned on the payload under `structured_response` so manuscript tooling or a reviewer can audit the claim-to-evidence graph without parsing prose.
-
-### 4.6 Claim ingestion from retrieved insights
-
-For LLM-path questions not served by `_site_research_fallback`, the claim-and-evidence registry is built from the agent's retrieved `ResearchInsight` objects via `_build_claim_citations`. Each insight produces one claim with `claim_type = "retrieved_insight"` and `confidence` from the insight, plus one citation entry per source with `evidence_id = f"evidence_{index:03d}_source_{n}"`, `url`, `verified`, and `trust_level` from the insight's verification metadata.
-
-This is the mechanism by which questions routed to the agent (rather than to the deterministic fallback) still end up with a complete evidence registry the LLM synthesis step can cite against.
+**What is tested vs not.** The `_heuristic_structured_response` path — which is what actually runs in the demo and benchmarks — is unit-tested and exercises the full claim-binding round-trip. The LLM-narration parse path is unit-tested with synthetic JSON. Neither test exercises a real LLM generating real responses against real groundwater questions.
 
 ---
 
@@ -271,7 +235,7 @@ def attach_chart_from_agent_result(result):
     return result
 ```
 
-`_extract_site_ids_from_agent_result` walks `chart_specs`, `tool_trace`, `wells`, and `sources` recursively, picking up any 15-digit USGS site ID (`_SITE_ID_RE = re.compile(r"\b\d{15}\b")`) and deduplicating in discovery order. The chart is then synthesized by the **same** `_build_chart_payload` the deterministic path uses. That is the architectural guarantee: the agent path and the fallback path emit **byte-identical chart schemas** for the same selected cohort, because the chart comes from one function regardless of which path chose the sites.
+`_extract_site_ids_from_agent_result` walks `chart_specs`, `tool_trace`, `wells`, and `sources` recursively, picking up any 15-digit USGS site ID (`_SITE_ID_RE = re.compile(r"\b\d{15}\b")`) and deduplicating in discovery order. The chart is then synthesized by the **same** `_build_chart_payload` the deterministic path uses. That is the architectural guarantee: the agent path and the fallback path emit **byte-identical chart schemas** for the same selected cohort, because the chart comes from one function regardless of which path chose the sites. **Operational note:** because the agent is dormant in the demo configuration, this hook is not exercised in normal operation. It is tested by a unit test with a stubbed agent result (`test_streaming_agent_path_yields_chart_in_final_event`) that confirms the chart shape is correct, but the test does not involve a real agent call.
 
 Downstream, every chart emission is centralized through a helper `_chart_from(result, *, path: str)` in [api/routes/chat.py](api/routes/chat.py) that reads `result.get("chart")`, logs a structured `chart_decision path=<label> emitted=<bool>` debug line, and returns the chart or `None`. This helper is called from all ~16 chat/research branches in the file (site, aquifer, multi-location, location, network, research variants of each, agent success, streaming agent success). Centralizing it means the "does this branch emit a chart" question is now observable and un-regressable.
 
@@ -322,11 +286,11 @@ The canonical manuscript-worthy question is:
 
 > *"What are the groundwater sources the Village of Estero uses for water supply and what have been changes in groundwater levels there over the last 30 years?"*
 
-This example exercises **both halves** of the data chain in a single request: the domain-knowledge half ("what does Estero draw from") and the monitored-record half ("what have the wells done since ~1994"). Here is the concrete code path.
+This example exercises **both halves** of the data chain in a single request: the domain-knowledge half ("what does Estero draw from") and the monitored-record half ("what have the wells done since ~1994"). It is an illustrative code-path example: exact wells, aquifer labels, and risk summaries depend on the deterministic nearest-site selector and the current metadata/config files.
 
 ### 6.1 Routing
 
-The query contains the token `Estero`. `_detect_location` word-boundary-matches `estero` against `_LOCATION_REFERENCE_POINTS`, which maps it to `(lat, lng, "Estero", county_hint="Lee")`. The routing chain falls through site-name and aquifer detection (no G-####, no aquifer keyword), fails multi-location (one place), and fires on single-location → `_best_sites_near(lat, lng, "Lee", max_sites=10)`. This returns the Lee County USGS wells closest to the Estero coordinates, scored by Haversine plus the `-0.3` county-match bonus. The resulting cohort is typically 6–10 wells including the `C-####` Surficial / Sandstone and `L-####` Lower Tamiami sites in south Lee County.
+The query contains the token `Estero`. `_detect_location` word-boundary-matches `estero` against `_LOCATION_REFERENCE_POINTS`, which maps it to `(lat, lng, "Estero", county_hint="Lee")`. The routing chain falls through site-name and aquifer detection (no G-####, no aquifer keyword), fails multi-location (one place), and fires on single-location → `_best_sites_near(lat, lng, "Lee", max_sites=10)`. This returns the Lee County USGS wells closest to the Estero coordinates, scored by Haversine plus the `-0.3` county-match bonus. The selected cohort is therefore a reproducible proxy set for nearby monitoring wells, not a claim that those wells are the utility's production wells.
 
 ### 6.2 Deterministic analysis
 
@@ -334,12 +298,12 @@ The query contains the token `Estero`. `_detect_location` word-boundary-matches 
 
 - Each site's monthly-mean water-level series is computed by resampling its CSV through `_load_site_timeseries`. Many wells start in the mid-1990s, giving the question its "last 30 years" frame.
 - Per-site metrics are computed: `start_date`, `end_date`, `record_length_years`, `net_change_ft`, `annual_change_ft_yr` (from `_linear_trend_values_with_slope`), `trend` label (`rising / falling / stable`), and `changepoint` (from `_detect_changepoint` — usually populated only for wells with ≥36 monthly bins).
-- `_cross_well_analysis` runs over the cohort and returns `trend_distribution` (e.g. 7 falling / 2 stable / 1 rising), `mean_annual_change_ft_yr`, `std_annual_change_ft_yr`, `divergent_pairs`, `risk_level` (likely `moderate` to `high` for a Lee cohort dominated by falling Surficial wells), `changepoints`, and `clusters`.
-- `_cluster_wells` groups the cohort by standardized annual change + seasonal amplitude + confinement. A typical Estero result is something like `"declining seasonal wells"`, `"stable seasonal wells"`, `"muted-seasonality confined wells"` — matching a hydrogeologist's informal reading of the record.
+- `_cross_well_analysis` runs over the cohort and returns `trend_distribution`, `mean_annual_change_ft_yr`, `std_annual_change_ft_yr`, `divergent_pairs`, `risk_level`, `changepoints`, and `clusters`. The exact falling/stable/rising counts are output fields, not fixed assumptions.
+- `_cluster_wells` groups the cohort by standardized annual change + seasonal amplitude + confinement. Cluster labels are deterministic descriptors of the selected wells, such as declining seasonal wells or muted-seasonality confined wells, and should be read as screening language rather than formal aquifer diagnoses.
 
 ### 6.3 KB contribution
 
-The "what does Estero use for water supply" half is answered from the local knowledge base. Retrieval surfaces sentences about the Lower Tamiami Aquifer as Lee County's principal municipal supply, about the Sandstone and Mid-Hawthorn aquifer roles, and about the Sandy unit of the Lower Tamiami that the Village of Estero utility and Lee County Utilities have historically drawn from. These sentences are added to `claim_citations` with `claim_type` tags like `"literature"` or `"metadata"` and cited to the corresponding KB source URLs with `trust_level` in `{trusted, moderate}`. The config file `config/water_supply_sources.json` (hashed into `research_provenance_v1.config_hashes`) holds the authoritative water-supply-source mapping.
+The "what does Estero use for water supply" half is answered from the local knowledge base and water-supply config. Retrieval can surface supply-context sentences about the aquifer units represented in the configured source mapping, such as Lower Tamiami, Sandstone, Mid-Hawthorn, or related Lee County supply context when present. These sentences are added to `claim_citations` with `claim_type` tags like `"literature"` or `"metadata"` and cited to the corresponding KB/config source URLs with `trust_level` in `{trusted, moderate}`. The config file `config/water_supply_sources.json` (hashed into `research_provenance_v1.config_hashes`) holds the authoritative water-supply-source mapping used by the system.
 
 ### 6.4 Report assembly
 
@@ -383,15 +347,25 @@ A reviewer who wants to re-derive the Estero answer can check out `provenance.co
 
 ### 7.1 Chat surface
 
-`POST /api/chat` routes through the same manuscript-safe contract as the research surface. The six keyword-routed branches (site / aquifer / multi-location / single-location / network-wide / KB fallback) each delegate to `_site_research_fallback(..., allow_llm_synthesis=True)`, which runs the deterministic pipeline and then — unless `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS` is set — hands the structured findings to a local Ollama model (`llama3.2` by default) for a short hydrogeologist narration. The previous separate quick-chat agent class has been retired; `/api/chat` and `/api/research` now share the same evidence registry and provenance envelope, differing only in whether the LLM layer is the lightweight in-process narrator or the full `DeepResearchAgent` phase loop.
+`POST /api/chat` routes through the same manuscript-safe contract as the research surface. The six keyword-routed branches (site / aquifer / multi-location / single-location / network-wide / KB fallback) each delegate to `_site_research_fallback(..., allow_llm_synthesis=True)`, which runs the deterministic pipeline and then — unless `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS` is set or an Ollama daemon is unavailable — can hand the structured findings to a local Ollama model (`llama3.2` by default) for a short hydrogeologist narration. If no keyword route matches and the user is on the `/api/chat` path, the code checks `_research_agent is not None`; in the demo configuration this is always `False`, so the question falls to the KB fallback. **In practice, benchmark questions are served by the deterministic pipeline with LLM synthesis disabled, while demo questions are deterministic-first with optional in-process Ollama narration. The `DeepResearchAgent` is never invoked in the sponsor demo.**
 
 The quick-chat payload now exposes three layers of answer text: `answer_brief` for the natural-language answer users should read first, `raw_report` for the complete deterministic report, and `interpretation_details` for structured fields such as `aquifer_summaries`, `supply_interpretation`, risk level, limitations, and the deterministic brief. This is the API-level fix for the earlier failure mode where chat looked like it was dumping the full stored report rather than answering the user's question.
 
-Chart-bound follow-up questions are handled by [api/routes/_chart_interpreter.py](api/routes/_chart_interpreter.py). The frontend sends `chart_context` (site IDs, chart ID, chart title, and chart insights) plus the last four `turn_history` items. Turn history now includes lightweight context metadata (`site_ids`, wells, aquifer, mode, cohort risk) so underspecified follow-ups such as "why is it declining?" or "which well matters most?" can recover the recent data context even when the user does not repeat the location. The backend builds an `EvidencePack` directly from the chart's USGS site IDs, computes current cross-well metrics, builds an enriched RAG query from the question plus active wells, aquifers, county, trend direction, and risk level, then retrieves curated hydro concept snippets by default. It also classifies chart questions into small deterministic intents (`shallow_deep_comparison`, `fastest_changing`, `cohort_meaning`, `risk_explanation`, or `general`) and builds the visible answer around that intent. A shallow/deep question therefore leads with a direct comparison of confined vs unconfined group means and the largest well-level gap, while "which well is changing fastest?" leads with the named well and rate.
+Chart-bound follow-up questions are handled by [api/routes/_chart_interpreter.py](api/routes/_chart_interpreter.py) (1607 lines). The frontend sends `chart_context` (site IDs, chart ID, chart title, and chart insights) plus the last four `turn_history` items. Turn history now includes lightweight context metadata (`site_ids`, wells, aquifer, mode, cohort risk) so underspecified follow-ups such as "why is it declining?" or "which well matters most?" can recover the recent data context even when the user does not repeat the location. The backend builds an `EvidencePack` directly from the chart's USGS site IDs, computes current cross-well metrics, builds an enriched RAG query from the question plus active wells, aquifers, county, trend direction, and risk level, then retrieves curated hydro concept snippets by default.
 
-Optional vector KB retrieval can be enabled with `GROUNDWATERGPT_ENABLE_INTERPRETER_VECTOR_RAG=1`; it is not required for the sponsor path because cold embedding startup can be slow in offline environments. Curated snippets explain concepts such as drawdown, recharge, seasonality, aquifer confinement, supply-proxy limits, and saltwater risk; they are supporting language, not measurement evidence. Numeric LLM claims are reconciled against deterministic `annual_change_ft_yr`, `net_change_ft`, and cohort-mean values before the response is emitted; unknown or mismatched numeric claims become guardrail flags. If vector retrieval or the LLM is unavailable, the deterministic chart interpreter still answers with the same `interpretation_response_v1` envelope and the curated local bank. The `/api/interpret` cache key includes a stable hash of `chart_context` plus `turn_history`, preventing stale answers from one chart being reused for another.
+The interpreter now classifies each chart question through `_detect_question_intent` at [_chart_interpreter.py:998](api/routes/_chart_interpreter.py#L998), which uses regex matching against the question text to select one of five intents:
 
-Every chat response carries `claim_citations`, `claim_verdicts`, `citation_integrity`, `structured_response`, and provenance regardless of which side served it. Chart-interpreter responses additionally carry `interpretation_response`, `direct_answer`, `supporting_evidence`, `answer_relevant_observations`, `comparison_groups`, `largest_gap`, `numeric_claims`, `groundwater_concepts`, `interpretive_findings`, `possible_drivers`, `evidence_needed`, `management_implications`, `confidence_notes`, `chart_context_used`, and `turn_history_used`. The visible chat answer is intentionally short: direct answer, one or two evidence sentences, and one caveat. The deeper "Observed signal / hydrogeologic meaning / evidence needed / confidence" material remains in structured fields for the Analytical Depth panel and audit trail. The generic in-memory KB remains a final fallback for standalone concept questions; context-bearing follow-ups now route to the grounded interpreter before the KB can return a generic well definition.
+- **`shallow_deep_comparison`** — triggered by "shallow", "deep", "confined", "unconfined", "diverge", "aquifer wells". Handled by `_shallow_deep_answer` ([line 1016](api/routes/_chart_interpreter.py#L1016)), which calls `_group_metrics_by_confinement` to split `per_site_metrics` into confined and unconfined groups using `SITE_METADATA`, computes mean rate for each group, and builds a direct answer ("Yes, they diverge: the N shallow/unconfined wells average X ft/yr while the M confined wells average Y ft/yr"). Includes seasonal amplitude comparison when available and the largest well-level rate gap via `_largest_rate_gap`.
+- **`fastest_changing`** — triggered by "fastest", "most", "which well", "steepest", "changing fastest". Handled by `_fastest_changing_answer` ([line 1066](api/routes/_chart_interpreter.py#L1066)), which sorts `per_site_metrics` by `annual_change_ft_yr` and leads with the named well and rate.
+- **`cohort_meaning`** — triggered by "cohort", "average", "mean annual", "what does the average mean". Handled by `_cohort_meaning_answer` ([line 1100](api/routes/_chart_interpreter.py#L1100)), which explains the cohort average in terms of well count, mean rate, and how many wells are above/below.
+- **`risk_explanation`** — triggered by "risk", "screening", "what does this mean", "concern". Handled by `_risk_explanation_answer` ([line 1196](api/routes/_chart_interpreter.py#L1196)), which explains the risk screening level in terms of percentage declining wells and connects to the strongest contributor.
+- **`general`** — everything else. Handled by `_general_answer` ([line 1233](api/routes/_chart_interpreter.py#L1233)), which leads with the hydrogeologic meaning section.
+
+`_build_meaning_brief` at [_chart_interpreter.py:725](api/routes/_chart_interpreter.py#L725) turns the same chart metrics into a stronger "what this means" block with a headline, plain-language meaning, why-it-matters sentence, how-to-read guidance, next evidence check, classroom takeaway, and confidence note. This is deterministic interpretation rather than LLM phrasing: the brief combines trend distribution, cohort risk, strongest negative rate, curated hydro context, and evidence-needed fields. The project now also has an explicit answer-quality rubric in [config/interpretation_rubric.json](config/interpretation_rubric.json). When a user interaction reveals a weak but technically correct answer, that gap can be converted into reusable required moves. For example, cohort-average answers must now state that the average is a group summary rather than a physical well, warn that it can hide divergent individual wells, explain why outliers matter, frame screening risk as prioritization rather than forecast, and tell the reader what to check next. `_build_intent_answer` at [_chart_interpreter.py:1241](api/routes/_chart_interpreter.py#L1241) dispatches to the appropriate builder and assembles a structured result with `question_intent`, `direct_answer`, `supporting_evidence`, `answer_relevant_observations`, `interpretation_rubric`, and intent-specific extras (`comparison_groups`, `largest_gap`, `fastest_decline`, `risk_summary`, `cohort_meaning`). `_deterministic_result_from_pack` at [line 1285](api/routes/_chart_interpreter.py#L1285) wraps this into the full `InterpretationResult`, composing the visible answer as: direct answer + up to two supporting evidence sentences + one caveat.
+
+Optional vector KB retrieval can be enabled with `GROUNDWATERGPT_ENABLE_INTERPRETER_VECTOR_RAG=1`; it is not required for the sponsor path because cold embedding startup can be slow in offline environments. Curated snippets explain concepts such as drawdown, recharge, seasonality, aquifer confinement, supply-proxy limits, and saltwater risk; they are supporting language, not measurement evidence. Optional structured chart LLM synthesis is requested from the UI only when `VITE_ENABLE_LLM_INTERPRETATION=true`. When it succeeds, the response records `grounding_status.llm_provider` and `grounding_status.llm_model` (for example, `ollama` + `llama3.2`, or `qwen` + `qwen-plus`). The structured prompt is now explainer-oriented rather than a raw `EvidencePack` dump: it passes a deterministic explainer seed and explicit bans on metadata-style phrasing such as `This chart connects ...` or `Key deterministic rates are ...`. Numeric LLM claims are reconciled against deterministic `annual_change_ft_yr`, `net_change_ft`, and cohort-mean values before the response is emitted; unknown or mismatched numeric claims become guardrail flags. If the LLM returns a weak summary-echo, site-ID dump, or field-label dump, the interpreter falls back to the deterministic answer rather than emitting the bad synthesis. If vector retrieval or the LLM is unavailable, the deterministic chart interpreter still answers with the same `interpretation_response_v1` envelope and the curated local bank. The `/api/interpret` cache key includes a stable hash of `chart_context` plus `turn_history`, preventing stale answers from one chart being reused for another.
+
+Every chat response carries `claim_citations`, `claim_verdicts`, `citation_integrity`, `structured_response`, and provenance regardless of which side served it. Chart-interpreter responses additionally carry `interpretation_response`, `direct_answer`, `supporting_evidence`, `answer_relevant_observations`, `interpretation_rubric`, `comparison_groups`, `largest_gap`, `numeric_claims`, `groundwater_concepts`, `meaning_brief`, `what_this_means`, `interpretive_findings`, `possible_drivers`, `evidence_needed`, `management_implications`, `confidence_notes`, `chart_context_used`, and `turn_history_used`. The visible chat answer remains short, but the optional Qwen/Ollama synthesis layer now rewrites the deterministic explainer seed into plain-language prose instead of paraphrasing the chart summary block. The deeper "Observed signal / hydrogeologic meaning / what this means / evidence needed / confidence" material remains in structured fields for the Analytical Depth panel and audit trail. The generic in-memory KB remains a final fallback for standalone concept questions; context-bearing follow-ups now route to the grounded interpreter before the KB can return a generic well definition. If Qwen or another structured LLM provider is enabled, its output is treated as optional synthesis over the same deterministic seed, numeric reconciliation rules, and explainer-quality guardrails; it does not replace the deterministic answer path.
 
 ### 7.2 Research workflow — plans, runs, drafts
 
@@ -423,13 +397,13 @@ The top-level `App` mounts a sidebar-driven mode switcher with `Dashboard` (stat
 
 `ChatView.jsx` is the primary surface. It subscribes to a `backendStatus` observable exported from [frontend/src/api/client.js](frontend/src/api/client.js), renders a "Backend unreachable — check uvicorn on :8000" banner when the observable is `'down'`, and auto-dismisses it on the next successful fetch. The chat message list renders an inline `<AgentChart>` whenever `msg.chart` is present (true whenever the cohort could be resolved, by the cross-path parity invariant). A visualization request whose cohort could not be resolved shows a "No time series available for this query" note, but chart-interpreter follow-ups suppress that note because they are explaining an existing chart rather than requesting a new one. The report body is rendered as markdown; claim-and-evidence references in square brackets render inline.
 
-For sponsor-facing chart explainability, assistant messages can render an **Interpretation Brief** and an **Analytical Depth** panel. The brief is the user-facing answer from `answer_brief` or `interpretation_response.interpretation`. The depth panel shows deterministic numeric claims, aquifer comparisons, supply proxy mapping, selected groundwater concepts, “What this means,” “Possible explanations,” “What would confirm it,” confidence notes, key observations, limits/guardrails, and grounding status (`uses_chart_context`, `uses_usgs_data`, `invented_measurements_allowed`). When the interpreter returns `comparison_groups`, the panel adds a shallow-vs-deep row with the unconfined/confined group means, seasonal amplitude when available, and the largest well-level rate gap. Key observations prefer `answer_relevant_observations`, so the panel follows the question intent instead of repeating generic chart boilerplate. Contextual "Ask Next" chips are generated from the current chart, recovered wells, supply interpretation, divergent pairs, and backend follow-up questions such as "Explain the decline using these wells", "Which well is changing fastest", "What caveats should I mention", and "Is this seasonal or long-term". Clicking a chip sends either the active `chart_context` or the enriched recent turn history back to the backend, which fixes the earlier poor follow-up behaviour where a chart question lost its data context.
+For sponsor-facing chart explainability, assistant messages can render a learner-first **Learner Brief** followed by a collapsed **See the evidence behind this explanation** panel. The learner block is built from deterministic fields and exposes `learner_brief`, optional `terms_to_know`, and optional `misconceptions_to_avoid` before any audit-depth material. The evidence panel then shows deterministic numeric claims, aquifer comparisons, supply proxy mapping, selected groundwater concepts, “What this means,” “Possible explanations,” “What would confirm it,” confidence notes, key observations, limits/guardrails, and grounding status (`uses_chart_context`, `uses_usgs_data`, `invented_measurements_allowed`). When the interpreter returns `comparison_groups`, the panel adds a shallow-vs-deep row with the unconfined/confined group means, seasonal amplitude when available, and the largest well-level rate gap. Key observations prefer `answer_relevant_observations`, so the panel follows the question intent instead of repeating generic chart boilerplate. Contextual "Ask Next" chips are now grouped by learner purpose (`Understand this`, `Compare wells`, `Check the caveat`, `What would strengthen this interpretation?`). Clicking a chip sends either the active `chart_context` or the enriched recent turn history back to the backend, which fixes the earlier poor follow-up behaviour where a chart question lost its data context. The frontend also emits lightweight learner telemetry (`learner_brief_shown`, `analytical_depth_expanded`, `terms_to_know_expanded`, `ask_next_clicked`, `learner_feedback`) to a local JSONL store under `outputs/research/learner_events/`; this is product evidence for usability, not scientific evidence about groundwater.
 
 `AgentChart` and `ResearchChartsPanel` are lazy-loaded via `React.lazy` + `Suspense` with `<div className="h-[320px]" />` fallbacks — a deliberate bundle-size optimization because Recharts is the largest single dependency.
 
 ### 8.3 `AgentChart` — chart UX choices
 
-[frontend/src/components/AgentChart.jsx](frontend/src/components/AgentChart.jsx) (225 lines) has decisions worth naming in the paper:
+[frontend/src/components/AgentChart.jsx](frontend/src/components/AgentChart.jsx) (267 lines) has decisions worth naming in the paper:
 
 - Risk pill next to the title, **hidden** when `cohort_risk_level` is falsy or `'unknown'` — the system never shows a risk claim it cannot back.
 - CSV download button labelled **Monthly CSV** with tooltip `"Monthly-mean aggregation of all plotted wells"` and file name `<slugified-title>-monthly.csv`. The CSV is built from the same monthly-mean series the chart renders, so the download and the visual are the same object.
@@ -450,13 +424,13 @@ The observable is ~15 lines — a `Set` of listeners plus `subscribe` / `getStat
 
 ### 9.1 Test coverage
 
-**204 unit tests passing** on Python 3.13 locally as of 2026-04-16. Key test files:
+**219 unit tests passing** on Python 3.13 locally as of 2026-04-16. All tests run with `GROUNDWATERGPT_SKIP_AGENT_INIT=1`, so they exercise the deterministic pipeline, chart interpreter, detection chain, citation machinery, and provenance — **not** the live `DeepResearchAgent` path. Agent-related tests use mock LLMs and verify synthesis machinery, not operational quality (see §4.1). Key test files:
 
 - `test_inline_chart.py` (13+ tests): chart payload invariants, cross-path parity, agent-hook attach/leave-alone, streaming SSE final frame, ft/yr unit naming, changepoint + cluster presence, empty-input handling, KeyError surfacing when cross-well metrics are malformed.
 - `test_detection.py`: detection chain (regex coverage, precedence, edge cases).
 - `test_chat_api.py`: `/api/chat` + `/api/research` + `/api/research/stream` tests against FastAPI TestClient, including `provenance`, `changepoints`, `cross_well_clusters`, `structured_response` presence and `schema_version` assertions.
-- `test_chart_interpreter.py`: direct tests for missing chart context, deterministic fallback, unavailable LLM providers, successful structured-LLM chart narration, and numeric-claim reconciliation against the deterministic EvidencePack.
-- `test_chat_followup_routing.py`: chart-context follow-up routing, no-context fallback behaviour, turn-history trimming, cache-key separation by chart context, and a regression guard using the shared chat benchmark case file.
+- `test_chart_interpreter.py` (395 lines): direct tests for missing chart context, deterministic fallback, unavailable LLM providers, successful structured-LLM chart narration, numeric-claim reconciliation against the deterministic EvidencePack, intent-detection classification (`shallow_deep_comparison`, `fastest_changing`, `cohort_meaning`, `risk_explanation`, `general`), shallow/deep answer structure with comparison groups and largest gap, fastest-changing answer naming and rate, cohort-meaning answer with below/above counts, risk-explanation answer with percentage and strongest contributor, and single-group-only shallow/deep fallback.
+- `test_chat_followup_routing.py` (344 lines): chart-context follow-up routing, no-context fallback behaviour, turn-history trimming, cache-key separation by chart context, a regression guard using the shared chat benchmark case file, and intent-specific routing for shallow/deep and fastest-changing follow-ups.
 - `test_chart_api.py`: `/api/sites/{id}/chart` and `/api/compare/chart` tests.
 - `test_knowledge_api.py`: KB stat / status / ingest.
 - `test_agent.py`: research-agent tests with stubbed LLM, including `TestStructuredResearchSynthesis` which asserts `_heuristic_structured_response` + `_render_structured_report` preserve claim-and-evidence IDs end-to-end.
@@ -466,7 +440,7 @@ The benchmark suite [tests/benchmark/chat_eval_cases.json](tests/benchmark/chat_
 
 ### 9.2 Current benchmark (deterministic column)
 
-Current [chat_benchmark_report.json](chat_benchmark_report.json), generated with `scripts/run_chat_benchmark.py --mode fallback --enforce-thresholds` (hybrid narration disabled via `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS=1`):
+Current [chat_benchmark_report.json](chat_benchmark_report.json), generated with `scripts/run_chat_benchmark.py --mode fallback --enforce-thresholds` (hybrid narration disabled via `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS=1`, agent disabled via `GROUNDWATERGPT_SKIP_AGENT_INIT=1`). **This benchmark exercises only the deterministic pipeline — no LLM of any kind is active during the run:**
 
 - **68 / 68 cases passing**, `overall_score = 1.000`.
 - Average citation coverage: **1.000** (threshold: 0.90).
@@ -475,13 +449,13 @@ Current [chat_benchmark_report.json](chat_benchmark_report.json), generated with
 - Average claim-verdict coverage: **1.000** (threshold: 0.95).
 - Average contradicted-claim rate: ≈ 0.010 (threshold: ≤0.40).
 - Average high-risk-claim rate: ≈ 0.010 (threshold: ≤0.50).
-- Median elapsed time: **1.528 s**.
-- Maximum elapsed time: **3.073 s**.
+- Median elapsed time: **1.554 s**.
+- Maximum elapsed time: **3.247 s**.
 - Latency measurement context: FastAPI in-process `TestClient`; deployed client-server latency will be higher and should be measured separately.
 - Thresholds: `min_overall_score=0.85`, `min_case_score=0.80`, `min_avg_citation_coverage=0.90`, `max_response_seconds=120`, `max_median_seconds=5.0`.
 - Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`. With `force_fallback_mode` set, the LLM synthesis layer is skipped by design so the reproducibility argument rests only on the deterministic layer.
 
-The key implication for the manuscript: the headline ("68/68 benchmark pass, 100% citation coverage, 100% claim-verdict coverage, ~4.17 s median latency") is a statement about **the deterministic layer**. That is the layer the reproducibility argument rests on. The framing must be explicit.
+The key implication for the manuscript: the headline ("68/68 benchmark pass, 100% citation coverage, 100% claim-verdict coverage, 1.554 s median latency") is a statement about **the deterministic layer**. That is the layer the reproducibility argument rests on. The framing must be explicit.
 
 ### 9.3 Current live-agent smoke benchmark
 
@@ -500,7 +474,19 @@ This smoke result is useful as an architectural check: the live `DeepResearchAge
 
 ### 9.4 Current chart-explainability and interpretation benchmark
 
-The chart-follow-up interpreter now has unit-level regression coverage in addition to the live LLM smoke benchmark. The tests assert that a chart-context question such as "Which one is changing fastest?" can answer from the deterministic EvidencePack without an LLM, that enriched RAG queries include the active wells/aquifers for vague follow-ups, that curated hydro context survives Chroma/vector retrieval failure, that contextual questions include interpretation sections rather than data-only restatement, that a structured LLM answer is threaded through when available, and that bad LLM numeric claims are corrected before emission. The chat routing tests assert that open-ended chart follow-ups enter `mode = "chart_interpreter"`, that "well decline" does not fall into the generic well-definition KB when recent wells exist, and that `/api/interpret` cache entries are separated by chart context.
+The chart-follow-up interpreter now has both unit-level regression tests and a dedicated interpretation benchmark. The unit tests (482 lines in [tests/unit/test_chart_interpreter.py](tests/unit/test_chart_interpreter.py)) assert that a chart-context question such as "Which one is changing fastest?" can answer from the deterministic EvidencePack without an LLM, that enriched RAG queries include the active wells/aquifers for vague follow-ups, that curated hydro context survives Chroma/vector retrieval failure, that contextual questions include interpretation sections rather than data-only restatement, that "what does this mean?" returns a `meaning_brief` with significance and next-evidence guidance, that cohort-average answers explain the average as a group summary rather than a physical well, that a structured LLM answer is threaded through when available, that successful structured LLM synthesis reports provider/model metadata, that bad LLM numeric claims are corrected before emission, and that intent detection correctly classifies shallow/deep, fastest-changing, cohort-meaning, risk-explanation, and general questions with structurally correct answers for each. The chat routing tests (344 lines in [tests/unit/test_chat_followup_routing.py](tests/unit/test_chat_followup_routing.py)) assert that open-ended chart follow-ups enter `mode = "chart_interpreter"`, that "well decline" does not fall into the generic well-definition KB when recent wells exist, that `/api/interpret` cache entries are separated by chart context, and that intent-specific follow-ups produce the right answer shape.
+
+The interpretation benchmark harness lives at [scripts/run_interpretation_benchmark.py](scripts/run_interpretation_benchmark.py) and now includes explicit learner-usefulness checks in addition to grounding checks. The case file [tests/benchmark/interpretation_eval_cases.json](tests/benchmark/interpretation_eval_cases.json) now includes learner prompts such as “I’m new to this, what does this chart mean?”, “Why should I care about this decline?”, “What does screening risk mean in plain English?”, “What does the cohort average mean for a beginner?”, and “What’s the difference between a falling well and proving a cause?”. Each case is scored not only on schema presence, grounding status, data references, expected terms, numeric match, guardrails, and turn-context binding, but also on whether the visible response exposes a learner brief, plain-language meaning, an explicit limit, a next-step question, jargon explanations when required, and misconception guards when the intent is prone to chart-reading errors.
+
+- Overall score: **0.943**, threshold pass **true**.
+- Grounding coverage: **1.000** (threshold: 0.97).
+- Chart context coverage: **1.000** (threshold: 0.85).
+- Data reference coverage: **1.000** (threshold: 0.85).
+- Numeric match rate: **1.000** (threshold: 0.95).
+- Guardrail pass rate: **1.000** (threshold: 1.00).
+- Fake measurement policy fail rate: **0.000** (threshold: ≤0.00).
+- Suggested-question coverage: **1.000** (threshold: 0.85).
+- Median elapsed: **1.066 s**; max elapsed: **2.517 s**.
 
 ### 9.5 Current chart-explainability LLM smoke benchmark
 
@@ -525,12 +511,13 @@ This is the sponsor-facing LLM result: the model communicates with the determini
 ### 10.1 Strengths
 
 - **Deterministic reference pipeline.** A single function (`_site_research_fallback` + `_cross_well_analysis` + `_build_chart_payload`) converts USGS CSVs into cited, chart-backed conclusions — trend, changepoint, cluster, divergent pairs, risk level — without any language model. It is what the benchmark measures and what the provenance block hashes.
-- **Typed claim-and-evidence binding.** The LLM synthesis layer is required to return JSON whose every factual claim cites `claim_ids` and `evidence_ids` from a registry built by the deterministic layer. The parser sanitizes by intersecting against valid ID sets; unbacked claims are dropped. The response always carries the resulting `structured_response` (`evidence_response_v1`) for downstream auditing.
-- **Cross-path chart parity.** Every routing branch — deterministic, LLM agent, streaming agent — emits charts through one builder, joined by `_agent_chart_hook.attach_chart_from_agent_result`. A regression test asserts the streaming agent path produces byte-identical chart shapes.
+- **Typed claim-and-evidence binding.** The synthesis layer returns JSON whose every factual claim cites `claim_ids` and `evidence_ids` from a registry built by the deterministic layer. The parser sanitizes by intersecting against valid ID sets; unbacked claims are dropped. This is tested with mock LLMs; the design is verified but not yet evaluated against real LLM output at scale. The response always carries the resulting `structured_response` (`evidence_response_v1`) for downstream auditing.
+- **Cross-path chart parity (architectural).** All routing branches — deterministic, LLM agent, streaming agent — are wired to emit charts through one builder, joined by `_agent_chart_hook.attach_chart_from_agent_result`. A regression test with a stubbed agent result asserts the chart shape is correct. However, the agent path is dormant in the demo, so cross-path parity is an architectural guarantee tested in isolation, not an operational property of the running system.
 - **Cryptographic provenance.** Every research response carries `research_provenance_v1` with `code_commit`, `response_sha256`, per-CSV `data_snapshot` hashes, `config_hashes`, and methodology flags. A reviewer can deterministically re-derive the deterministic portion of any answer.
 - **Citation integrity as a first-class signal.** Coverage and trust are computed per request and surfaced through the API rather than logged post-hoc.
-- **LLM decoupled from correctness.** The benchmark passes at 1.000 without the LLM active.
-- **LLM provider portability.** Five providers through [src/agent/llm_factory.py](src/agent/llm_factory.py) by env var.
+- **LLM decoupled from correctness.** Both the 68-case chat benchmark and the 25-case interpretation benchmark pass their thresholds without any LLM active. The 68-case deterministic chat benchmark scores 1.000; the 25-case interpretation benchmark scores 0.943 with 1.000 grounding, numeric-match, and guardrail coverage. The evaluated system is deterministic.
+- **Intent-aware chart interpretation.** The chart-follow-up interpreter classifies questions into five intents and builds structurally correct answers directly from deterministic metrics, without an LLM. This is the evaluated and benchmarked interpretation path.
+- **LLM provider portability (untested at scale).** Five providers through [src/agent/llm_factory.py](src/agent/llm_factory.py) by env var; tested only as enum membership and one-case smokes.
 - **Deterministic routing is testable.** Keyword-driven and regex-based, so the test suite enumerates routing decisions.
 
 ### 10.2 Limitations (stated plainly)
@@ -539,10 +526,12 @@ This is the sponsor-facing LLM result: the model communicates with the determini
 - **Changepoints and clusters are screening tools.** The two-segment OLS residual-improvement screen and the standardized-feature k-means grouping are reproducible, but they are **not** formal regime-shift tests or connectivity inferences. The report wording is conservative; the paper should be too.
 - **Risk classification thresholds are engineering defaults.** `high` ≥ 66%, `moderate` ≥ 33% (or ≥ 20% mostly-confined), else `low`. No empirical calibration in the repo.
 - **Divergent pairs are a screening heuristic.** Two wells can diverge for reasons unrelated to the aquifer system.
-- **LLM layer is under-evaluated.** The runner exists and a one-case live smoke has been cached, but no stable full-suite LLM-path benchmark has been reported.
+- **Research agent is dormant.** The `DeepResearchAgent` is architecturally complete but disabled in the demo (`GROUNDWATERGPT_SKIP_AGENT_INIT=1`), all tests, and both benchmarks. A one-case manual smoke scored 0.200 and failed thresholds. The manuscript should not describe the agent as part of the evaluated system.
+- **LLM layer is under-evaluated.** No stable full-suite benchmark exists for any LLM path — the in-process Ollama narration, the agent research path, or the chart-explainability LLM path. All three have only one-case smokes.
 - **Reproducibility of the LLM path.** The LLM is stochastic; running the same query twice produces subtly different phrasing. Structured-response sanitization guarantees no *new* unbacked claims but cannot guarantee identical wording. The deterministic portion **is** reproducible and hash-verifiable.
 - **Scope is fixed and narrow.** 44 wells, 5 counties, 7 aquifer labels. Adding wells requires a metadata edit.
-- **Keyword routing is brittle at the edges.** Novel phrasings may miss a specialized branch and fall to the LLM path, where the deterministic guarantees no longer apply.
+- **Keyword routing is brittle at the edges.** Novel phrasings may miss a specialized branch. In the demo configuration (agent disabled), such queries fall to the KB fallback — they get a generic answer, not an agent-synthesized one. The intent classifier for chart follow-ups uses regex, which handles tested phrasings but may misclassify novel wording.
+- **Date-window handling is uneven across surfaces.** Explicit `start_date` / `end_date` filtering and preset windows (`last_5y`, `last_10y`, `full_record`, `custom`) exist in the chart/data endpoints and the research workbench, but natural-language chat and the chart-follow-up interpreter do not yet reliably turn a prompt like "from 2010 to 2020" into those structured filters. For manuscript claims, timeframe-aware analysis should therefore be described as available in the workbench/API layer, not as a uniformly solved chat capability.
 - **Knowledge base coverage is small.** Three hydrogeology PDFs + per-well summaries + hand-written Q&A. A document-level inventory is needed.
 - **Forecasting is out of manuscript scope.** Historical forecast code is not wired to the serving API and should not be used for manuscript claims until it has time-aware validation and a served endpoint.
 - **Concurrency and persistence.** Benchmark runs sequentially; session store is file-based; no concurrency measurement.
@@ -555,16 +544,18 @@ This is the sponsor-facing LLM result: the model communicates with the determini
 
 ### 10.4 What the paper can confidently claim
 
-- A deterministic hydrogeologic reference pipeline that converts USGS monitoring records into cited, chart-backed answers with cryptographic provenance.
-- A typed binding between language-model synthesis and that pipeline — every factual sentence in the final report is tied to a registered `claim_id` and `evidence_id`, and unbacked claims are sanitized out by construction.
-- A cross-path chart-parity invariant — a single chart builder serves both deterministic and LLM paths, verified by a streaming regression test.
-- An evaluation harness showing 68/68 cases passing, 100% average citation coverage, 100% claim-verdict coverage, and 1.528 s median latency for the deterministic layer.
+- A deterministic hydrogeologic reference pipeline that converts USGS monitoring records into cited, chart-backed answers with cryptographic provenance. This is the evaluated system.
+- A typed-binding design for LLM synthesis — every factual sentence in the final report is tied to a registered `claim_id` and `evidence_id`, and unbacked claims are sanitized out by construction. The design is unit-tested with mock LLMs; it has not been evaluated at scale against real model output.
+- A single chart builder used across all routing paths, ensuring chart schemas are consistent by construction. The agent path is dormant, so this is an architectural property verified by a stubbed test, not an operational property of the running demo.
+- An evaluation harness showing 68/68 cases passing, 100% average citation coverage, 100% claim-verdict coverage, and 1.554 s median latency — all on the deterministic layer with no LLM active.
+- An intent-aware chart interpretation pipeline with a dedicated 25-case benchmark showing overall score 0.943, 100% grounding coverage, 100% numeric match rate, 100% guardrail compliance, and 1.066 s median latency — all deterministic, no LLM active.
 - A reproducibility artefact (`research_provenance_v1`) that lets a reviewer deterministically re-derive the deterministic portion of any answer.
 
 ### 10.5 What the paper should not claim without additional work
 
 - Generalization beyond the monitored network.
-- LLM synthesis quality beyond the cached one-case smoke run.
+- LLM synthesis quality — the one-case smokes (agent, narration, chart-explainability) are architectural checks, not quality evaluations. No multi-case LLM benchmark exists.
+- That the `DeepResearchAgent` is an active, evaluated component — it is dormant in demo, tests, and benchmarks.
 - Calibrated risk classification.
 - Confidence-interval-quality trend estimates.
 - Production readiness.
@@ -574,7 +565,7 @@ This is the sponsor-facing LLM result: the model communicates with the determini
 
 ## 11. Cleanup status and remaining work
 
-The first cleanup pass removed code and documents that were not reachable from the serving paths described in this overview. The repository surface now more closely matches the manuscript system: FastAPI + React for the live application, the deterministic analysis layer under [api/routes/](api/routes/), the evidence-linked research agent under [src/agent/research_agent.py](src/agent/research_agent.py), and citation/provenance helpers under [api/routes/_citation.py](api/routes/_citation.py) and [api/routes/_provenance.py](api/routes/_provenance.py).
+The first cleanup pass removed code and documents that were not reachable from the serving paths described in this overview. The repository surface now more closely matches the manuscript system: FastAPI + React for the live application, the deterministic analysis layer under [api/routes/](api/routes/), and citation/provenance helpers under [api/routes/_citation.py](api/routes/_citation.py) and [api/routes/_provenance.py](api/routes/_provenance.py). The `DeepResearchAgent` under [src/agent/](src/agent/) remains in the repository as architecturally complete but dormant code — it is disabled in the demo, tests, and both benchmarks.
 
 ### 11.1 Removed in the cleanup pass
 
@@ -587,8 +578,8 @@ The first cleanup pass removed code and documents that were not reachable from t
 
 ### 11.2 Retired: overlapping chat agent
 
-- The previous `GroundwaterAgent` quick-chat path has been removed from the live system. `/api/chat` now uses deterministic routing first and the evidence-bound `DeepResearchAgent` second, so every manuscript-facing narrative path emits `structured_response` and `provenance`.
-- The agent unit tests were updated accordingly: they now cover `DeepResearchAgent` and structured synthesis behavior rather than the retired quick-chat class.
+- The previous `GroundwaterAgent` quick-chat path has been removed from the live system. `/api/chat` now uses deterministic routing first and falls to the KB fallback when no keyword route matches (the `DeepResearchAgent` code path exists but is disabled by `GROUNDWATERGPT_SKIP_AGENT_INIT=1` in demo and tests).
+- The agent unit tests cover `DeepResearchAgent` construction and structured synthesis behavior with mock LLMs. They verify the evidence-binding machinery, not operational quality.
 
 ### 11.3 Gate or delete: DuckDuckGo web search
 
@@ -607,13 +598,13 @@ The first cleanup pass removed code and documents that were not reachable from t
 
 These are not dead, but they are large enough that they hide the architecture the manuscript is trying to describe. Splitting them would make the paper's file references more precise.
 
-- **[api/routes/chat.py](api/routes/chat.py) (2686 lines).** Suggest splitting into: `chat_routes.py` (the FastAPI route handlers), `routing_chain.py` (the site/aquifer/multi/location/network detection wiring), `fallback_wiring.py` (how each routing branch calls `_site_research_fallback` and assembles the payload), `agent_wiring.py` (how the LLM branches call `DeepResearchAgent` and `_agent_chart_hook`), `interpretation_routes.py` (the `/api/interpret` cache and chart-context bridge), and `sse_streaming.py` (the streaming generator + thread-queue bridge).
+- **[api/routes/chat.py](api/routes/chat.py) (2793 lines).** Suggest splitting into: `chat_routes.py` (the FastAPI route handlers), `routing_chain.py` (the site/aquifer/multi/location/network detection wiring), `fallback_wiring.py` (how each routing branch calls `_site_research_fallback` and assembles the payload), `agent_wiring.py` (how the LLM branches call `DeepResearchAgent` and `_agent_chart_hook`), `interpretation_routes.py` (the `/api/interpret` cache and chart-context bridge), and `sse_streaming.py` (the streaming generator + thread-queue bridge).
 - **[api/routes/_site_analysis.py](api/routes/_site_analysis.py) (1970 lines).** Suggest splitting into `_trend.py` (OLS slope, helpers), `_changepoint.py` (`_detect_changepoint`), `_cluster.py` (`_cluster_wells`), `_cross_well.py` (`_cross_well_analysis` orchestrator), `_supply.py` (water-supply proxy mapping and answer brief), `_chart.py` (`_build_chart_payload`, `_build_chart_insights`), and a thin `_site_analysis.py` that re-exports for existing imports.
 - **[src/agent/research_agent.py](src/agent/research_agent.py) (~1980 lines).** Suggest splitting the synthesis layer (`_build_evidence_items`, `_parse_structured_response`, `_heuristic_structured_response`, `_render_structured_report`) into a dedicated `src/agent/structured_synthesis.py` so the claim/evidence binding that the paper's argument depends on lives in one small, testable file.
 
 ### 11.7 Remaining cleanup impact
 
-After this pass, the largest remaining items are methodological rather than architectural: stronger hydrologic trend statistics than monthly OLS, evidence binding for the research workbench, and a final decision about whether the dormant DuckDuckGo code path belongs in the submission repository at all.
+After this pass, the largest remaining items are methodological rather than architectural: stronger hydrologic trend statistics than monthly OLS, evidence binding for the research workbench, and a final decision about whether the dormant DuckDuckGo code path belongs in the submission repository at all. The next meaningful improvements would come from broader data coverage and actual evaluation, not more UI- or prompt-level layering: more wells / covariates would allow better calibration of risk labels and causal caveats, and a real multi-case LLM benchmark would be required before claiming that the optional LLM layer materially improves interpretation quality.
 
 ---
 
@@ -623,11 +614,11 @@ After this pass, the largest remaining items are methodological rather than arch
 |---|---|---|
 | Detection chain (regex, location map, site loader, cohort helpers) | [api/routes/_detection.py](api/routes/_detection.py) | 639 lines |
 | Deterministic analysis (site fallback, supply interpretation, answer brief, cross-well, changepoint, cluster, chart builder, insights, trend) | [api/routes/_site_analysis.py](api/routes/_site_analysis.py) | 1970 lines |
-| Chart-context interpreter | [api/routes/_chart_interpreter.py](api/routes/_chart_interpreter.py) | 1349 lines |
+| Chart-context interpreter (intent detection, meaning brief, shallow/deep, fastest-changing, cohort, risk builders) | [api/routes/_chart_interpreter.py](api/routes/_chart_interpreter.py) | 1607 lines |
 | Agent-to-chart join point | [api/routes/_agent_chart_hook.py](api/routes/_agent_chart_hook.py) | 142 lines |
 | Citation integrity, verdicts, trust levels | [api/routes/_citation.py](api/routes/_citation.py) | 224 lines |
 | Research provenance block | [api/routes/_provenance.py](api/routes/_provenance.py) | 143 lines |
-| Chat / research endpoints, `/api/interpret`, routing chain, SSE streaming | [api/routes/chat.py](api/routes/chat.py) | 2686 lines |
+| Chat / research endpoints, `/api/interpret`, routing chain, SSE streaming | [api/routes/chat.py](api/routes/chat.py) | 2793 lines |
 | Knowledge base router | [api/routes/knowledge.py](api/routes/knowledge.py) | 88 lines |
 | Data router | [api/routes/data.py](api/routes/data.py) | 239 lines |
 | Research workflow (plans, runs, drafts, workbench mount) | [api/routes/research_workflow.py](api/routes/research_workflow.py) | 255 lines |
@@ -635,20 +626,22 @@ After this pass, the largest remaining items are methodological rather than arch
 | Site metadata loader | [api/site_metadata.py](api/site_metadata.py) | — |
 | FastAPI app factory | [api/main.py](api/main.py) | 54 lines |
 | Wells listing router | [api/routes/wells.py](api/routes/wells.py) | 176 lines |
-| Deep research agent (phases, budget, evidence registry, structured synthesis) | [src/agent/research_agent.py](src/agent/research_agent.py) | 1980 lines |
-| Agent tool surface | [src/agent/tools.py](src/agent/tools.py) | 1083 lines |
-| Research optimizer (planner, ranker, reflector, persistence) | [src/agent/research_optimizer.py](src/agent/research_optimizer.py) | 854 lines |
+| Deep research agent — **dormant in demo/eval** (phases, budget, evidence registry, structured synthesis) | [src/agent/research_agent.py](src/agent/research_agent.py) | 1980 lines |
+| Agent tool surface — **dormant** | [src/agent/tools.py](src/agent/tools.py) | 1083 lines |
+| Research optimizer — **dormant** (planner, ranker, reflector, persistence) | [src/agent/research_optimizer.py](src/agent/research_optimizer.py) | 854 lines |
 | Knowledge base loader | [src/agent/knowledge.py](src/agent/knowledge.py) | 760 lines |
 | Source verification (trust levels, category, priority) | [src/agent/source_verification.py](src/agent/source_verification.py) | 658 lines |
 | LLM provider factory | [src/agent/llm_factory.py](src/agent/llm_factory.py) | 180 lines |
 | **Retired:** quick-chat agent path | — | — |
 | **Removed:** standalone forecast experiment (§11.4) | — | — |
-| Frontend chat surface | [frontend/src/components/ChatView.jsx](frontend/src/components/ChatView.jsx) | 1326 lines |
+| Frontend chat surface | [frontend/src/components/ChatView.jsx](frontend/src/components/ChatView.jsx) | 1364 lines |
 | Frontend chart component | [frontend/src/components/AgentChart.jsx](frontend/src/components/AgentChart.jsx) | 267 lines |
 | API client with observable | [frontend/src/api/client.js](frontend/src/api/client.js) | 373 lines |
 | Inline chart regression tests | [tests/unit/test_inline_chart.py](tests/unit/test_inline_chart.py) | 383 lines |
-| Chart interpreter tests | [tests/unit/test_chart_interpreter.py](tests/unit/test_chart_interpreter.py) | 392 lines |
-| Chart follow-up routing tests | [tests/unit/test_chat_followup_routing.py](tests/unit/test_chat_followup_routing.py) | 344 lines |
+| Chart interpreter tests (intent detection, meaning brief, answer builders, numeric reconciliation, LLM metadata) | [tests/unit/test_chart_interpreter.py](tests/unit/test_chart_interpreter.py) | 482 lines |
+| Chart follow-up routing tests (intent routing, context binding) | [tests/unit/test_chat_followup_routing.py](tests/unit/test_chat_followup_routing.py) | 344 lines |
+| Interpretation benchmark runner (25 eval cases, 20 checks/case) | [scripts/run_interpretation_benchmark.py](scripts/run_interpretation_benchmark.py) | 484 lines |
+| Interpretation eval cases | [tests/benchmark/interpretation_eval_cases.json](tests/benchmark/interpretation_eval_cases.json) | 25 cases |
 | Research agent structured-synthesis tests | [tests/unit/test_agent.py](tests/unit/test_agent.py) | — |
 | Chat / research API tests (provenance, structured response) | [tests/unit/test_chat_api.py](tests/unit/test_chat_api.py) | — |
 | Benchmark cases | [tests/benchmark/chat_eval_cases.json](tests/benchmark/chat_eval_cases.json) | 68 cases |
@@ -664,10 +657,11 @@ After this pass, the largest remaining items are methodological rather than arch
 - Aquifer distribution: Biscayne 15, Surficial 7, Floridan 6, Tamiami 5, Florida 4, Intermediate 4, Hawthorn 3.
 - USGS data date range across sampled CSVs: **1994-01-01 through 2026-04-05**; 40 canonical CSV files under [data/](data/), daily cadence.
 - Knowledge base: ChromaDB persistent store, `BAAI/bge-small-en-v1.5` embeddings (384-dim), `chroma.sqlite3` ≈ 156 MB.
-- Benchmark (deterministic layer): **68 / 68 passing**, overall score **1.000**, average citation coverage **1.000**, average claim-citation coverage **1.000**, average section-citation coverage **1.000**, average claim-verdict coverage **1.000**, average contradicted-claim rate **0.010**, average high-risk-claim rate **0.010**, median latency **1.528 s**, max latency **3.073 s**. Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`.
+- Benchmark (deterministic layer): **68 / 68 passing**, overall score **1.000**, average citation coverage **1.000**, average claim-citation coverage **1.000**, average section-citation coverage **1.000**, average claim-verdict coverage **1.000**, average contradicted-claim rate **0.010**, average high-risk-claim rate **0.010**, median latency **1.554 s**, max latency **3.247 s**. Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`.
+- Benchmark (interpretation / chart-explainability): **25 eval cases**, all evaluated in the latest deterministic run, overall score **0.943**, grounding coverage **1.000**, chart context coverage **1.000**, data reference coverage **1.000**, suggested-question coverage **1.000**, numeric match rate **1.000**, guardrail pass rate **1.000**, fake measurement policy fail rate **0.000**, median latency **1.066 s**, max latency **2.517 s**, threshold pass **true**. Levels: core, source, aquifer, followup, chart-meta, numeric, guardrail, hydro-context.
 - Benchmark (bounded live-agent smoke): **1 / 68 cases**, Ollama `llama3.2`, mode `deep_research`, overall score **0.200**, agent-routed rate **1.000**, structured-response coverage **1.000**, provenance coverage **1.000**, citation coverage **0.000**, claim-verdict coverage **0.000**, median/max latency **270.155 s**, threshold pass **false**.
 - Benchmark (chart-explainability LLM smoke): **1 case**, Ollama `llama3.2`, LLM synthesis coverage **1.000**, chart explainability coverage **1.000**, average elapsed **44.816 s**, threshold pass **true**.
-- Unit tests: **204 passing** as of 2026-04-16.
+- Unit tests: **219 passing** as of 2026-04-16.
 - Citation thresholds: `MIN_CLAIM_CITATION_COVERAGE = 0.90`, `MIN_SECTION_CITATION_COVERAGE = 0.90`.
 - Insights bullet cap: 5 (ordered: highlighted wells → cohort trend + risk → fastest decline → strongest rise → largest divergence).
 - Changepoint screen: two-segment OLS, min 12 monthly bins/side, improvement ≥ 20%, confidence labels `high ≥ 0.45 / moderate ≥ 0.30 / low ≥ 0.20`.
@@ -677,7 +671,7 @@ After this pass, the largest remaining items are methodological rather than arch
 - Provenance schema: `research_provenance_v1` with `code_commit`, `response_sha256`, `data_snapshot.sha256`, `config_hashes`, `methodology.trend_method = "monthly_OLS_with_screened_two_segment_changepoints"`, `methodology.cluster_method = "deterministic_standardized_kmeans"`, `methodology.external_covariates.included = false`.
 - Structured response schema: `evidence_response_v1` with `answer`, `claims[*] = {claim, claim_type, claim_ids, evidence_ids, confidence, is_interpretive, uncertainty}`, `limitations`, `recommended_followup`, `evidence`.
 - Web search: off by default (`GROUNDWATERGPT_ENABLE_WEB_SEARCH` env flag, default `False` at [api/routes/chat.py:363](api/routes/chat.py#L363)).
-- LLM agent timeout: class default **300 s** at [src/agent/research_agent.py:267](src/agent/research_agent.py#L267), deployed override **120 s** at [api/routes/chat.py:413-417](api/routes/chat.py#L413-L417). Deployed `max_depth=3`. Search budgets: `max(3, depth*2+2)` web, `max(6, depth*4)` KB, `max(10, depth*6)` API calls; with `depth=3` this is **8 web / 12 KB / 18 API**, plus `max_total_cost=6.0`.
+- LLM agent timeout (dormant — agent disabled in demo/eval): class default **300 s** at [src/agent/research_agent.py:267](src/agent/research_agent.py#L267), code-level override **120 s** at [api/routes/chat.py:565](api/routes/chat.py#L565). Search budgets at `max_depth=3`: **8 web / 12 KB / 18 API**, `max_total_cost=6.0`. These numbers have not been exercised at scale.
 - Frontend bundle: lazy-loaded `AgentChart` and `ResearchChartsPanel` via `React.lazy` + `Suspense`; backend unreachable detection surfaces as a banner via a ~15-line `backendStatus` observable.
 
 ---

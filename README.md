@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**EAGLE is an auditable groundwater research platform that turns public USGS records for 44 Florida monitoring wells into usable trend analysis, visual summaries, and reproducible outputs, with language models limited to evidence-linked assistance over a deterministic analysis pipeline.**
+**EAGLE is an auditable groundwater research platform that turns public USGS records for 44 Florida monitoring wells into usable trend analysis, visual summaries, and reproducible outputs, with evidence-guided AI limited to explanation and next-step guidance over a deterministic analysis pipeline.**
 
 ---
 
@@ -176,11 +176,13 @@ EAGLE follows **whitebox principles** — all AI-surfaced conclusions are tracea
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
-│                    KNOWLEDGE + SYNTHESIS LAYER              │
+│               KNOWLEDGE + EVIDENCE-GUIDED AI LAYER          │
 │  agent/knowledge.py (ChromaDB + Embeddings)                 │
 │  - Vector search (BAAI/bge-small-en-v1.5)                  │
+│  api/routes/_evidence_guided_ai.py                          │
+│  - Grounded next-goal and follow-up synthesis               │
 │  agent/research_agent.py                                    │
-│  - Evidence-linked LLM narration when available             │
+│  - Experimental research-agent path kept out of demo core   │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
