@@ -134,6 +134,19 @@ export async function sendInterpretationQuery(
   return parseApiResponse(response, 'Failed to interpret groundwater data')
 }
 
+export async function sendLearnerEvent(event) {
+  const response = await apiFetch(
+    `${API_BASE}/learner-events`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(event || {}),
+    },
+    'Failed to record learner event'
+  )
+  return parseApiResponse(response, 'Failed to record learner event')
+}
+
 // ---------------------------------------------------------------------------
 // Chart / Visualization endpoints (Session 8)
 // ---------------------------------------------------------------------------

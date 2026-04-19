@@ -3,6 +3,10 @@ import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
 import { fetchSites, fetchSiteData, fetchHeatmapData } from './api/client'
 
+const SHOWCASE_MODE = ['1', 'true', 'yes', 'on'].includes(
+  String(import.meta.env.VITE_GROUNDWATER_SHOWCASE_MODE || '').toLowerCase()
+)
+
 function App() {
   const [sites, setSites] = useState([])
   const [selectedSite, setSelectedSite] = useState(null)
@@ -11,7 +15,7 @@ function App() {
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [activeTab, setActiveTab] = useState('map')
+  const [activeTab, setActiveTab] = useState(SHOWCASE_MODE ? 'chat' : 'map')
   const [workbenchSeed, setWorkbenchSeed] = useState(null)
 
   // Fetch sites on mount

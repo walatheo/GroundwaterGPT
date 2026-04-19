@@ -31,3 +31,28 @@ test('renders inline comparison chart and downloads chart CSV', async ({ page })
   expect(csv).toContain('Miami-Dade G-5004')
   expect(csv).toContain('Cohort Average')
 })
+
+test('renders learner brief before analytical depth for chart interpretation', async ({ page }) => {
+  await page.goto('/')
+
+  await expect(page.getByRole('button', { name: /AI Assistant/i })).toBeVisible()
+  await page.getByRole('button', { name: /AI Assistant/i }).click()
+
+  const chatInput = page.getByPlaceholder(/Ask about groundwater, irrigation, crops/i)
+  await expect(chatInput).toBeVisible()
+  await chatInput.fill('Interpret the Estero groundwater chart for a sponsor.')
+  await chatInput.press('Enter')
+
+  await expect(page.getByText(/Learner Brief/i)).toBeVisible()
+  await expect(page.getByText(/Terms to Know/i)).toBeVisible()
+  await expect(page.getByText(/Common Misreadings/i)).toBeVisible()
+
+  const learnerBrief = page.getByText(/Learner Brief/i).first()
+  const analyticalDepth = page.getByText(/See the evidence behind this explanation/i).first()
+  await expect(learnerBrief).toBeVisible()
+  await expect(analyticalDepth).toBeVisible()
+
+  const learnerBox = await learnerBrief.boundingBox()
+  const depthBox = await analyticalDepth.boundingBox()
+  expect(learnerBox && depthBox && learnerBox.y).toBeLessThan(depthBox.y)
+})

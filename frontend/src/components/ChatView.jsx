@@ -1,7 +1,14 @@
 import { Suspense, lazy, useState, useEffect, useRef } from 'react'
 import { Send, Bot, User, Sparkles, MessageCircle, FlaskConical, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-import { backendStatus, sendChatMessage, sendInterpretationQuery, sendResearchQueryStreaming, fetchChatStatus } from '../api/client'
+import {
+  backendStatus,
+  sendChatMessage,
+  sendInterpretationQuery,
+  sendResearchQueryStreaming,
+  fetchChatStatus,
+  sendLearnerEvent,
+} from '../api/client'
 import ResearchSessionPanel from './ResearchSessionPanel'
 
 const AgentChart = lazy(() => import('./AgentChart'))
@@ -9,6 +16,11 @@ const ResearchChartsPanel = lazy(() => import('./ResearchChartsPanel'))
 const VISUAL_QUERY_RE = /plot|chart|trend|visuali[sz]e|graph/i
 const INTERPRETATION_QUERY_RE = /interpret|explain|read|meaning|what does|chart|trend|compare .*well|lee l-\d+|water supply|groundwater sources?|supply source|drinking water|aquifer.*supply|changes? in groundwater levels|30 years|which wells?|fastest|highlighted|cohort|diverge|proxy/i
 const CHART_FOLLOWUP_RE = /which wells?|fastest|highlighted|cohort|average|trend line|diverge|divergent|proxy|source|supply|compare|this chart|the chart|on the chart|using the chart|what should/i
+const ENABLE_LLM_INTERPRETATION = String(import.meta.env.VITE_ENABLE_LLM_INTERPRETATION || '').toLowerCase() === 'true'
+const SHOWCASE_MODE = ['1', 'true', 'yes', 'on'].includes(
+  String(import.meta.env.VITE_GROUNDWATER_SHOWCASE_MODE || '').toLowerCase()
+)
+const REQUEST_LLM_INTERPRETATION = SHOWCASE_MODE || ENABLE_LLM_INTERPRETATION
 
 /** Custom component overrides for ReactMarkdown (no @tailwindcss/typography). */
 const markdownComponents = {
@@ -80,6 +92,14 @@ function chartContextFromPayload(chart) {
   }
 }
 
+function llmGroundingLabel(grounding) {
+  if (!grounding?.has_llm_synthesis) return 'fast grounded mode'
+  const provider = grounding.llm_provider || ''
+  const model = grounding.llm_model || ''
+  const modelLabel = [provider, model].filter(Boolean).join(' ')
+  return modelLabel ? `grounded synthesis (${modelLabel})` : 'grounded synthesis'
+}
+
 function siteIdsFromMessage(message) {
   const ids = []
   const add = (value) => {
@@ -133,6 +153,8 @@ function turnHistoryFromMessages(messages) {
       wells,
       aquifer: message.aquiferInfo?.name || wells[0]?.aquifer || '',
       cohort_risk_level: message.cohortRisk || '',
+      question_intent: message.questionIntent || '',
+      direct_answer: String(message.directAnswer || '').slice(0, 500),
     }
   })
 }
@@ -204,6 +226,80 @@ function buildContextualFollowUps(msg) {
     .slice(0, 3)
 }
 
+function backendFollowUpGroups(msg) {
+  const rawGroups = msg.interpretationResponse?.follow_up_groups || msg.followUpGroups || []
+  if (!Array.isArray(rawGroups)) return []
+  return rawGroups
+    .map(group => {
+      const label = String(group?.label || '').trim()
+      const items = Array.isArray(group?.questions)
+        ? group.questions
+            .map(question => String(question || '').trim())
+            .filter(Boolean)
+            .slice(0, 2)
+        : []
+      if (!label || items.length === 0) return null
+      return { label, items }
+    })
+    .filter(Boolean)
+}
+
+function buildGroupedFollowUps(msg) {
+  const backendGroups = backendFollowUpGroups(msg)
+  if (backendGroups.length > 0) return backendGroups
+
+  const groups = [
+    { label: 'Understand this', items: [] },
+    { label: 'Compare wells', items: [] },
+    { label: 'Check the caveat', items: [] },
+    { label: 'What would strengthen this interpretation?', items: [] },
+  ]
+  const pushToGroup = (label, question) => {
+    const group = groups.find(item => item.label === label)
+    if (group && question && !group.items.includes(question) && group.items.length < 2) {
+      group.items.push(question)
+    }
+  }
+
+  for (const question of buildContextualFollowUps(msg)) {
+    const lower = question.toLowerCase()
+    if (/compare|diverge|shallow|deep/.test(lower)) {
+      pushToGroup('Compare wells', question)
+    } else if (/caveat|outside data|management claim|test a cause|confirm|strengthen/.test(lower)) {
+      pushToGroup('Check the caveat', question)
+    } else if (/what would|strengthen/.test(lower)) {
+      pushToGroup('What would strengthen this interpretation?', question)
+    } else {
+      pushToGroup('Understand this', question)
+    }
+  }
+
+  if (groups.find(group => group.label === 'What would strengthen this interpretation?')?.items.length === 0) {
+    pushToGroup('What would strengthen this interpretation?', 'What outside data would strengthen this interpretation?')
+  }
+  return groups.filter(group => group.items.length > 0)
+}
+
+function resolveNextGoal(msg) {
+  return String(
+    msg.interpretationResponse?.next_goal
+      || msg.nextGoal
+      || ''
+  ).trim()
+}
+
+function numericSourceLabel(source) {
+  const labels = {
+    annual_change_ft_yr: 'annual rate',
+    mean_annual_change_ft_yr: 'cohort mean annual rate',
+    net_change_ft: 'net change',
+    latest_depth_to_water_ft: 'latest depth-to-water',
+    well_depth_ft: 'well depth',
+    record_years: 'record length',
+  }
+  return labels[source] || source
+}
+
 function formatSigned(value, digits = 3) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return 'n/a'
@@ -227,6 +323,7 @@ function buildAnalyticalDepth(msg) {
   const groundwaterConcepts = Array.isArray(interpretation.groundwater_concepts)
     ? interpretation.groundwater_concepts
     : []
+  const meaningBrief = interpretation.meaning_brief || null
   const interpretiveFindings = Array.isArray(interpretation.interpretive_findings)
     ? interpretation.interpretive_findings
     : []
@@ -245,15 +342,31 @@ function buildAnalyticalDepth(msg) {
   const limits = Array.isArray(interpretation.limits) ? interpretation.limits : []
   const aquiferSummaries = Array.isArray(details.aquifer_summaries)
     ? details.aquifer_summaries
+    : Array.isArray(interpretation.aquifer_summaries)
+      ? interpretation.aquifer_summaries
     : []
-  const supplyUnits = details.supply_interpretation?.supply_units || []
+  const supplyUnits = details.supply_interpretation?.supply_units || interpretation.supply_interpretation?.supply_units || []
   const guardrailFlags = interpretation.guardrail_flags || []
+  const learnerBrief = interpretation.learner_brief || null
+  const termsToKnow = Array.isArray(interpretation.terms_to_know)
+    ? interpretation.terms_to_know
+    : []
+  const misconceptionsToAvoid = Array.isArray(interpretation.misconceptions_to_avoid)
+    ? interpretation.misconceptions_to_avoid
+    : []
+  const reasoningTrace = Array.isArray(interpretation.reasoning_trace)
+    ? interpretation.reasoning_trace
+    : Array.isArray(details.reasoning_trace)
+      ? details.reasoning_trace
+    : []
+  const reasoningSource = interpretation.reasoning_source || details.reasoning_source || 'deterministic'
 
   if (
     numericClaims.length === 0 &&
     observations.length === 0 &&
     answerRelevantObservations.length === 0 &&
     groundwaterConcepts.length === 0 &&
+    !meaningBrief &&
     interpretiveFindings.length === 0 &&
     possibleDrivers.length === 0 &&
     evidenceNeeded.length === 0 &&
@@ -263,7 +376,11 @@ function buildAnalyticalDepth(msg) {
     aquiferSummaries.length === 0 &&
     supplyUnits.length === 0 &&
     !comparisonGroups &&
-    !msg.cohortRisk
+    !msg.cohortRisk &&
+    !learnerBrief &&
+    termsToKnow.length === 0 &&
+    misconceptionsToAvoid.length === 0 &&
+    reasoningTrace.length === 0
   ) {
     return null
   }
@@ -275,6 +392,7 @@ function buildAnalyticalDepth(msg) {
     comparisonGroups,
     largestGap,
     groundwaterConcepts,
+    meaningBrief,
     interpretiveFindings,
     possibleDrivers,
     evidenceNeeded,
@@ -284,9 +402,18 @@ function buildAnalyticalDepth(msg) {
     aquiferSummaries,
     supplyUnits,
     guardrailFlags,
+    learnerBrief,
+    termsToKnow,
+    misconceptionsToAvoid,
+    reasoningTrace,
+    reasoningSource,
     cohortRisk: msg.cohortRisk || details.risk_level || null,
     grounding: interpretation.grounding_status || null,
   }
+}
+
+function makeMessageId() {
+  return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
 const EXAMPLE_QUESTIONS = [
@@ -299,6 +426,7 @@ const EXAMPLE_QUESTIONS = [
 export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = false }) {
   const [messages, setMessages] = useState([
     {
+      id: makeMessageId(),
       role: 'assistant',
       content: "Welcome to Florida Aquifer Analysis. I can answer groundwater questions with USGS-backed wells, charts, citations, and grounded interpretation. Ask about a location, aquifer, well, trend, or supply risk.",
       sources: [],
@@ -312,6 +440,16 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
   const [activeChartContext, setActiveChartContext] = useState(null)
   const messagesEndRef = useRef(null)
   const hasMountedRef = useRef(false)
+  const learnerImpressionRef = useRef(new Set())
+  const learnerFeedbackRef = useRef(new Set())
+
+  const logLearnerEvent = async (event) => {
+    try {
+      await sendLearnerEvent(event)
+    } catch (error) {
+      console.warn('Learner event failed', error)
+    }
+  }
 
   // In full-screen chat the transcript is the single scroll owner; otherwise use page scroll.
   useEffect(() => {
@@ -333,13 +471,31 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
 
   useEffect(() => backendStatus.subscribe(setBackendState), [])
 
+  useEffect(() => {
+    messages.forEach(message => {
+      const learnerBrief = message.interpretationResponse?.learner_brief
+      if (!learnerBrief || !message.id || learnerImpressionRef.current.has(message.id)) return
+      learnerImpressionRef.current.add(message.id)
+      logLearnerEvent({
+        event_type: 'learner_brief_shown',
+        message_id: message.id,
+        question: message.questionAsked || '',
+        chart_id: message.chartContextRef?.chart_id || message.chart?.title || '',
+        details: {
+          has_terms_to_know: Boolean(message.interpretationResponse?.terms_to_know?.length),
+          has_misconceptions: Boolean(message.interpretationResponse?.misconceptions_to_avoid?.length),
+        },
+      })
+    })
+  }, [messages])
+
   const sendMessage = async (text = input, { chartContext, forceInterpretation = false } = {}) => {
     if (!text.trim()) return
 
     const priorMessages = messages
     const requestChartContext = chartContext || activeChartContext || null
     const turnHistory = turnHistoryFromMessages(priorMessages)
-    const userMessage = { role: 'user', content: text }
+    const userMessage = { id: makeMessageId(), role: 'user', content: text }
     setMessages(prev => [...prev, userMessage])
     setInput('')
     setLoading(true)
@@ -353,6 +509,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
         // place as each progress event arrives from the backend.
         const PROGRESS_ID = Date.now() // stable key to find the bubble later
         setMessages(prev => [...prev, {
+          id: makeMessageId(),
           role: 'assistant',
           content: 'Starting deep research...',
           isProgress: true,
@@ -402,9 +559,11 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
             ? Math.round(data.elapsed_seconds)
             : 0
           return [...filtered, {
+            id: makeMessageId(),
             role: 'assistant',
             content: answerBrief || reportText,
             rawContent: answerBrief && reportText && answerBrief.trim() !== reportText.trim() ? reportText : '',
+            questionAsked: text,
             chart,
             chartContextRef,
             context: `Depth reached: ${data.depth_reached ?? 0} | Elapsed: ${elapsedSeconds}s`,
@@ -430,6 +589,10 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
             interpretationDetails: data.interpretation_details || null,
             hallucinationGuardrail: data.hallucination_guardrail || null,
             citationIntegrity: data.citation_integrity || null,
+            nextGoal: data.next_goal || '',
+            followUpGroups: data.follow_up_groups || [],
+            followUpQuestions: data.follow_up_questions || [],
+            progressionSource: data.progression_source || '',
             requestedVisualization: VISUAL_QUERY_RE.test(text) && data.mode !== 'chart_interpreter',
             mode: data.mode,
           }]
@@ -437,14 +600,15 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
       } else {
         // Quick chat mode
         const wantsInterpretation = (
-          forceInterpretation
+          SHOWCASE_MODE
+          || forceInterpretation
           || INTERPRETATION_QUERY_RE.test(text)
           || Boolean(requestChartContext && CHART_FOLLOWUP_RE.test(text))
         )
         const data = wantsInterpretation
           ? await sendInterpretationQuery(text, {
               audience: 'general',
-              useLlm: false,
+              useLlm: REQUEST_LLM_INTERPRETATION,
               chartContext: requestChartContext,
               turnHistory,
             })
@@ -459,9 +623,11 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
         if (chartContextRef) setActiveChartContext(chartContextRef)
 
         setMessages(prev => [...prev, {
+          id: makeMessageId(),
           role: 'assistant',
           content: answerBrief || replyText,
           rawContent: answerBrief && replyText && answerBrief.trim() !== replyText.trim() ? replyText : '',
+          questionAsked: text,
           chart,
           chartContextRef,
           context: data.context,
@@ -482,6 +648,14 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
           hallucinationGuardrail: data.hallucination_guardrail || null,
           citationIntegrity: data.citation_integrity || null,
           interpretationResponse: data.interpretation_response || null,
+          nextGoal: data.next_goal || (data.interpretation_response || {}).next_goal || '',
+          followUpGroups: data.follow_up_groups || (data.interpretation_response || {}).follow_up_groups || [],
+          followUpQuestions: data.follow_up_questions || (data.interpretation_response || {}).follow_up_questions || [],
+          progressionSource: data.progression_source || (data.interpretation_response || {}).progression_source || '',
+          questionIntent: (data.interpretation_response || {}).question_intent || '',
+          directAnswer: (data.interpretation_response || {}).direct_answer
+            || ((data.interpretation_response || {}).learner_brief || {}).direct_answer
+            || '',
           requestedVisualization: (
             VISUAL_QUERY_RE.test(text)
             && data.mode !== 'chart_interpreter'
@@ -535,18 +709,29 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
             </div>
           </div>
 
-          {/* Sponsor demo mode: keep the visible path on reliable grounded chat. */}
+          {/* Showcase keeps the user on the grounded interpretation surface. */}
           <div className="flex overflow-hidden rounded-xl bg-white/10 text-sm ring-1 ring-white/10">
             <div className="flex items-center gap-1 bg-white/20 px-3 py-1.5 font-semibold">
-              <MessageCircle className="w-3.5 h-3.5" /> Chat
+              <MessageCircle className="w-3.5 h-3.5" /> {SHOWCASE_MODE ? 'LLM Path' : 'Chat'}
             </div>
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded-full bg-white/10 px-3 py-1.5 text-teal-50/85">
-            Fast grounded answers for sponsor-ready groundwater prompts
-          </span>
+          {SHOWCASE_MODE ? (
+            <span className="rounded-full bg-white/10 px-3 py-1.5 text-teal-50/85">
+              LLM interpretation path active for user testing with deterministic groundwater evidence underneath
+            </span>
+          ) : (
+            <span className="rounded-full bg-white/10 px-3 py-1.5 text-teal-50/85">
+              Fast grounded answers for sponsor-ready groundwater prompts
+            </span>
+          )}
+          {REQUEST_LLM_INTERPRETATION && (
+            <span className="rounded-full bg-teal-400/15 px-3 py-1.5 text-teal-100">
+              Structured LLM synthesis requested; deterministic fallback stays in place if the model is unavailable
+            </span>
+          )}
           {agentStatus?.research_available === false && (
             <span className="rounded-full bg-white/10 px-3 py-1.5 text-teal-50/75">
               Deep research remains backend-only future work
@@ -648,49 +833,171 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
               {msg.interpretationResponse && (
                 <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                   <div className="text-xs font-medium text-emerald-800">
-                    Interpretation Brief
+                    Learner Brief
                   </div>
-                  {msg.interpretationResponse.interpretation && (
-                    msg.interpretationResponse.interpretation !== msg.content && (
-                      <p className="mt-1 text-sm leading-relaxed text-slate-800">
-                        {msg.interpretationResponse.interpretation}
-                      </p>
+                  {msg.interpretationResponse.learner_brief ? (
+                    <div className="mt-2 space-y-2 text-sm text-slate-800">
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-800">Answer</p>
+                        <p className="mt-1 leading-relaxed">{msg.interpretationResponse.learner_brief.direct_answer}</p>
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-3">
+                        <div className="rounded-md bg-white/75 p-2">
+                          <p className="text-[11px] font-medium text-emerald-800">What to notice</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-700">{msg.interpretationResponse.learner_brief.what_to_notice}</p>
+                        </div>
+                        <div className="rounded-md bg-white/75 p-2">
+                          <p className="text-[11px] font-medium text-emerald-800">Why it matters</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-700">{msg.interpretationResponse.learner_brief.why_it_matters}</p>
+                        </div>
+                        <div className="rounded-md bg-white/75 p-2">
+                          <p className="text-[11px] font-medium text-emerald-800">Important limit</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-700">{msg.interpretationResponse.learner_brief.important_limit}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    msg.interpretationResponse.interpretation && (
+                      msg.interpretationResponse.interpretation !== msg.content && (
+                        <p className="mt-1 text-sm leading-relaxed text-slate-800">
+                          {msg.interpretationResponse.interpretation}
+                        </p>
+                      )
                     )
                   )}
-                  {Array.isArray(msg.interpretationResponse.key_observations) && msg.interpretationResponse.key_observations.length > 0 && (
-                    <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-700">
-                      {msg.interpretationResponse.key_observations.slice(0, 3).map((item, i) => (
-                        <li key={i}>{item}</li>
-                      ))}
-                    </ul>
+
+                  {Array.isArray(msg.interpretationResponse.terms_to_know) && msg.interpretationResponse.terms_to_know.length > 0 && (
+                    <details
+                      className="mt-3 rounded-md border border-emerald-200 bg-white/80 p-2"
+                      onToggle={event => {
+                        if (event.currentTarget.open) {
+                          logLearnerEvent({
+                            event_type: 'terms_to_know_expanded',
+                            message_id: msg.id,
+                            question: msg.questionAsked || '',
+                            chart_id: msg.chartContextRef?.chart_id || msg.chart?.title || '',
+                            details: { count: msg.interpretationResponse.terms_to_know.length },
+                          })
+                        }
+                      }}
+                    >
+                      <summary className="cursor-pointer text-[11px] font-medium text-emerald-800">Terms to Know</summary>
+                      <div className="mt-2 space-y-2">
+                        {msg.interpretationResponse.terms_to_know.slice(0, 4).map((term, i) => (
+                          <button
+                            key={`${term.term}-${i}`}
+                            type="button"
+                            onClick={() => logLearnerEvent({
+                              event_type: 'terms_to_know_clicked',
+                              message_id: msg.id,
+                              question: msg.questionAsked || '',
+                              chart_id: msg.chartContextRef?.chart_id || msg.chart?.title || '',
+                              details: { term: term.term },
+                            })}
+                            className="block w-full rounded-md border border-emerald-100 bg-white px-2 py-2 text-left"
+                          >
+                            <p className="text-xs font-medium text-slate-800">{term.term}</p>
+                            <p className="mt-1 text-[11px] leading-5 text-slate-600">{term.plain_definition}</p>
+                            <p className="mt-1 text-[11px] leading-5 text-slate-500">{term.why_it_matters_here}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </details>
                   )}
+
+                  {Array.isArray(msg.interpretationResponse.misconceptions_to_avoid) && msg.interpretationResponse.misconceptions_to_avoid.length > 0 && (
+                    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2">
+                      <p className="text-[11px] font-medium text-amber-800">Common Misreadings</p>
+                      <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-slate-700">
+                        {msg.interpretationResponse.misconceptions_to_avoid.slice(0, 4).map((item, i) => (
+                          <li key={i}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {msg.interpretationResponse.learner_brief?.next_best_question && (
+                    <div className="mt-3 rounded-md border border-emerald-200 bg-white/80 p-2">
+                      <p className="text-[11px] font-medium text-emerald-800">Next best question</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-700">{msg.interpretationResponse.learner_brief.next_best_question}</p>
+                    </div>
+                  )}
+
+                  {resolveNextGoal(msg) && (
+                    <div className="mt-3 rounded-md border border-emerald-200 bg-white/80 p-2">
+                      <p className="text-[11px] font-medium text-emerald-800">Next goal</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-700">{resolveNextGoal(msg)}</p>
+                    </div>
+                  )}
+
                   {(() => {
-                    const followUps = buildContextualFollowUps(msg)
-                    if (followUps.length === 0) return null
+                    const followUpGroups = buildGroupedFollowUps(msg)
+                    if (followUpGroups.length === 0) return null
                     return (
                       <div className="mt-2 border-t border-emerald-200 pt-2">
                         <p className="text-[11px] font-medium text-emerald-800">Ask Next</p>
-                        <div className="mt-1 flex flex-wrap gap-1.5">
-                          {followUps.map((item, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => sendMessage(item, {
-                                chartContext: msg.chartContextRef || chartContextFromMessage(msg),
-                                forceInterpretation: true,
-                              })}
-                              className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-left text-[11px] text-emerald-900 hover:bg-emerald-100"
-                            >
-                              {item}
-                            </button>
+                        <div className="mt-2 space-y-2">
+                          {followUpGroups.map(group => (
+                            <div key={group.label}>
+                              <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700">{group.label}</p>
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {group.items.map((item, i) => (
+                                  <button
+                                    key={`${group.label}-${i}`}
+                                    type="button"
+                                    onClick={() => {
+                                      logLearnerEvent({
+                                        event_type: 'ask_next_clicked',
+                                        message_id: msg.id,
+                                        question: msg.questionAsked || '',
+                                        chart_id: msg.chartContextRef?.chart_id || msg.chart?.title || '',
+                                        details: { group: group.label, follow_up: item },
+                                      })
+                                      sendMessage(item, {
+                                        chartContext: msg.chartContextRef || chartContextFromMessage(msg),
+                                        forceInterpretation: true,
+                                      })
+                                    }}
+                                    className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-left text-[11px] text-emerald-900 hover:bg-emerald-100"
+                                  >
+                                    {item}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
                           ))}
                         </div>
                       </div>
                     )
                   })()}
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-emerald-200 pt-2">
+                    <span className="text-[11px] font-medium text-emerald-800">This helped me understand the chart</span>
+                    {['yes', 'no'].map(choice => (
+                      <button
+                        key={choice}
+                        type="button"
+                        onClick={() => {
+                          const key = `${msg.id}:${choice}`
+                          if (learnerFeedbackRef.current.has(key)) return
+                          learnerFeedbackRef.current.add(key)
+                          logLearnerEvent({
+                            event_type: 'learner_feedback',
+                            message_id: msg.id,
+                            question: msg.questionAsked || '',
+                            chart_id: msg.chartContextRef?.chart_id || msg.chart?.title || '',
+                            details: { helped: choice === 'yes' },
+                          })
+                        }}
+                        className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-[11px] text-emerald-900 hover:bg-emerald-100"
+                      >
+                        {choice}
+                      </button>
+                    ))}
+                  </div>
                   {msg.interpretationResponse.grounding_status && (
                     <div className="mt-2 text-[10px] text-slate-500">
-                      USGS data: {msg.interpretationResponse.grounding_status.uses_usgs_data ? 'yes' : 'no'} · Chart context: {msg.interpretationResponse.grounding_status.uses_chart_context ? 'yes' : 'no'} · LLM: {msg.interpretationResponse.grounding_status.has_llm_synthesis ? 'grounded synthesis' : 'fast grounded mode'}
+                      USGS data: {msg.interpretationResponse.grounding_status.uses_usgs_data ? 'yes' : 'no'} · Chart context: {msg.interpretationResponse.grounding_status.uses_chart_context ? 'yes' : 'no'} · LLM: {llmGroundingLabel(msg.interpretationResponse.grounding_status)}
                     </div>
                   )}
                 </div>
@@ -700,14 +1007,31 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
                 const depth = buildAnalyticalDepth(msg)
                 if (!depth) return null
                 return (
-                  <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
+                  <details
+                    className="mt-3 rounded-lg border border-slate-200 bg-white p-3"
+                    onToggle={event => {
+                      if (event.currentTarget.open) {
+                        logLearnerEvent({
+                          event_type: 'analytical_depth_expanded',
+                          message_id: msg.id,
+                          question: msg.questionAsked || '',
+                          chart_id: msg.chartContextRef?.chart_id || msg.chart?.title || '',
+                          details: { cohort_risk: depth.cohortRisk || null },
+                        })
+                      }
+                    }}
+                  >
+                    <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Analytical Depth
+                          See the evidence behind this explanation
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
-                          Deterministic signals, limits, and support checks behind this answer.
+                          {(depth.reasoningSource === 'grounded_llm' || depth.reasoningSource === 'grounded_claude')
+                            ? 'Grounded reasoning, deterministic signals, and support checks behind this answer.'
+                            : depth.reasoningSource === 'llm_polish'
+                              ? 'Deterministic signals with an LLM-polished explanation and support checks.'
+                              : 'Deterministic signals, limits, and support checks behind this answer.'}
                         </p>
                       </div>
                       {depth.cohortRisk && (
@@ -719,7 +1043,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
                           {depth.cohortRisk} risk
                         </span>
                       )}
-                    </div>
+                    </summary>
 
                     {depth.numericClaims.length > 0 && (
                       <div className="mt-3 grid gap-2 md:grid-cols-3">
@@ -729,9 +1053,44 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
                             <p className="mt-1 text-sm font-semibold text-slate-900">
                               {formatSigned(claim.value)} {claim.unit}
                             </p>
-                            <p className="mt-0.5 truncate text-[10px] text-slate-400">{claim.source}</p>
+                            <p className="mt-0.5 truncate text-[10px] text-slate-400">{numericSourceLabel(claim.source)}</p>
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {depth.reasoningTrace.length > 0 && (
+                      <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-medium text-sky-800">How the AI reached this answer</p>
+                          <span className="rounded-md bg-white px-2 py-1 text-[10px] font-medium text-sky-900">
+                            {(depth.reasoningSource === 'grounded_llm' || depth.reasoningSource === 'grounded_claude')
+                              ? 'Grounded AI reasoning'
+                              : 'Reasoning trace'}
+                          </span>
+                        </div>
+                        <div className="mt-2 space-y-2">
+                          {depth.reasoningTrace.slice(0, 6).map((step, i) => (
+                            <div key={`${step.step_label || 'step'}-${i}`} className="rounded-md bg-white/80 p-2 text-xs">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="font-medium text-slate-800">{step.step_label || `Step ${i + 1}`}</p>
+                                <span className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
+                                  step.confidence === 'low' ? 'bg-amber-100 text-amber-800'
+                                  : step.confidence === 'medium' ? 'bg-sky-100 text-sky-800'
+                                  : 'bg-emerald-100 text-emerald-800'
+                                }`}>
+                                  {step.confidence || 'grounded'}
+                                </span>
+                              </div>
+                              {step.observation && (
+                                <p className="mt-1 leading-5 text-slate-700">{step.observation}</p>
+                              )}
+                              {step.inference && (
+                                <p className="mt-1 leading-5 text-slate-600 italic">{step.inference}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -791,10 +1150,36 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
                       </div>
                     )}
 
+                    {depth.meaningBrief && (
+                      <div className="mt-3 rounded-md border border-emerald-100 bg-emerald-50 p-3">
+                        <p className="text-[11px] font-medium text-emerald-800">What this means</p>
+                        <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">
+                          {depth.meaningBrief.headline}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-slate-700">
+                          {depth.meaningBrief.plain_language}
+                        </p>
+                        <div className="mt-2 grid gap-2 md:grid-cols-3">
+                          <div>
+                            <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700">Why it matters</p>
+                            <p className="mt-0.5 text-[11px] leading-5 text-slate-700">{depth.meaningBrief.why_it_matters}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700">How to read it</p>
+                            <p className="mt-0.5 text-[11px] leading-5 text-slate-700">{depth.meaningBrief.how_to_read}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700">Next check</p>
+                            <p className="mt-0.5 text-[11px] leading-5 text-slate-700">{depth.meaningBrief.next_best_check}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {(depth.interpretiveFindings.length > 0 || depth.possibleDrivers.length > 0 || depth.evidenceNeeded.length > 0) && (
                       <div className="mt-3 grid gap-3 md:grid-cols-3">
                         <div className="rounded-md bg-emerald-50 p-2">
-                          <p className="text-[11px] font-medium text-emerald-800">What this means</p>
+                          <p className="text-[11px] font-medium text-emerald-800">Hydro meaning</p>
                           <p className="mt-1 text-xs leading-5 text-slate-700">
                             {depth.interpretiveFindings.find(item => item.label === 'Hydrogeologic meaning')?.text
                               || depth.managementImplications[0]
@@ -876,7 +1261,7 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
                         Chart context: {depth.grounding.uses_chart_context ? 'yes' : 'no'} · USGS data: {depth.grounding.uses_usgs_data ? 'yes' : 'no'} · Invented measurements: {depth.grounding.invented_measurements_allowed ? 'allowed' : 'blocked'}
                       </div>
                     )}
-                  </div>
+                  </details>
                 )
               })()}
 
