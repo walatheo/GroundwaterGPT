@@ -1,0 +1,121 @@
+{
+  "description": "User-acceptance walkthrough — runs each case against /api/chat via TestClient, verifies invariants on the response. Goal: catch regressions in the user-visible product, not internal contract details. Update this file as new question categories surface during demos.",
+  "cases": [
+    {
+      "id": "ew_g3336",
+      "category": "exact_well",
+      "question": "tell me about G-3336",
+      "invariants": {
+        "route_mode": "exact_well",
+        "grounding_status": ["grounded", "partial"],
+        "answer_type": ["data_answer", "interpretation_answer"],
+        "must_mention": ["G-3336"],
+        "min_sources": 1,
+        "requires_chart": true,
+        "requires_wells": true
+      }
+    },
+    {
+      "id": "aq_biscayne",
+      "category": "aquifer_cohort",
+      "question": "how is the Biscayne aquifer?",
+      "invariants": {
+        "route_mode": "cohort",
+        "grounding_status": ["grounded", "partial"],
+        "must_mention_one_of": ["Biscayne", "biscayne"],
+        "min_sources": 1,
+        "requires_chart": true,
+        "requires_wells": true
+      }
+    },
+    {
+      "id": "lc_estero",
+      "category": "location_cohort",
+      "question": "wells near Estero",
+      "invariants": {
+        "route_mode": "cohort",
+        "grounding_status": ["grounded", "partial"],
+        "must_mention_one_of": ["Estero", "estero"],
+        "min_sources": 1,
+        "requires_wells": true
+      }
+    },
+    {
+      "id": "ml_estero_naples",
+      "category": "multi_location_compare",
+      "question": "compare Estero and Naples",
+      "invariants": {
+        "route_mode": "cohort",
+        "must_mention_one_of": ["Estero", "estero"],
+        "min_sources": 1,
+        "requires_wells": true
+      }
+    },
+    {
+      "id": "nw_county",
+      "category": "network_wide",
+      "question": "which county has the most wells?",
+      "invariants": {
+        "route_mode": ["network", "fallback"],
+        "min_sources": 0
+      }
+    },
+    {
+      "id": "kb_irrigation",
+      "category": "kb_topic",
+      "question": "how does irrigation affect groundwater?",
+      "invariants": {
+        "route_mode": ["fallback", "research"],
+        "must_mention_one_of": ["irrigation", "groundwater"]
+      }
+    },
+    {
+      "id": "un_antarctica",
+      "category": "refusal_geography",
+      "question": "how is groundwater in Antarctica?",
+      "invariants": {
+        "route_mode": "unsupported",
+        "grounding_status": "refused",
+        "answer_type": "insufficient_evidence",
+        "must_mention_one_of": ["scope", "Florida", "outside", "cannot"],
+        "must_not_mention": ["G-3336", "Biscayne"],
+        "max_sources": 0,
+        "requires_chart": false
+      }
+    },
+    {
+      "id": "un_future_2099",
+      "category": "refusal_future",
+      "question": "predict water levels in 2099",
+      "invariants": {
+        "route_mode": "unsupported",
+        "grounding_status": "refused",
+        "answer_type": "insufficient_evidence",
+        "must_mention_one_of": ["forecast", "predict", "historical", "cannot", "observation"],
+        "max_sources": 0
+      }
+    },
+    {
+      "id": "un_future_drill",
+      "category": "refusal_future",
+      "question": "should I drill a well here?",
+      "invariants": {
+        "route_mode": "unsupported",
+        "grounding_status": "refused",
+        "answer_type": "insufficient_evidence",
+        "max_sources": 0
+      }
+    },
+    {
+      "id": "hist_estero_2015",
+      "category": "historical_year",
+      "question": "What happened to groundwater in Estero in 2015?",
+      "invariants": {
+        "route_mode": ["cohort", "research", "fallback"],
+        "grounding_status": ["grounded", "partial", "insufficient"],
+        "must_mention_one_of": ["Estero", "estero"],
+        "answer_type": ["data_answer", "interpretation_answer", "insufficient_evidence"]
+      }
+    }
+  ]
+}
