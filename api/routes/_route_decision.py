@@ -107,6 +107,23 @@ _PROXY_SUPPLY = re.compile(
 # chart context). We ask the user to narrow, rather than inventing a subject.
 _DEICTIC_TOKENS = re.compile(r"\b(?:there|here|that|this|it)\b", re.IGNORECASE)
 
+# Intents that demand grounded evidence to answer honestly. If the resolver
+# reached the bottom of the chain without producing an entity match, these
+# verbs imply we'd be inventing the comparison/ranking/cause — flip to
+# insufficient instead of letting the KB or research fallback paper over it.
+# Chart interpretation is included only when the user explicitly says so;
+# generic "what does this mean?" is left to chart-context detection upstream.
+_NEEDS_GROUNDING_INTENT = re.compile(
+    r"\b(?:"
+    r"compare|comparison|contrast|differ(?:ence)?|"  # comparison
+    r"why\s+(?:is|are|did|do|does|has|have)\b|caused?\s+by|due\s+to|"  # causation
+    r"rank(?:ing|ed)?|top\s+\d+|"  # ranking
+    r"interpret\s+(?:the|this)\s+\w+|"  # explicit interpretation ask
+    r"explain\s+(?:the|this)\s+(?:chart|trend|pattern|decline|rise)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _detect_ranking_ask(question: str) -> Optional[str]:
     """Return ``'well_rate'`` / ``'aquifer_stress'`` when the question is a ranking ask."""
@@ -132,6 +149,16 @@ def _is_ambiguous_deictic(question: str) -> bool:
     if not q or len(q) > 160:
         return False
     return bool(_DEICTIC_TOKENS.search(q))
+
+
+def _needs_grounded_path(question: str) -> bool:
+    """True when the question's intent verbs demand grounded evidence to answer.
+
+    Called only after every entity-based route has missed: at this point the
+    KB / research fallback would have to invent the comparison, ranking, or
+    cause. We'd rather say "insufficient" honestly.
+    """
+    return bool(_NEEDS_GROUNDING_INTENT.search(question or ""))
 
 
 def _mentions_future_year(question: str) -> bool:
@@ -455,7 +482,21 @@ def resolve_route(
             hints=hints,
         )
 
-    # --- KB topic fallback ---
+    # --- Ungrounded ranking / comparison / causation intent ---
+    # We're past every entity route. If the verb still implies we'd need
+    # grounded evidence (compare, why, rank, interpret), the honest move is
+    # to admit insufficiency rather than fall back to KB blurbs that imply
+    # we did the comparison.
+    if _needs_grounded_path(user_query):
+        return RouteDecision(
+            route_mode=RouteMode.UNSUPPORTED,
+            internal_mode="fallback",
+            intent="ungrounded_intent",
+            unsupported_reason="no_evidence",
+            hints=hints,
+        )
+
+    # --- KB topic fallback (basics / orientation only) ---
     kb_matches = detectors["kb_topic_matches"](user_query)
     if kb_matches:
         return RouteDecision(
