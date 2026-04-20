@@ -3,6 +3,7 @@ import TimeSeriesChart from './TimeSeriesChart'
 import HeatmapChart from './HeatmapChart'
 import AnalysisView from './AnalysisView'
 import ChatView from './ChatView'
+import ResearchWorkbenchView from './ResearchWorkbenchView'
 import StatsCard from './StatsCard'
 import { TrendingUp, TrendingDown, Minus, Droplet, Database, Activity } from 'lucide-react'
 
@@ -62,6 +63,11 @@ export default function Dashboard({
       eyebrow: 'Groundwater Assistant',
       title: 'Ask groundwater questions in plain language',
       description: 'Quick chat handles targeted groundwater prompts, and research mode adds deeper synthesis with citations.',
+    },
+    research_workbench: {
+      eyebrow: 'Research Workbench',
+      title: 'Side-by-side well comparison',
+      description: 'Pick wells, align a date window, and compare trends, ranges, and recent records next to each other.',
     },
   }
 
@@ -203,10 +209,13 @@ export default function Dashboard({
         {activeTab === 'analysis' && (
           <AnalysisView data={data} site={site} stats={stats} />
         )}
+        {activeTab === 'research_workbench' && (
+          <ResearchWorkbenchView sites={sites} selectedSite={site} />
+        )}
       </div>
 
       {/* No site selected message */}
-      {!site && activeTab !== 'map' && (
+      {!site && activeTab !== 'map' && activeTab !== 'research_workbench' && (
         <div className="flex h-96 items-center justify-center text-slate-400">
           <div className="text-center">
             <Droplet className="w-12 h-12 mx-auto mb-4 opacity-50" />

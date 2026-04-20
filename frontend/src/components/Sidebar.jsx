@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Waves,
   ArrowRight,
+  FlaskConical,
 } from 'lucide-react'
 
 const navItems = [
@@ -15,6 +16,7 @@ const navItems = [
   { id: 'heatmap', label: 'Heatmap', icon: BarChart3 },
   { id: 'analysis', label: 'Analysis', icon: Activity },
   { id: 'chat', label: 'AI Assistant', icon: MessageSquare, badge: 'Beta' },
+  { id: 'research_workbench', label: 'Research Workbench', icon: FlaskConical },
 ]
 
 export default function Sidebar({
@@ -104,6 +106,7 @@ export default function Sidebar({
                   {item.id === 'timeseries' && 'Historical water-level trajectories'}
                   {item.id === 'heatmap' && 'Seasonal intensity and recurrence'}
                   {item.id === 'analysis' && 'Derived trends, ranges, and summaries'}
+                  {item.id === 'research_workbench' && 'Side-by-side well comparison'}
                 </span>
               </span>
               {item.badge && (

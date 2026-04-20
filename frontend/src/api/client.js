@@ -327,3 +327,16 @@ export async function sendResearchQueryStreaming(
 
   return finalResult
 }
+
+// ---------------------------------------------------------------------------
+// Research workbench (side-by-side well comparison)
+// ---------------------------------------------------------------------------
+
+export async function runResearchWorkbench(payload) {
+  const response = await apiFetch(`${API_BASE}/research/workbench`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }, 'Failed to build research workbench')
+  return parseApiResponse(response, 'Failed to build research workbench')
+}
