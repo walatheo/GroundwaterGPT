@@ -16,6 +16,7 @@ import json
 import logging
 import math
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -285,6 +286,8 @@ def _bearing_label(lat1: float, lng1: float, lat2: float, lng2: float) -> str:
 # ---------------------------------------------------------------------------
 
 _SITE_SERIES_CACHE: dict[str, Optional[pd.DataFrame]] = {}
+_SITE_RECORD_CACHE: dict[str, dict] = {}
+_ALL_SITES_WITH_DATA_CACHE: list[dict] | None = None
 
 
 def _load_site_timeseries(site_id: str) -> Optional[pd.DataFrame]:
@@ -313,6 +316,63 @@ def _load_site_timeseries(site_id: str) -> Optional[pd.DataFrame]:
         return None
 
 
+def _base_site_record(site_id: str) -> Optional[dict]:
+    """Return cached site metadata + loaded series for repeated routing calls."""
+    cached = _SITE_RECORD_CACHE.get(site_id)
+    if cached is not None:
+        return cached
+
+    series = _load_site_timeseries(site_id)
+    if series is None:
+        return None
+
+    meta = SITE_METADATA[site_id]
+    record = {
+        "site_id": site_id,
+        "name": meta.get("name", site_id),
+        "county": meta.get("county", "Florida"),
+        "aquifer": meta.get("aquifer", "Unknown Aquifer"),
+        "aquifer_type": meta.get("aquifer_type", "unconfined"),
+        "confined": meta.get("confined", False),
+        "aquifer_zone": meta.get("aquifer_zone", ""),
+        "aquifer_zone_depth_range_ft": meta.get("aquifer_zone_depth_range_ft", [0, 100]),
+        "aquifer_description": meta.get("aquifer_description", ""),
+        "well_depth_ft": meta.get("well_depth_ft"),
+        "lat": meta.get("lat"),
+        "lng": meta.get("lng"),
+        "series": series,
+    }
+    _SITE_RECORD_CACHE[site_id] = record
+    return record
+
+
+def warm_detection_caches(*, max_workers: int = 8) -> None:
+    """Preload local USGS series and derived site records for lower cold-start latency."""
+    site_ids = list(SITE_METADATA.keys())
+    if not site_ids:
+        return
+
+    workers = max(1, min(max_workers, len(site_ids)))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="gw-prewarm") as executor:
+        list(executor.map(_load_site_timeseries, site_ids))
+
+    for site_id in site_ids:
+        _base_site_record(site_id)
+
+    global _ALL_SITES_WITH_DATA_CACHE
+    _ALL_SITES_WITH_DATA_CACHE = [
+        record
+        for site_id in sorted(
+            site_ids,
+            key=lambda sid: (
+                str(SITE_METADATA[sid].get("county", "Florida")),
+                str(SITE_METADATA[sid].get("name", sid)),
+            ),
+        )
+        if (record := _base_site_record(site_id)) is not None
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Site selection helpers
 # ---------------------------------------------------------------------------
@@ -335,30 +395,15 @@ def _best_sites_near(
         lng = meta.get("lng")
         if lat is None or lng is None:
             continue
-        series = _load_site_timeseries(site_id)
-        if series is None:
+        base = _base_site_record(site_id)
+        if base is None:
             continue
 
         county = str(meta.get("county", "")).strip().lower()
         county_bonus = -0.3 if county_hint and county == county_hint else 0.0
         distance_score = _distance_between(float(lat), float(lng), ref_lat, ref_lng) + county_bonus
         candidates.append(
-            {
-                "site_id": site_id,
-                "name": meta.get("name", site_id),
-                "county": meta.get("county", "Florida"),
-                "aquifer": meta.get("aquifer", "Unknown Aquifer"),
-                "aquifer_type": meta.get("aquifer_type", "unconfined"),
-                "confined": meta.get("confined", False),
-                "aquifer_zone": meta.get("aquifer_zone", ""),
-                "aquifer_zone_depth_range_ft": meta.get("aquifer_zone_depth_range_ft", [0, 100]),
-                "aquifer_description": meta.get("aquifer_description", ""),
-                "well_depth_ft": meta.get("well_depth_ft"),
-                "lat": float(lat),
-                "lng": float(lng),
-                "distance_score": distance_score,
-                "series": series,
-            }
+            {**base, "distance_score": distance_score, "lat": float(lat), "lng": float(lng)}
         )
 
     candidates = sorted(candidates, key=lambda item: item["distance_score"])
@@ -381,26 +426,10 @@ def _sites_for_aquifer(aquifer_key: str, max_sites: int = 8) -> list[dict]:
     for site_id, meta in SITE_METADATA.items():
         if needle not in meta.get("aquifer", "").lower():
             continue
-        series = _load_site_timeseries(site_id)
-        if series is None:
+        base = _base_site_record(site_id)
+        if base is None:
             continue
-        candidates.append(
-            {
-                "site_id": site_id,
-                "name": meta.get("name", site_id),
-                "county": meta.get("county", "Florida"),
-                "aquifer": meta.get("aquifer", "Unknown Aquifer"),
-                "aquifer_type": meta.get("aquifer_type", "unconfined"),
-                "confined": meta.get("confined", False),
-                "aquifer_zone": meta.get("aquifer_zone", ""),
-                "aquifer_zone_depth_range_ft": meta.get("aquifer_zone_depth_range_ft", [0, 100]),
-                "aquifer_description": meta.get("aquifer_description", ""),
-                "well_depth_ft": meta.get("well_depth_ft"),
-                "lat": meta.get("lat"),
-                "lng": meta.get("lng"),
-                "series": series,
-            }
-        )
+        candidates.append(base)
     candidates.sort(key=lambda s: (s["county"], s["name"]))
     return candidates[:max_sites]
 
@@ -474,27 +503,10 @@ def _detect_site_names(question: str) -> list[dict]:
     # Build site dicts with timeseries
     results: list[dict] = []
     for sid in matched_ids:
-        series = _load_site_timeseries(sid)
-        if series is None:
+        base = _base_site_record(sid)
+        if base is None:
             continue
-        meta = SITE_METADATA[sid]
-        results.append(
-            {
-                "site_id": sid,
-                "name": meta.get("name", sid),
-                "county": meta.get("county", "Florida"),
-                "aquifer": meta.get("aquifer", "Unknown Aquifer"),
-                "aquifer_type": meta.get("aquifer_type", "unconfined"),
-                "confined": meta.get("confined", False),
-                "aquifer_zone": meta.get("aquifer_zone", ""),
-                "aquifer_zone_depth_range_ft": meta.get("aquifer_zone_depth_range_ft", [0, 100]),
-                "aquifer_description": meta.get("aquifer_description", ""),
-                "well_depth_ft": meta.get("well_depth_ft"),
-                "lat": meta.get("lat"),
-                "lng": meta.get("lng"),
-                "series": series,
-            }
-        )
+        results.append(base)
     return results
 
 
@@ -548,30 +560,17 @@ def _all_sites_with_data(max_sites: int = 36) -> list[dict]:
     Returns the same dict shape as ``_best_sites_near()`` so the result
     can be passed directly to ``_site_research_fallback()``.
     """
-    candidates = []
-    for site_id, meta in SITE_METADATA.items():
-        series = _load_site_timeseries(site_id)
-        if series is None:
-            continue
-        candidates.append(
-            {
-                "site_id": site_id,
-                "name": meta.get("name", site_id),
-                "county": meta.get("county", "Florida"),
-                "aquifer": meta.get("aquifer", "Unknown Aquifer"),
-                "aquifer_type": meta.get("aquifer_type", "unconfined"),
-                "confined": meta.get("confined", False),
-                "aquifer_zone": meta.get("aquifer_zone", ""),
-                "aquifer_zone_depth_range_ft": meta.get("aquifer_zone_depth_range_ft", [0, 100]),
-                "aquifer_description": meta.get("aquifer_description", ""),
-                "well_depth_ft": meta.get("well_depth_ft"),
-                "lat": meta.get("lat"),
-                "lng": meta.get("lng"),
-                "series": series,
-            }
-        )
-    candidates.sort(key=lambda s: (s["county"], s["name"]))
-    return candidates[:max_sites]
+    global _ALL_SITES_WITH_DATA_CACHE
+    if _ALL_SITES_WITH_DATA_CACHE is None:
+        candidates = []
+        for site_id in SITE_METADATA:
+            base = _base_site_record(site_id)
+            if base is None:
+                continue
+            candidates.append(base)
+        candidates.sort(key=lambda s: (s["county"], s["name"]))
+        _ALL_SITES_WITH_DATA_CACHE = candidates
+    return _ALL_SITES_WITH_DATA_CACHE[:max_sites]
 
 
 # ---------------------------------------------------------------------------

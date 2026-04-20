@@ -226,6 +226,35 @@ def test_named_site_still_uses_deterministic_fast_path(monkeypatch):
     assert resp.json()["mode"] == "site_fallback"
 
 
+def test_named_site_compare_ignores_unrelated_active_chart(monkeypatch):
+    """Fresh named-well comparisons should not be hijacked by stale chart context."""
+    from api.routes import chat as chat_routes
+
+    def _should_not_call(*_args, **_kwargs):
+        raise AssertionError("interpreter should not be called for unrelated stale chart context")
+
+    monkeypatch.setattr(
+        chat_routes._chart_interpreter,
+        "interpret_with_context",
+        _should_not_call,
+    )
+
+    resp = client.post(
+        "/api/chat",
+        json={
+            "message": "Compare G-3764 and G-1251",
+            "chart_context": ESTERO_CONTEXT,
+            "allow_llm_synthesis": False,
+        },
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mode"] == "site_fallback"
+    assert body["route_mode"] == "exact_well"
+    assert body["chart"] is not None
+
+
 def test_no_chart_context_keeps_existing_routing():
     """No chart context means the regular deterministic router still owns the query."""
     resp = client.post(

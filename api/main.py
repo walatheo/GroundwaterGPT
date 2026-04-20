@@ -9,16 +9,36 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import logging  # noqa: E402
+import os  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
+
 from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
+from api.routes._detection import warm_detection_caches  # noqa: E402
 from api.routes.chat import router as chat_router  # noqa: E402
 from api.routes.data import router as data_router  # noqa: E402
 from api.routes.knowledge import router as knowledge_router  # noqa: E402
 from api.routes.wells import router as wells_router  # noqa: E402
 from api.site_metadata import SITE_METADATA  # noqa: F401, E402
 
-app = FastAPI(title="Florida Aquifer Analysis API", version="1.0.0")
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _app_lifespan(_app: FastAPI):
+    enabled = os.getenv("GROUNDWATERGPT_PREWARM_DATA", "true").strip().lower()
+    if enabled in {"1", "true", "yes", "on"}:
+        try:
+            warm_detection_caches()
+            logger.info("Prewarmed groundwater site caches at startup")
+        except Exception as exc:
+            logger.warning("Groundwater cache prewarm failed: %s", exc)
+    yield
+
+
+app = FastAPI(title="Florida Aquifer Analysis API", version="1.0.0", lifespan=_app_lifespan)
 
 # Enable CORS for React frontend
 app.add_middleware(

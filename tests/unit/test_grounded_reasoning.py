@@ -1,5 +1,7 @@
 """Tests for grounded reasoning validation helpers."""
 
+import time
+
 from api.routes import _chart_interpreter as interpreter
 from api.routes import _grounded_reasoning as grounded
 
@@ -117,6 +119,24 @@ def test_derive_question_frame_detects_cross_well_context(monkeypatch):
     assert "Lee L-1998" in frame.focus_entities
     assert "Lee L-729" in frame.focus_entities
     assert frame.question_goal == "compare"
+
+
+def test_invoke_with_llm_timeout_returns_none_for_slow_call():
+    started = time.monotonic()
+    result = grounded.invoke_with_llm_timeout(
+        lambda: (time.sleep(0.05), {"ok": True})[1],
+        timeout_seconds=0.01,
+        label="slow-test-call",
+    )
+    elapsed = time.monotonic() - started
+
+    assert result is None
+    assert elapsed < 0.2
+
+
+def test_llm_timeout_seconds_is_clamped(monkeypatch):
+    monkeypatch.setenv("GROUNDWATERGPT_LLM_TIMEOUT_SECONDS", "45")
+    assert grounded.llm_timeout_seconds() == 28.0
 
 
 def test_derive_question_frame_detects_supply_unit_scope(monkeypatch):

@@ -15,10 +15,12 @@ import logging
 import math
 import os
 import re
+import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Optional, TypedDict
 
+import httpx
 import pandas as pd
 
 from api.routes._citation import (
@@ -34,10 +36,22 @@ from api.routes._detection import (
     _distance_miles,
     _usgs_site_url,
 )
+from api.routes._explainer import validate_explanation
+from api.routes._grounded_answer import compose_grounded_answer
 
 logger = logging.getLogger(__name__)
 
 CHART_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6"]
+_FASTEST_WELL_QUERY_RE = re.compile(
+    r"\b(which\s+(?:well|site)|changing\s+fastest|declining\s+(?:the\s+)?most|"
+    r"biggest\s+drop|steepest\s+(?:decline|rise)|largest\s+change)\b",
+    re.IGNORECASE,
+)
+_AQUIFER_STRESS_QUERY_RE = re.compile(
+    r"\b(which\s+aquifer|most\s+stressed\s+aquifer|which\s+aquifer\s+looks\s+most\s+stressed|"
+    r"most\s+stressed)\b",
+    re.IGNORECASE,
+)
 
 
 class PerSiteMetric(TypedDict):
@@ -93,6 +107,98 @@ def _llm_synthesis_enabled() -> bool:
     """
     raw = os.environ.get("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", "").strip().lower()
     return raw not in {"1", "true", "yes", "on"}
+
+
+def _legacy_http_llm_synthesis(
+    *,
+    question: str,
+    location_name: str,
+    answer_brief: str,
+    interpretation_details: dict,
+    claim_citations: list[dict],
+    source_urls: list[str],
+    chart_payload: dict | None,
+    site_computed: list[dict],
+    timeout_seconds: float = 5.0,
+) -> tuple[str | None, dict | None]:
+    """Best-effort local Ollama narration over deterministic evidence only."""
+    payload = {
+        "answer_brief": answer_brief,
+        "interpretation_details": interpretation_details,
+        "claim_citations": claim_citations,
+        "sources": source_urls,
+        "chart": chart_payload,
+        "wells": [
+            {
+                "site_id": site.get("site_id"),
+                "name": site.get("name"),
+                "aquifer": site.get("aq_label") or site.get("aq_zone"),
+            }
+            for site in site_computed
+        ],
+    }
+    grounded = compose_grounded_answer(payload, question=question)
+    if not grounded.direct_answer:
+        return None, None
+
+    findings_block = "\n".join(f"- {item}" for item in grounded.grounded_findings[:4]) or "- none"
+    limits_block = "\n".join(f"- {item}" for item in grounded.limits[:3]) or "- none"
+    chart_insights = (chart_payload or {}).get("insights") or []
+    chart_block = "\n".join(f"- {item}" for item in chart_insights[:3]) or "- none"
+    model = os.getenv("SYNTHESIS_MODEL") or os.getenv("LLM_MODEL") or "llama3.2"
+    endpoint = os.getenv("GROUNDWATERGPT_OLLAMA_URL", "http://localhost:11434/api/generate")
+    prompt = (
+        "You are a groundwater analyst. Explain the deterministic groundwater findings "
+        "in 3 to 5 sentences. Do not invent numbers, dates, well counts, or causes. "
+        "Use only the evidence provided.\n\n"
+        f"Question: {question}\n"
+        f"Location: {location_name}\n"
+        f"Direct answer: {grounded.direct_answer}\n\n"
+        f"Grounded findings:\n{findings_block}\n\n"
+        f"Chart insights:\n{chart_block}\n\n"
+        f"Limits:\n{limits_block}\n"
+    )
+
+    try:
+        response = httpx.post(
+            endpoint,
+            json={"model": model, "prompt": prompt, "stream": False},
+            timeout=max(0.5, timeout_seconds),
+        )
+        response.raise_for_status()
+        body = response.json()
+    except Exception as exc:
+        logger.debug("Legacy local synthesis unavailable: %s", exc)
+        return None, None
+
+    narrative = str(body.get("response") or body.get("text") or body.get("content") or "").strip()
+    if len(narrative) < 50:
+        return None, None
+
+    violations = validate_explanation(narrative, grounded)
+    if violations:
+        logger.debug("Legacy local synthesis rejected: %s", violations)
+        return None, None
+
+    citation_block = [
+        {
+            "source": "deterministic_chart_context",
+            "basis": "Narrative constrained to deterministic chart context and grounded findings.",
+            "verified": True,
+            "trust_level": "verified",
+        }
+    ]
+    for url in source_urls[:2]:
+        citation_block.append({"url": url, "verified": True, "trust_level": "verified"})
+
+    claim = {
+        "claim_id": f"claim_{len(claim_citations) + 1:03d}",
+        "claim": narrative[:200],
+        "confidence": 0.65,
+        "citations": citation_block,
+        "source_type": "llm_synthesis",
+    }
+    return narrative, claim
 
 
 # ---------------------------------------------------------------------------
@@ -821,6 +927,85 @@ def _format_rate(rate: float | None) -> str:
     return f"{float(rate):+.3f} ft/yr"
 
 
+def _overall_signal_phrase(cohort: str, mean_rate: float | None) -> str:
+    """Describe the cohort signal in plain language for the lead sentence."""
+    mean = float(mean_rate) if mean_rate is not None else None
+    if mean is not None:
+        magnitude = abs(mean)
+        strength = "strong" if magnitude >= 0.20 else "clear" if magnitude >= 0.10 else "modest"
+        if cohort == "mixed":
+            if mean <= -0.05:
+                return f"a mixed pattern with a {strength} net decline"
+            if mean >= 0.05:
+                return f"a mixed pattern with a {strength} net rise"
+            return "a mixed pattern overall"
+        if mean <= -0.05:
+            return f"a {strength} overall decline"
+        if mean >= 0.05:
+            return f"a {strength} overall rise"
+        return "roughly stable overall conditions"
+    mapping = {
+        "falling": "an overall decline",
+        "rising": "an overall rise",
+        "stable": "roughly stable overall conditions",
+        "mixed": "a mixed pattern overall",
+    }
+    return mapping.get(cohort, "a mixed pattern overall")
+
+
+def _strongest_aquifer_summary(
+    aquifer_summaries: list[dict],
+    *,
+    direction: str,
+) -> dict | None:
+    """Return the most negative or most positive aquifer summary when available."""
+    valid = [item for item in aquifer_summaries if item.get("mean_annual_change") is not None]
+    if not valid:
+        return None
+    if direction == "falling":
+        candidate = min(valid, key=lambda item: float(item.get("mean_annual_change", 0.0)))
+        return candidate if float(candidate.get("mean_annual_change", 0.0)) <= -0.05 else None
+    candidate = max(valid, key=lambda item: float(item.get("mean_annual_change", 0.0)))
+    return candidate if float(candidate.get("mean_annual_change", 0.0)) >= 0.05 else None
+
+
+def _location_lead_sentence(
+    *,
+    location_name: str,
+    cohort: str,
+    cohort_mean: float | None,
+    aquifer_summaries: list[dict],
+    strongest_decline: dict | None,
+    strongest_rise: dict | None,
+) -> str:
+    """Create a direct first sentence for location/cohort answers."""
+    signal = _overall_signal_phrase(cohort, cohort_mean)
+    falling_unit = _strongest_aquifer_summary(aquifer_summaries, direction="falling")
+    rising_unit = _strongest_aquifer_summary(aquifer_summaries, direction="rising")
+
+    if falling_unit and rising_unit and falling_unit is not rising_unit:
+        return (
+            f"In {location_name}, monitored groundwater shows {signal}, with the strongest declines "  # noqa: E501
+            f"in {falling_unit.get('zone')} and the clearest rise in {rising_unit.get('zone')}."
+        )
+    if falling_unit:
+        return (
+            f"In {location_name}, monitored groundwater shows {signal}, strongest in "
+            f"{falling_unit.get('zone')}."
+        )
+    if strongest_decline and strongest_rise and strongest_decline is not strongest_rise:
+        return (
+            f"In {location_name}, monitored groundwater shows {signal}, with the steepest decline "
+            f"at {strongest_decline.get('name')} and the strongest rise at {strongest_rise.get('name')}."  # noqa: E501
+        )
+    if strongest_decline:
+        return (
+            f"In {location_name}, monitored groundwater shows {signal}, with the steepest decline "
+            f"at {strongest_decline.get('name')}."
+        )
+    return f"In {location_name}, monitored groundwater shows {signal}."
+
+
 def _well_reference_tokens(name: str) -> set[str]:
     text = str(name or "").strip()
     if not text:
@@ -1024,23 +1209,45 @@ def _build_answer_brief(
         "n_wells": len(sites),
         "aquifer_summaries": aquifer_summaries,
         "cohort_trend": cohort,
+        "cohort_mean_annual_change_ft_yr": _safe_round(cohort_mean),
         "risk_level": risk,
         "supply_interpretation": supply_interpretation,
         "focused_wells": [site.get("name") for site in mentioned_sites[:4]],
+        "strongest_decline_well": strongest_decline,
+        "strongest_rise_well": strongest_rise,
+        "strongest_decline_aquifer": _strongest_aquifer_summary(
+            aquifer_summaries, direction="falling"
+        ),
+        "strongest_rise_aquifer": _strongest_aquifer_summary(aquifer_summaries, direction="rising"),
     }
 
     if supply_interpretation:
         municipality = supply_interpretation.get("municipality") or location_name
         utility = supply_interpretation.get("utility") or "the listed utility"
+        unit_names = [
+            str(unit.get("zone") or unit.get("aquifer") or "").strip()
+            for unit in supply_interpretation.get("supply_units", [])
+            if str(unit.get("zone") or unit.get("aquifer") or "").strip()
+        ]
         unit_phrases = [
             f"{unit.get('usage', 'supply')} {unit.get('aquifer')} / {unit.get('zone')}"
             for unit in supply_interpretation.get("supply_units", [])
         ]
+        signal = _overall_signal_phrase(cohort, cohort_mean)
+        units_text = ", ".join(dict.fromkeys(unit_names)) or "the mapped supply units"
+        lead = (
+            f"{municipality} is mapped in this project as using {units_text}, and the monitored "
+            f"proxy wells show {signal}."
+        )
+        strongest_unit = interpretation_details.get("strongest_decline_aquifer") or {}
+        if strongest_unit:
+            lead = (
+                lead[:-1] + f" The strongest observed declines are in {strongest_unit.get('zone')}."
+            )
+        lines.append(lead)
         lines.append(
-            f"**Plain-language answer:** {municipality} is mapped in this project as served by "
-            f"{utility}. The supply units listed here are {', '.join(unit_phrases)}. "
-            "The USGS wells below are monitoring proxies for those aquifer units, "
-            "not proof of exact utility pumping volumes."
+            f"- Served by {utility}. The mapped supply units in this dataset are "
+            f"{', '.join(unit_phrases)}."
         )
 
         for unit in supply_interpretation.get("supply_units", []):
@@ -1066,7 +1273,7 @@ def _build_answer_brief(
             else:
                 trend_text = "no matching proxy trend in the loaded dataset"
             lines.append(
-                f"- **{unit.get('zone')} ({unit.get('usage')})**: {trend_text}. "
+                f"- {unit.get('zone')} ({unit.get('usage')}): {trend_text}. "
                 f"Proxy wells: {proxy_names or 'none matched in the current dataset'}."
             )
 
@@ -1075,44 +1282,109 @@ def _build_answer_brief(
             roles = "; ".join(
                 f"{item.get('aquifer')}: {item.get('role')}" for item in non_supply[:3]
             )
-            lines.append(f"- **Context aquifers:** {roles}.")
+            lines.append(f"- Context aquifers: {roles}.")
 
         risks = supply_interpretation.get("known_risks") or []
         if risks:
             lines.append(
-                "- **Implications:** "
+                "- Implications: "
                 + "; ".join(risks[:3])
                 + ". These risks are screening concerns, not a permit-grade finding."
             )
+    elif _FASTEST_WELL_QUERY_RE.search(question) and per_site:
+        ranked_by_abs = sorted(
+            per_site,
+            key=lambda item: abs(float(item.get("annual_change_ft_yr", 0.0))),
+            reverse=True,
+        )
+        leader = ranked_by_abs[0]
+        runner_up = ranked_by_abs[1] if len(ranked_by_abs) > 1 else None
+        leader_rate = float(leader.get("annual_change_ft_yr", 0.0))
+        interpretation_details["ranking_scope"] = "well_rate"
+        interpretation_details["ranking_focus"] = leader.get("name")
+        lines.append(
+            f"{leader.get('name')} is changing fastest in this dataset at "
+            f"{_format_rate(leader_rate)}. That is the steepest observed annual rate in this dataset and it is a "  # noqa: E501
+            f"{leader.get('trend')} signal in {leader.get('aquifer', leader.get('aq_zone', 'the monitored unit'))}."  # noqa: E501
+        )
+        if runner_up is not None:
+            lines.append(
+                f"- Next-steepest rate: {runner_up.get('name')} at "
+                f"{_format_rate(float(runner_up.get('annual_change_ft_yr', 0.0)))}."
+            )
+        if cohort_mean is not None:
+            lines.append(
+                f"- Network context: the cohort mean is {_format_rate(float(cohort_mean))}, so "
+                f"{leader.get('name')} is materially more dynamic than the network average."
+            )
+        lines.append(
+            "- Ranking caveat: this is a screening comparison across monitoring wells in the loaded record, "  # noqa: E501
+            "not proof of cause or a production-well risk ranking."
+        )
+    elif _AQUIFER_STRESS_QUERY_RE.search(question) and aquifer_summaries:
+        stressed = min(
+            aquifer_summaries,
+            key=lambda item: float(item.get("mean_annual_change", 0.0)),
+        )
+        stressed_rate = float(stressed.get("mean_annual_change", 0.0))
+        interpretation_details["ranking_scope"] = "aquifer_stress"
+        interpretation_details["ranking_focus"] = stressed.get("aquifer")
+        lines.append(
+            f"{stressed.get('aquifer')} / {stressed.get('zone')} looks most stressed in this dataset, "  # noqa: E501
+            f"with a mean observed change of {_format_rate(stressed_rate)} across {int(stressed.get('n_wells', 0))} monitored well"  # noqa: E501
+            f"{'' if int(stressed.get('n_wells', 0)) == 1 else 's'}."
+        )
+        lines.append(
+            f"- Why this ranks highest: {int(stressed.get('n_falling', 0))} falling, "
+            f"{int(stressed.get('n_stable', 0))} stable, {int(stressed.get('n_rising', 0))} rising in the loaded record."  # noqa: E501
+        )
+        lines.append(
+            "- Stress caveat: this is a screening interpretation of monitored head trends, not proof of pumping cause, supply failure, or aquifer-wide depletion."  # noqa: E501
+        )
     elif len(sites) == 1 and site_computed:
         site = site_computed[0]
         lines.append(
-            f"**Plain-language answer:** {site.get('name')} is the identified USGS monitoring well for this request. "  # noqa: E501
-            f"It monitors {site.get('aq_label')} / {site.get('aq_zone')} and the loaded record shows a "  # noqa: E501
+            f"At {site.get('name')}, the loaded monitoring record shows a "  # noqa: E501
             f"{site.get('trend')} trend from {site.get('start_date')} to {site.get('end_date')} "
-            f"at {_format_rate(site.get('annual_change'))}."
+            f"at {_format_rate(site.get('annual_change'))} in {site.get('aq_label')} / {site.get('aq_zone')}."  # noqa: E501
         )
         lines.append(
-            f"- **Trend focus:** net change {float(site.get('net_change', 0.0)):+.2f} ft over "
+            f"- Trend focus: net change {float(site.get('net_change', 0.0)):+.2f} ft over "
             f"{float(site.get('years', 0.0)):.1f} years in a "
             f"{'confined' if site.get('confined') else 'shallow/unconfined'} monitoring setting."
         )
         if aquifer_summaries:
-            lines.append(f"- **Aquifer context:** {_aquifer_summary_sentence(aquifer_summaries)}")
+            lines.append(f"- Aquifer context: {_aquifer_summary_sentence(aquifer_summaries)}")
     elif mentioned_sites:
         focus = mentioned_sites[0]
-        lines.append(
-            f"**Plain-language answer:** Anchoring on {focus.get('name')}, the named USGS monitoring well shows a "  # noqa: E501
-            f"{focus.get('trend')} trend from {focus.get('start_date')} to {focus.get('end_date')} "
-            f"at {_format_rate(focus.get('annual_change'))} in {focus.get('aq_label')} / {focus.get('aq_zone')}."  # noqa: E501
-        )
         if len(mentioned_sites) >= 2:
+            left = mentioned_sites[0]
+            right = mentioned_sites[1]
+            left_rate = float(left.get("annual_change", 0.0))
+            right_rate = float(right.get("annual_change", 0.0))
+            faster = left if abs(left_rate) >= abs(right_rate) else right
+            slower = right if faster is left else left
+            lines.append(
+                f"{faster.get('name')} is changing faster than {slower.get('name')} in the current record: "  # noqa: E501
+                f"{faster.get('name')} is {_format_rate(faster.get('annual_change'))} versus "
+                f"{slower.get('name')} at {_format_rate(slower.get('annual_change'))}."
+            )
             comparison_bits = [
                 f"{entry.get('name')} {_format_rate(entry.get('annual_change'))}"
                 for entry in mentioned_sites[:3]
             ]
-            lines.append("- **Named well comparison:** " + "; ".join(comparison_bits) + ".")
-        elif cross_well.get("n_total", 0) >= 2 and cohort_mean is not None:
+            lines.append("- Named well comparison: " + "; ".join(comparison_bits) + ".")
+        else:
+            lines.append(
+                f"At {focus.get('name')}, the named monitoring record shows a "
+                f"{focus.get('trend')} trend from {focus.get('start_date')} to {focus.get('end_date')} "  # noqa: E501
+                f"at {_format_rate(focus.get('annual_change'))} in {focus.get('aq_label')} / {focus.get('aq_zone')}."  # noqa: E501
+            )
+        if (
+            len(mentioned_sites) == 1
+            and cross_well.get("n_total", 0) >= 2
+            and cohort_mean is not None
+        ):
             focus_rate = float(focus.get("annual_change", 0.0))
             if abs(focus_rate - float(cohort_mean)) >= 0.05:
                 relation = (
@@ -1121,35 +1393,43 @@ def _build_answer_brief(
                     else "more positive than"
                 )
                 lines.append(
-                    f"- **Cross-well context:** {focus.get('name')} is {relation} the cohort mean "
+                    f"- Cross-well context: {focus.get('name')} is {relation} the cohort mean "
                     f"({_format_rate(float(cohort_mean))}), so it stands out from the broader chart."  # noqa: E501
                 )
             else:
                 lines.append(
-                    f"- **Cross-well context:** {focus.get('name')} is close to the cohort mean "
+                    f"- Cross-well context: {focus.get('name')} is close to the cohort mean "
                     f"({_format_rate(float(cohort_mean))}), so it looks representative rather than an outlier."  # noqa: E501
                 )
         if aquifer_summaries:
-            lines.append(f"- **Aquifer context:** {_aquifer_summary_sentence(aquifer_summaries)}")
+            lines.append(f"- Aquifer context: {_aquifer_summary_sentence(aquifer_summaries)}")
     else:
         lines.append(
-            f"**Plain-language answer:** I found {len(sites)} USGS monitoring well"
-            f"{'' if len(sites) == 1 else 's'} for {location_name}, covering "
-            f"{aquifer_names or 'the available aquifer metadata'}. The cohort is {cohort} "
-            f"with {risk} screening risk."
+            _location_lead_sentence(
+                location_name=location_name,
+                cohort=cohort,
+                cohort_mean=cohort_mean,
+                aquifer_summaries=aquifer_summaries,
+                strongest_decline=strongest_decline,
+                strongest_rise=strongest_rise,
+            )
         )
-        lines.append(f"- **Aquifer trends:** {_aquifer_summary_sentence(aquifer_summaries)}")
+        lines.append(
+            f"- Dataset scope: {len(sites)} monitored well{'' if len(sites) == 1 else 's'} "
+            f"covering {aquifer_names or 'the available aquifer metadata'} with {risk} screening risk."  # noqa: E501
+        )
+        lines.append(f"- Aquifer trends: {_aquifer_summary_sentence(aquifer_summaries)}")
 
     if cross_well.get("n_total", 0) >= 2:
         lines.append(
-            "- **Cohort signal:** "
+            "- Cohort signal: "
             f"{dist.get('falling', 0)} falling, {dist.get('stable', 0)} stable, "
             f"{dist.get('rising', 0)} rising; mean change "
             f"{_format_rate(cross_well.get('mean_annual_change_ft_yr'))}."
         )
     if strongest_decline and cross_well.get("n_total", 0) >= 2:
         lines.append(
-            f"- **Most negative trend:** {strongest_decline['name']} "
+            f"- Most negative trend: {strongest_decline['name']} "
             f"at {_format_rate(strongest_decline['annual_change_ft_yr'])}."
         )
     if (
@@ -1158,7 +1438,7 @@ def _build_answer_brief(
         and cross_well.get("n_total", 0) >= 2
     ):
         lines.append(
-            f"- **Most positive trend:** {strongest_rise['name']} "
+            f"- Most positive trend: {strongest_rise['name']} "
             f"at {_format_rate(strongest_rise['annual_change_ft_yr'])}."
         )
 
@@ -1192,22 +1472,20 @@ def _build_answer_brief(
                 else "; deeper/confined seasonal amplitude was limited."
             )
         lines.append(
-            "- **Shallow vs deep:** "
+            "- Shallow vs deep: "
             f"shallow/unconfined proxies average {_format_rate(shallow_rate)}, while "
             f"deeper/confined proxies average {_format_rate(deep_rate)}.{variability_note}"
         )
 
     if period_note.strip():
-        lines.append(f"- **Period caveat:** {period_note.strip()}")
+        lines.append(f"- Period caveat: {period_note.strip()}")
     lines.append(
-        "- **What this means:** "
+        "- What this means: "
         f"{implications_claim} This is a monitoring-record interpretation, not a forecast "
         "or a groundwater-flow model."
     )
     if supply_interpretation:
-        lines.append(
-            "- **Confidence:** " + "; ".join(supply_interpretation.get("limitations", [])[:2])
-        )
+        lines.append("- Confidence: " + "; ".join(supply_interpretation.get("limitations", [])[:2]))
 
     interpretation_details["deterministic_brief"] = "\n".join(lines)
     return "\n".join(lines), interpretation_details
@@ -1220,6 +1498,7 @@ def _site_research_fallback(
     ref_lat: Optional[float] = None,
     ref_lng: Optional[float] = None,
     allow_llm_synthesis: bool = True,
+    include_chart: bool = True,
 ) -> dict:
     """Generate a deterministic, cited response for any USGS site/location query."""
     if not sites:
@@ -1918,7 +2197,9 @@ def _site_research_fallback(
         implications_claim=implications_claim,
     )
 
-    chart_payload = _build_chart_payload(sites, location_name, cross_well=cross_well)
+    chart_payload = (
+        _build_chart_payload(sites, location_name, cross_well=cross_well) if include_chart else None
+    )
 
     # --- LLM synthesis (hybrid mode) ---
     synthesis_section = ""
@@ -1935,11 +2216,15 @@ def _site_research_fallback(
         )
     )
     if needs_synthesis:
+        synthesis_deadline = time.monotonic() + 30.0
         try:
             from api.routes._grounded_reasoning import (
                 grounded_reasoning_enabled,
                 invoke_grounded_synthesis,
+                llm_timeout_seconds,
             )
+
+            synthesis_deadline = time.monotonic() + llm_timeout_seconds()
 
             if grounded_reasoning_enabled():
                 grounded = invoke_grounded_synthesis(
@@ -1949,6 +2234,7 @@ def _site_research_fallback(
                     cross_well=cross_well,
                     supply_info=supply_info if is_supply_query and supply_info else None,
                     location_name=location_name,
+                    deadline=synthesis_deadline,
                 )
                 if grounded is not None:
                     llm_text = grounded.direct_answer
@@ -1987,6 +2273,31 @@ def _site_research_fallback(
                         )
         except Exception as exc:
             logger.debug("Grounded reasoning unavailable: %s", exc)
+        if not synthesis_section:
+            remaining = max(0.0, synthesis_deadline - time.monotonic())
+            if remaining <= 0:
+                logger.warning(
+                    "Skipping legacy local synthesis because the 30s LLM budget was exhausted"
+                )
+            else:
+                llm_text, llm_claim = _legacy_http_llm_synthesis(
+                    question=question,
+                    location_name=location_name,
+                    answer_brief=answer_brief,
+                    interpretation_details=interpretation_details,
+                    claim_citations=claim_citations,
+                    source_urls=source_urls,
+                    chart_payload=chart_payload,
+                    site_computed=site_computed,
+                    timeout_seconds=min(5.0, remaining),
+                )
+                if llm_text:
+                    synthesis_section = llm_text
+                    answer_brief = llm_text
+                    interpretation_details["llm_brief"] = llm_text
+                    interpretation_details["reasoning_source"] = "llm_polish"
+                    if llm_claim is not None:
+                        claim_citations.append(llm_claim)
 
     # Build full report
     aquifer_summary = ", ".join(sorted_aquifers)

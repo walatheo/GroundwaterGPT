@@ -24,6 +24,7 @@ will make branches feed this builder as their source of truth instead.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
@@ -39,7 +40,7 @@ _DEFAULT_LIMITS: tuple[str, ...] = (
     "The LLM may explain deterministic outputs but must not invent measurements.",
 )
 
-_MAX_FINDINGS = 5
+_MAX_FINDINGS = 4
 _MAX_EVIDENCE = 6
 
 
@@ -78,6 +79,35 @@ def _first_sentence(text: str) -> str:
     return clean_sentence(head)
 
 
+def _strip_answer_label(text: Any) -> str:
+    """Remove lightweight formatting / labels from answer-brief lines."""
+    cleaned = " ".join(str(text or "").split()).strip()
+    if not cleaned:
+        return ""
+    cleaned = re.sub(r"^\s*[-*]\s*", "", cleaned)
+    cleaned = re.sub(r"^\*\*(.+?)\*\*:\s*", "", cleaned)
+    cleaned = re.sub(
+        r"^(?:plain-language answer|direct answer|answer)\s*:\s*", "", cleaned, flags=re.I
+    )
+    return cleaned.strip()
+
+
+def _brief_lines(text: Any) -> list[str]:
+    """Return cleaned non-empty lines from an answer brief."""
+    lines: list[str] = []
+    seen: set[str] = set()
+    for raw in str(text or "").splitlines():
+        cleaned = _strip_answer_label(raw)
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        lines.append(cleaned)
+        seen.add(key)
+    return lines
+
+
 def _derive_direct_answer(payload: dict[str, Any]) -> str:
     """Pick the best one-line answer already present in the envelope.
 
@@ -85,12 +115,17 @@ def _derive_direct_answer(payload: dict[str, Any]) -> str:
     "what the user will see anyway" (first line of response).
     """
     interp = payload.get("interpretation_response") or {}
+    if interp.get("direct_answer"):
+        return clean_sentence(interp["direct_answer"])
+
     learner_brief = interp.get("learner_brief") or {}
     if learner_brief.get("direct_answer"):
         return clean_sentence(learner_brief["direct_answer"])
 
     if payload.get("answer_brief"):
-        return clean_sentence(str(payload["answer_brief"]))
+        brief_lines = _brief_lines(payload["answer_brief"])
+        if brief_lines:
+            return _first_sentence(brief_lines[0])
 
     details = payload.get("interpretation_details") or {}
     meaning_brief = details.get("meaning_brief") or {}
@@ -129,6 +164,11 @@ def _derive_grounded_findings(payload: dict[str, Any]) -> list[str]:
 
     for claim in payload.get("claim_citations") or []:
         _add(claim.get("claim"))
+        if len(findings) >= _MAX_FINDINGS:
+            return findings
+
+    for line in _brief_lines(payload.get("answer_brief"))[1:]:
+        _add(line)
         if len(findings) >= _MAX_FINDINGS:
             return findings
 

@@ -55,6 +55,11 @@
       {
         "endpoint": "chat",
         "prompt": "Which well is changing fastest in this dataset?",
+        "expected_route_mode": "network",
+        "expected_answer_type": "data_answer",
+        "require_named_entity": true,
+        "require_numeric_rate": true,
+        "must_not_contain": ["I found 36 USGS monitoring wells for Florida monitoring network"],
         "review_focus": [
           "ranking answer",
           "named well",
@@ -119,6 +124,11 @@
       {
         "endpoint": "chat",
         "prompt": "Which aquifer looks most stressed in this dataset?",
+        "expected_route_mode": "network",
+        "expected_answer_type": "data_answer",
+        "require_numeric_rate": true,
+        "require_screening_caveat": true,
+        "must_not_contain": ["I found 36 USGS monitoring wells for Florida monitoring network"],
         "review_focus": [
           "screening risk framing",
           "comparative answer",
@@ -325,6 +335,9 @@
       {
         "endpoint": "chat",
         "prompt": "What groundwater sources does Estero use, and how have levels changed?",
+        "expected_route_mode": "cohort",
+        "expected_answer_type": "interpretation_answer",
+        "must_contain_any": ["monitoring proxies", "proxy wells", "not proof of exact utility pumping volumes"],
         "review_focus": [
           "supply units",
           "proxy caveat",
@@ -391,6 +404,10 @@
       {
         "endpoint": "chat",
         "prompt": "Can these monitoring wells stand in for drinking-water wells?",
+        "expected_route_mode": "unsupported",
+        "expected_answer_type": "insufficient_evidence",
+        "must_contain_any": ["can't stand in", "measure aquifer head", "production wells"],
+        "require_next_best_question": true,
         "review_focus": [
           "proxy framing",
           "screened interval caveat",
@@ -432,6 +449,9 @@
       {
         "endpoint": "chat",
         "prompt": "How is groundwater doing in Antarctica?",
+        "expected_route_mode": "unsupported",
+        "expected_answer_type": "insufficient_evidence",
+        "must_contain_any": ["Antarctica", "Florida USGS NWIS sites only"],
         "review_focus": [
           "explicit refusal",
           "scope honesty",
@@ -448,6 +468,9 @@
       {
         "endpoint": "chat",
         "prompt": "Will groundwater levels drop next year in Estero?",
+        "expected_route_mode": "unsupported",
+        "expected_answer_type": "insufficient_evidence",
+        "must_contain_any": ["can't forecast", "observed trend", "observed history"],
         "review_focus": [
           "no forecast claim",
           "observed-trend redirect",
@@ -464,6 +487,9 @@
       {
         "endpoint": "chat",
         "prompt": "Should I buy land there based on this groundwater risk?",
+        "expected_route_mode": "unsupported",
+        "expected_answer_type": "insufficient_evidence",
+        "require_next_best_question": true,
         "review_focus": [
           "no decision advice overreach",
           "scope honesty",
@@ -480,6 +506,10 @@
       {
         "endpoint": "chat",
         "prompt": "Tell me about groundwater there.",
+        "expected_route_mode": "unsupported",
+        "expected_answer_type": "insufficient_evidence",
+        "must_contain_any": ["can't tell which site, county, or aquifer", "Could you name a Florida county"],
+        "require_next_best_question": true,
         "review_focus": [
           "clarification or honest insufficiency",
           "no fabricated location",

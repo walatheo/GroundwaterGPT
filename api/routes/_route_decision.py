@@ -66,6 +66,10 @@ _NAMED_SITE_CHART_COMPARISON = re.compile(
     r"this chart|the chart|using the chart|cohort|average|highlighted)\b",
     re.IGNORECASE,
 )
+_NAMED_SITE_COMPARISON = re.compile(
+    r"\b(compare|compares?|comparison|contrast|versus|vs\.?|diverge|divergent|different)\b",
+    re.IGNORECASE,
+)
 
 # Dataset-wide "which is the fastest/most stressed" asks. We route these
 # through the network-wide deterministic path so the ranking signal is
@@ -159,6 +163,27 @@ def _needs_grounded_path(question: str) -> bool:
     cause. We'd rather say "insufficient" honestly.
     """
     return bool(_NEEDS_GROUNDING_INTENT.search(question or ""))
+
+
+def _chart_context_matches_named_sites(
+    chart_context: Optional[dict[str, Any]],
+    named_sites: list[dict[str, Any]],
+) -> bool:
+    """True when the active chart actually contains the named sites in the question."""
+    if not isinstance(chart_context, dict) or not named_sites:
+        return False
+    raw_site_ids = chart_context.get("site_ids") or []
+    if not raw_site_ids and isinstance(chart_context.get("summary_metrics"), dict):
+        raw_site_ids = chart_context["summary_metrics"].get("site_ids") or []
+    chart_site_ids = {str(site_id).strip() for site_id in raw_site_ids if str(site_id).strip()}
+    if not chart_site_ids:
+        return False
+    named_ids = {
+        str(site.get("site_id") or site.get("id")).strip()
+        for site in named_sites
+        if str(site.get("site_id") or site.get("id") or "").strip()
+    }
+    return bool(named_ids) and named_ids.issubset(chart_site_ids)
 
 
 def _mentions_future_year(question: str) -> bool:
@@ -330,11 +355,13 @@ def resolve_route(
 
     named_sites = detectors["detect_site_names"](user_query)
     explicit_named_chart_followup = bool(_NAMED_SITE_CHART_COMPARISON.search(user_query or ""))
+    named_sites_match_chart = _chart_context_matches_named_sites(chart_context, named_sites)
 
     # --- Named site within an explicitly comparative chart question ---
     if (
         named_sites
         and explicit_named_chart_followup
+        and named_sites_match_chart
         and detectors["should_prefer_chart_context"](user_query, chart_context)
     ):
         return RouteDecision(
@@ -350,7 +377,13 @@ def resolve_route(
     recovered = None
     if chart_context is None and detectors["is_contextual_followup"](user_query):
         recovered = detectors["chart_context_from_turn_history"](turn_history)
-    if named_sites and explicit_named_chart_followup and recovered is not None:
+    recovered_matches_named_sites = _chart_context_matches_named_sites(recovered, named_sites)
+    if (
+        named_sites
+        and explicit_named_chart_followup
+        and recovered is not None
+        and recovered_matches_named_sites
+    ):
         return RouteDecision(
             route_mode=RouteMode.CHART_FOLLOWUP,
             internal_mode="chart_interpreter",
@@ -366,7 +399,11 @@ def resolve_route(
         return RouteDecision(
             route_mode=(RouteMode.UNSUPPORTED if unsupported_reason else RouteMode.EXACT_WELL),
             internal_mode="site_fallback",
-            intent="exact_well_lookup",
+            intent=(
+                "named_well_comparison"
+                if len(named_sites) >= 2 and _NAMED_SITE_COMPARISON.search(user_query or "")
+                else "exact_well_lookup"
+            ),
             named_sites=named_sites,
             unsupported_reason=unsupported_reason,
             hints=hints,

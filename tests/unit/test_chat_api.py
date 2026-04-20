@@ -158,6 +158,11 @@ class TestSiteContext:
 class TestChatEndpoint:
     """Integration tests for the POST /api/chat endpoint."""
 
+    def setup_method(self):
+        from api.routes import chat as chat_routes
+
+        chat_routes._CHAT_CACHE.clear()
+
     def test_chat_returns_200(self):
         """Basic chat request returns 200 with expected fields."""
         resp = client.post("/api/chat", json={"message": "Tell me about irrigation"})
@@ -319,6 +324,38 @@ class TestChatEndpoint:
         assert resp.status_code == 200
         assert captured["allow_llm_synthesis"] is not False
 
+    def test_chat_can_skip_chart_payload_for_fast_text_turns(self, monkeypatch):
+        """Fast chat should be able to suppress chart building on ordinary text turns."""
+        from api.routes import chat as chat_routes
+
+        captured: dict[str, object] = {}
+
+        def _fake_site_fallback(*args, **kwargs):
+            captured["include_chart"] = kwargs.get("include_chart", True)
+            return {
+                "report": "Synthetic site analysis",
+                "sources": ["https://example.com/usgs"],
+                "chart": None,
+                "divergent_pairs": [],
+                "cohort_risk_level": "low",
+                "llm_synthesis": None,
+                "hallucination_guardrail": {"all_factual_claims_cited": True},
+                "claim_citations": [],
+                "section_confidence": {},
+            }
+
+        monkeypatch.setattr(chat_routes, "_site_research_fallback", _fake_site_fallback)
+        resp = client.post(
+            "/api/chat",
+            json={
+                "message": "What is happening at G-3336?",
+                "allow_llm_synthesis": False,
+                "include_chart": False,
+            },
+        )
+        assert resp.status_code == 200
+        assert captured["include_chart"] is False
+
     def test_chat_typo_aquifer_query_fuzzy_matches(self):
         """Common aquifer misspellings should still route to the right deterministic answer."""
         resp = client.post(
@@ -356,6 +393,71 @@ class TestChatEndpoint:
         body = resp.json()
         assert body["mode"] == "network_fallback"
         assert len(body.get("wells", [])) >= 2
+
+    def test_chat_repeated_question_uses_cache(self):
+        """Repeated deterministic chat prompts should hit the short-lived chat cache."""
+        payload = {
+            "message": "What is happening at G-3336?",
+            "allow_llm_synthesis": False,
+        }
+
+        first = client.post("/api/chat", json=payload)
+        second = client.post("/api/chat", json=payload)
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json().get("cache_hit") is not True
+        assert second.json().get("cache_hit") is True
+
+    def test_chat_cache_distinguishes_chart_requests(self):
+        """Charted and non-charted chat requests should not share cache entries."""
+        base_payload = {
+            "message": "What is happening at G-3336?",
+            "allow_llm_synthesis": False,
+        }
+
+        no_chart = client.post("/api/chat", json={**base_payload, "include_chart": False})
+        with_chart = client.post("/api/chat", json={**base_payload, "include_chart": True})
+
+        assert no_chart.status_code == 200
+        assert with_chart.status_code == 200
+        assert no_chart.json().get("cache_hit") is not True
+        assert with_chart.json().get("cache_hit") is not True
+
+    def test_chat_dataset_fastest_well_names_well_and_rate(self):
+        """Dataset-wide ranking should answer with a named well and annual rate."""
+        resp = client.post(
+            "/api/chat",
+            json={
+                "message": "Which well is changing fastest in this dataset?",
+                "allow_llm_synthesis": False,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        text = (body.get("answer_brief") or body.get("response") or "").lower()
+        assert body["route_mode"] == "network"
+        assert "ft/yr" in text
+        assert re.search(r"\b[a-z]-\d{3,5}\b", text) or re.search(
+            r"\b[a-z][a-z-]+(?:\s+[a-z][a-z-]+)*\s+[a-z]-\d+\b", text
+        )
+
+    def test_chat_most_stressed_aquifer_uses_screening_language(self):
+        """Stress ranking should stay comparative and explicitly screening-oriented."""
+        resp = client.post(
+            "/api/chat",
+            json={
+                "message": "Which aquifer looks most stressed in this dataset?",
+                "allow_llm_synthesis": False,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        text = (body.get("answer_brief") or body.get("response") or "").lower()
+        assert body["route_mode"] == "network"
+        assert "ft/yr" in text
+        assert "screening" in text or "not proof" in text
+        assert "aquifer" in text
 
     def test_chart_context_which_wells_followup_routes_to_interpreter(self, monkeypatch):
         """Follow-up chips like 'which wells' should not fall through to the well KB."""
@@ -455,7 +557,7 @@ class TestChatEndpoint:
                 "message": "On G-3764, explain how it compares to the other wells in this chart.",
                 "chart_context": {
                     "chart_id": "Miami-Dade comparison",
-                    "site_ids": ["254815080343801", "255055080304801"],
+                    "site_ids": ["251241080385301", "251922080340701"],
                     "chart_type": "comparison",
                     "summary_metrics": {"title": "Miami-Dade comparison"},
                 },
@@ -516,7 +618,7 @@ class TestChatEndpoint:
                         "content": "Recent Lee County chart",
                         "chart_id": "Estero Monthly Groundwater Levels",
                         "wells": [
-                            {"site_id": "263532081592201", "name": "Lee L-1998"},
+                            {"site_id": "263041081433102", "name": "Lee L-1998"},
                             {"site_id": "263335081394301", "name": "Lee L-729"},
                         ],
                     }

@@ -114,6 +114,8 @@ logger = logging.getLogger(__name__)
 _MONTHLY_SITE_CACHE: dict[str, pd.DataFrame | None] = {}
 _INTERPRETATION_CACHE: dict[tuple[str, str, bool, str], dict[str, Any]] = {}
 _INTERPRETATION_CACHE_MAX = 24
+_CHAT_CACHE: dict[tuple[str, bool, str], dict[str, Any]] = {}
+_CHAT_CACHE_MAX = 64
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LEARNER_EVENTS_DIR = PROJECT_ROOT / "outputs" / "research" / "learner_events"
 
@@ -266,6 +268,41 @@ def _payload_bool(value: Any, *, default: bool) -> bool:
         if normalized in {"0", "false", "no", "off"}:
             return False
     return default
+
+
+def _chat_cache_key(
+    *,
+    user_query: str,
+    allow_llm_synthesis: bool,
+    include_chart: bool,
+    chart_context: dict[str, Any] | None,
+    turn_history: list[dict[str, Any]],
+) -> tuple[str, bool, bool, str]:
+    """Stable cache key for completed /api/chat responses."""
+    normalized_query = " ".join(str(user_query or "").lower().split())
+    return (
+        normalized_query,
+        bool(allow_llm_synthesis),
+        bool(include_chart),
+        _context_hash(chart_context, turn_history),
+    )
+
+
+def _get_cached_chat_response(cache_key: tuple[str, bool, bool, str]) -> dict[str, Any] | None:
+    cached = _CHAT_CACHE.get(cache_key)
+    if cached is None:
+        return None
+    payload = copy.deepcopy(cached)
+    payload["cache_hit"] = True
+    return payload
+
+
+def _store_cached_chat_response(
+    cache_key: tuple[str, bool, bool, str], payload: dict[str, Any]
+) -> None:
+    if len(_CHAT_CACHE) >= _CHAT_CACHE_MAX:
+        _CHAT_CACHE.pop(next(iter(_CHAT_CACHE)))
+    _CHAT_CACHE[cache_key] = copy.deepcopy(payload)
 
 
 def _trim_turn_history(raw_history: Any) -> list[dict[str, Any]]:
@@ -1564,6 +1601,110 @@ def _build_generic_learner_brief(
     }
 
 
+def _build_interpretation_direct_answer(
+    *,
+    question: str,
+    explanation: str,
+    interpretation_details: dict[str, Any],
+) -> str:
+    """Create a concise deterministic lead for interpretation mode.
+
+    The interpretation surface should open with the most decision-useful
+    dataset summary, not the full multi-bullet answer brief.
+    """
+    aquifer_summaries = interpretation_details.get("aquifer_summaries") or []
+    n_wells = int(interpretation_details.get("n_wells") or 0)
+    cohort_trend = str(interpretation_details.get("cohort_trend") or "").strip().lower()
+    risk_level = str(interpretation_details.get("risk_level") or "").strip().lower()
+    location = str(interpretation_details.get("location") or "").strip() or "this dataset"
+    supply = interpretation_details.get("supply_interpretation") or {}
+    cohort_mean = interpretation_details.get("cohort_mean_annual_change_ft_yr")
+    focused_wells = interpretation_details.get("focused_wells") or []
+    ranking_scope = str(interpretation_details.get("ranking_scope") or "").strip().lower()
+    first_sentence = clean_sentence(explanation.split("\n", 1)[0] if explanation else "")
+
+    if ranking_scope or len(focused_wells) >= 1:
+        if first_sentence:
+            return first_sentence
+
+    def _signal_phrase() -> str:
+        mean = float(cohort_mean) if cohort_mean is not None else None
+        if mean is not None:
+            magnitude = abs(mean)
+            strength = "strong" if magnitude >= 0.20 else "clear" if magnitude >= 0.10 else "modest"
+            if cohort_trend == "mixed":
+                if mean <= -0.05:
+                    return f"a mixed pattern with a {strength} net decline"
+                if mean >= 0.05:
+                    return f"a mixed pattern with a {strength} net rise"
+                return "a mixed pattern overall"
+            if mean <= -0.05:
+                return f"a {strength} overall decline"
+            if mean >= 0.05:
+                return f"a {strength} overall rise"
+            return "roughly stable overall conditions"
+        mapping = {
+            "falling": "an overall decline",
+            "rising": "an overall rise",
+            "stable": "roughly stable overall conditions",
+            "mixed": "a mixed pattern overall",
+        }
+        return mapping.get(cohort_trend, "a mixed pattern overall")
+
+    def _summary_by_direction(direction: str) -> dict[str, Any] | None:
+        valid = [item for item in aquifer_summaries if item.get("mean_annual_change") is not None]
+        if not valid:
+            return None
+        if direction == "falling":
+            candidate = min(valid, key=lambda item: float(item.get("mean_annual_change", 0.0)))
+            return candidate if float(candidate.get("mean_annual_change", 0.0)) <= -0.05 else None
+        candidate = max(valid, key=lambda item: float(item.get("mean_annual_change", 0.0)))
+        return candidate if float(candidate.get("mean_annual_change", 0.0)) >= 0.05 else None
+
+    if supply:
+        units = [
+            str(unit.get("zone") or unit.get("aquifer") or "").strip()
+            for unit in supply.get("supply_units", [])
+            if str(unit.get("zone") or unit.get("aquifer") or "").strip()
+        ]
+        if units:
+            direct = (
+                f"{location} is mapped here as using {', '.join(dict.fromkeys(units))}, and the "
+                f"monitored proxy wells show {_signal_phrase()}."
+            )
+            strongest_unit = _summary_by_direction("falling")
+            if strongest_unit is not None:
+                return (
+                    direct[:-1]
+                    + f" The strongest observed declines are in {strongest_unit.get('zone')}."
+                )
+            return direct
+
+    if n_wells >= 2 and aquifer_summaries:
+        falling_unit = _summary_by_direction("falling")
+        rising_unit = _summary_by_direction("rising")
+        direct = f"In {location}, monitored groundwater shows {_signal_phrase()}."
+        if falling_unit and rising_unit and falling_unit is not rising_unit:
+            return (
+                f"In {location}, monitored groundwater shows {_signal_phrase()}, with the "
+                f"strongest declines in {falling_unit.get('zone')} and the clearest rise in "
+                f"{rising_unit.get('zone')}."
+            )
+        if falling_unit:
+            return (
+                f"In {location}, monitored groundwater shows {_signal_phrase()}, strongest in "
+                f"{falling_unit.get('zone')}."
+            )
+        if risk_level:
+            return direct[:-1] + f" with {risk_level} screening risk."
+        return direct
+
+    if first_sentence:
+        return first_sentence
+    fallback = clean_sentence(question)
+    return fallback or "This interpretation stays grounded in observed monitoring records."
+
+
 def _append_learner_event(payload: dict[str, Any]) -> str:
     LEARNER_EVENTS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc)
@@ -1711,10 +1852,17 @@ def _build_interpretation_response(
         follow_up_questions = progression["follow_up_questions"]
         learner_brief["next_best_question"] = questionize(follow_up_questions[0])
 
+    direct_answer = _build_interpretation_direct_answer(
+        question=question,
+        explanation=explanation,
+        interpretation_details=interpretation_details,
+    )
+
     return {
         "schema_version": "interpretation_response_v1",
         "question": question,
         "audience": audience,
+        "direct_answer": direct_answer,
         "interpretation": explanation,
         "learner_brief": learner_brief,
         "terms_to_know": terms_to_know,
@@ -1819,19 +1967,36 @@ def chat_endpoint(query: dict):
         query.get("allow_llm_synthesis"),
         default=True,
     )
+    include_chart = _payload_bool(
+        query.get("include_chart"),
+        default=True,
+    )
     chart_context = query.get("chart_context")
     if not isinstance(chart_context, dict):
         chart_context = None
     turn_history = _trim_turn_history(query.get("turn_history"))
+    cache_key = _chat_cache_key(
+        user_query=user_query,
+        allow_llm_synthesis=allow_llm_synthesis,
+        include_chart=include_chart,
+        chart_context=chart_context,
+        turn_history=turn_history,
+    )
+    cached_payload = _get_cached_chat_response(cache_key)
+    if cached_payload is not None:
+        return cached_payload
 
     def _finalize(response_payload: dict[str, Any], decision: RouteDecision) -> dict[str, Any]:
         enriched = _enrich_with_usgs_data(user_query, response_payload)
         enriched.setdefault("route_decision", decision.to_observable())
-        return _augment_chat_payload(
+        finalized = _augment_chat_payload(
             enriched,
             question=user_query,
             allow_llm_rewrite=allow_llm_synthesis,
         )
+        if decision.route_mode != "research":
+            _store_cached_chat_response(cache_key, finalized)
+        return finalized
 
     # Single entry-point for route selection. Detection runs once here,
     # downstream branches read what they need off the decision.
@@ -1867,6 +2032,7 @@ def chat_endpoint(query: dict):
         refusal_payload["route_decision"] = decision.to_observable()
         attach_insufficient_answer(refusal_payload, refusal)
         stamp_contract_fields(refusal_payload, force=True)
+        _store_cached_chat_response(cache_key, refusal_payload)
         return refusal_payload
 
     # --- Chart-context interpretation (either caller-supplied or recovered) ---
@@ -1888,6 +2054,7 @@ def chat_endpoint(query: dict):
             named_sites,
             label,
             allow_llm_synthesis=allow_llm_synthesis,
+            include_chart=include_chart,
         )
         return _finalize(
             _build_chat_payload(
@@ -1927,6 +2094,7 @@ def chat_endpoint(query: dict):
             aq_sites,
             aq_display_name,
             allow_llm_synthesis=allow_llm_synthesis,
+            include_chart=include_chart,
         )
         return _finalize(
             _build_chat_payload(
@@ -1968,6 +2136,7 @@ def chat_endpoint(query: dict):
                 multi_sites,
                 multi_label,
                 allow_llm_synthesis=allow_llm_synthesis,
+                include_chart=include_chart,
             )
             return _finalize(
                 _build_chat_payload(
@@ -2009,6 +2178,7 @@ def chat_endpoint(query: dict):
             ref_lat=ref_lat,
             ref_lng=ref_lng,
             allow_llm_synthesis=allow_llm_synthesis,
+            include_chart=include_chart,
         )
         wells_payload = _build_wells_payload(sites)
         response_dict = _build_chat_payload(
@@ -2048,6 +2218,7 @@ def chat_endpoint(query: dict):
                 nw_sites,
                 "Florida monitoring network",
                 allow_llm_synthesis=allow_llm_synthesis,
+                include_chart=include_chart,
             )
             return _finalize(
                 _build_chat_payload(

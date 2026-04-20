@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -105,8 +106,9 @@ def _assistant_turn_entry(
     return {
         "role": "assistant",
         "content_preview": str(
-            grounded.get("direct_answer")
-            or interp.get("direct_answer")
+            interp.get("direct_answer")
+            or grounded.get("direct_answer")
+            or interp.get("interpretation")
             or body.get("answer_brief")
             or body.get("response")
             or ""
@@ -146,7 +148,8 @@ def _response_excerpt(body: dict[str, Any]) -> str:
     grounded = body.get("grounded_answer") or {}
     interp = body.get("interpretation_response") or {}
     text = (
-        grounded.get("direct_answer")
+        interp.get("direct_answer")
+        or grounded.get("direct_answer")
         or interp.get("interpretation")
         or body.get("answer_brief")
         or body.get("response")
@@ -164,6 +167,19 @@ def _auto_flags(
     flags: list[str] = []
     grounded = body.get("grounded_answer") or {}
     interp = body.get("interpretation_response") or {}
+    direct_answer = str(
+        grounded.get("direct_answer")
+        or interp.get("direct_answer")
+        or body.get("answer_brief")
+        or body.get("response")
+        or ""
+    )
+    next_best_question = str(grounded.get("next_best_question") or "")
+    combined_text = " ".join(
+        part
+        for part in [direct_answer, str(body.get("response") or ""), next_best_question]
+        if part
+    )
 
     if status_code != 200:
         flags.append("http_error")
@@ -183,6 +199,50 @@ def _auto_flags(
         grounding = interp.get("grounding_status") or {}
         if not grounding.get("uses_chart_context"):
             flags.append("lost_chart_context")
+    expected_route_mode = turn.get("expected_route_mode")
+    if expected_route_mode and body.get("route_mode") != expected_route_mode:
+        flags.append("unexpected_route_mode")
+    expected_answer_type = turn.get("expected_answer_type")
+    if expected_answer_type and body.get("answer_type") != expected_answer_type:
+        flags.append("unexpected_answer_type")
+    for forbidden in turn.get("must_not_contain", []):
+        if forbidden and forbidden.lower() in combined_text.lower():
+            flags.append("contains_forbidden_text")
+            break
+    must_contain_any = turn.get("must_contain_any") or []
+    if must_contain_any and not any(
+        str(item).lower() in combined_text.lower() for item in must_contain_any
+    ):
+        flags.append("missing_expected_text")
+    for pattern in turn.get("must_match_regex", []):
+        if pattern and not re.search(pattern, combined_text, re.I):
+            flags.append("missing_expected_pattern")
+            break
+
+    if turn.get("require_named_entity"):
+        if not re.search(
+            r"\b(?:[A-Z]-\d{3,5}|[A-Z][a-z-]+(?:\s+[A-Z][a-z-]+)*\s+[A-Z]-\d+)\b",
+            combined_text,
+        ):
+            flags.append("missing_named_entity")
+    if turn.get("require_numeric_rate"):
+        if not re.search(r"\b[+-]?\d+(?:\.\d+)?\s*ft/yr\b", combined_text, re.I):
+            flags.append("missing_numeric_support")
+    if turn.get("require_screening_caveat"):
+        if not re.search(
+            r"\b(screening|not proof|not a forecast|not proof of cause|not proof of pumping|not.*depletion)\b",  # noqa: E501
+            combined_text,
+            re.I,
+        ):
+            flags.append("weak_screening_caveat")
+    if turn.get("require_next_best_question") and not next_best_question:
+        flags.append("missing_next_best_question")
+    if body.get("route_mode") == "fallback" and (
+        turn.get("require_named_entity")
+        or turn.get("require_numeric_rate")
+        or turn.get("expected_route_mode") in {"network", "cohort", "exact_well", "chart_followup"}
+    ):
+        flags.append("fell_to_fallback_when_should_be_grounded")
     return flags
 
 

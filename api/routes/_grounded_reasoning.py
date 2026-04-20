@@ -12,8 +12,12 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -21,6 +25,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+_LLM_TIMEOUT_EXECUTOR = ThreadPoolExecutor(
+    max_workers=max(2, int(os.getenv("GROUNDWATERGPT_LLM_TIMEOUT_WORKERS", "4"))),
+    thread_name_prefix="gw-llm",
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 HYDRO_CONTEXT_PATH = PROJECT_ROOT / "config" / "estero_hydrogeology_context.json"
@@ -50,6 +58,62 @@ def grounded_reasoning_enabled() -> bool:
         "true",
         "yes",
         "on",
+    }
+
+
+def llm_timeout_seconds() -> float:
+    """Return the synthesis ceiling, leaving headroom for deterministic work."""
+    raw = os.getenv("GROUNDWATERGPT_LLM_TIMEOUT_SECONDS", "28").strip()
+    try:
+        seconds = float(raw)
+    except Exception:
+        seconds = 28.0
+    if not math.isfinite(seconds):
+        seconds = 28.0
+    return max(1.0, min(seconds, 28.0))
+
+
+def invoke_with_llm_timeout(
+    call: Any,
+    *,
+    timeout_seconds: float | None,
+    label: str,
+) -> Any | None:
+    """Run an LLM call with a hard response deadline.
+
+    The underlying provider call may continue in the background if it ignores
+    cancellation, but the request path returns control once the deadline is hit.
+    """
+    if timeout_seconds is None:
+        return call()
+    if timeout_seconds <= 0:
+        logger.warning("Skipping %s because no LLM time budget remains", label)
+        return None
+
+    future = _LLM_TIMEOUT_EXECUTOR.submit(call)
+    try:
+        return future.result(timeout=timeout_seconds)
+    except FutureTimeoutError:
+        future.cancel()
+        logger.warning("LLM timeout after %.1fs during %s", timeout_seconds, label)
+        return None
+
+
+def _remaining_llm_budget(deadline: float) -> float:
+    return max(0.0, deadline - time.monotonic())
+
+
+def _provider_timeout_kwargs(provider_name: str, timeout_seconds: float) -> dict[str, Any]:
+    if provider_name == "ollama":
+        client_timeout = {"timeout": timeout_seconds}
+        return {
+            "client_kwargs": client_timeout,
+            "sync_client_kwargs": client_timeout,
+            "async_client_kwargs": client_timeout,
+        }
+    return {
+        "timeout": timeout_seconds,
+        "max_retries": 0,
     }
 
 
@@ -1165,16 +1229,30 @@ def _invoke_json_schema(
     llm: Any,
     schema: type[BaseModel],
     messages: list[tuple[str, str]],
+    *,
+    timeout_seconds: float | None = None,
 ) -> BaseModel | None:
     if hasattr(llm, "with_structured_output"):
         try:
             structured_llm = llm.with_structured_output(schema)
-            raw = structured_llm.invoke(messages)
+            raw = invoke_with_llm_timeout(
+                lambda: structured_llm.invoke(messages),
+                timeout_seconds=timeout_seconds,
+                label=f"{schema.__name__} structured output",
+            )
+            if raw is None:
+                return None
             return raw if isinstance(raw, schema) else schema(**raw)
         except Exception as exc:
             logger.debug("Structured output failed for %s: %s", schema.__name__, exc)
 
-    raw_response = llm.invoke(messages)
+    raw_response = invoke_with_llm_timeout(
+        lambda: llm.invoke(messages),
+        timeout_seconds=timeout_seconds,
+        label=f"{schema.__name__} raw invoke",
+    )
+    if raw_response is None:
+        return None
     content = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
     parsed = _parse_json_response(_strip_reasoning_artifacts(content))
     if not parsed:
@@ -1237,6 +1315,7 @@ def invoke_grounded_reasoning(
     rubric: dict[str, Any] | None = None,
     hydro_context: dict[str, Any] | None = None,
     rubric_moves: list[str] | None = None,
+    deadline: float | None = None,
 ) -> GroundedInterpretation | None:
     """Invoke grounded reasoning with raw evidence.
 
@@ -1258,11 +1337,20 @@ def invoke_grounded_reasoning(
                 hydro_context = load_hydro_context("estero")
                 break
 
+    if deadline is None:
+        deadline = time.monotonic() + llm_timeout_seconds()
+
     for provider_name, model in _reasoning_providers():
         try:
+            remaining = _remaining_llm_budget(deadline)
+            if remaining <= 0:
+                logger.warning(
+                    "Grounded reasoning skipped because the 30s LLM budget was exhausted"
+                )
+                break
             from src.agent.llm_factory import LLMProvider, get_llm
 
-            llm_kwargs: dict[str, Any] = {}
+            llm_kwargs: dict[str, Any] = _provider_timeout_kwargs(provider_name, remaining)
             if provider_name == "ollama":
                 llm_kwargs["format"] = "json"
             llm = get_llm(
@@ -1279,6 +1367,7 @@ def invoke_grounded_reasoning(
                     llm,
                     GroundedFraming,
                     _build_frame_prompt(question, pack, provider_name=provider_name, model=model),
+                    timeout_seconds=_remaining_llm_budget(deadline),
                 ) or derive_question_frame(question, pack)
                 messages = _build_multistage_reasoning_prompt(
                     question,
@@ -1297,7 +1386,12 @@ def invoke_grounded_reasoning(
                     rubric_moves,
                 )
 
-            interpretation = _invoke_json_schema(llm, GroundedInterpretation, messages)
+            interpretation = _invoke_json_schema(
+                llm,
+                GroundedInterpretation,
+                messages,
+                timeout_seconds=_remaining_llm_budget(deadline),
+            )
             if interpretation is None:
                 continue
 
@@ -1351,6 +1445,8 @@ def invoke_grounded_synthesis(
     cross_well: dict[str, Any],
     supply_info: dict[str, Any] | None,
     location_name: str,
+    *,
+    deadline: float | None = None,
 ) -> GroundedInterpretation | None:
     """Entry point for the chat path.
 
@@ -1383,6 +1479,7 @@ def invoke_grounded_synthesis(
         pack,
         hydro_context=hydro_context,
         rubric_moves=rubric_moves,
+        deadline=deadline,
     )
 
 

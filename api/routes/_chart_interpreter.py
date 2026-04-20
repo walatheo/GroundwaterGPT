@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import os
 import re
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -33,7 +35,11 @@ from api.routes._detection import (
 from api.routes._evidence_guided_ai import build_evidence_guided_progression
 from api.routes._grounded_reasoning import derive_question_frame
 from api.routes._grounded_reasoning import grounded_reasoning_enabled as _grounded_reasoning_enabled
-from api.routes._grounded_reasoning import invoke_grounded_reasoning
+from api.routes._grounded_reasoning import (
+    invoke_grounded_reasoning,
+    invoke_with_llm_timeout,
+    llm_timeout_seconds,
+)
 from api.routes._site_analysis import (
     _build_chart_explainability,
     _build_chart_insights,
@@ -2927,7 +2933,12 @@ def _coerce_structured_response(raw: Any) -> InterpretationResult:
     raise ValueError("LLM did not return an InterpretationResult")
 
 
-def _invoke_structured_llm(question: str, pack: dict[str, Any]) -> InterpretationResult | None:
+def _invoke_structured_llm(
+    question: str,
+    pack: dict[str, Any],
+    *,
+    deadline: float | None = None,
+) -> InterpretationResult | None:
     providers = []
     if os.getenv("DASHSCOPE_API_KEY"):
         providers.append(("qwen", os.getenv("GROUNDWATERGPT_INTERPRETER_MODEL", "qwen-plus")))
@@ -2947,17 +2958,49 @@ def _invoke_structured_llm(question: str, pack: dict[str, Any]) -> Interpretatio
         intent_answer,
     )
 
+    if deadline is None:
+        deadline = time.monotonic() + llm_timeout_seconds()
+
     for provider_name, model in providers:
         try:
+            remaining = max(0.0, deadline - time.monotonic())
+            if remaining <= 0:
+                logger.warning(
+                    "Chart interpreter skipped LLM polish because the 30s LLM budget was exhausted"
+                )
+                break
             from src.agent.llm_factory import LLMProvider, get_llm
 
             provider = LLMProvider(provider_name)
-            llm = get_llm(provider=provider, model=model, temperature=0)
+            llm_kwargs: dict[str, Any] = {"temperature": 0}
+            if provider_name == "ollama":
+                client_timeout = {"timeout": remaining}
+                llm_kwargs.update(
+                    {
+                        "client_kwargs": client_timeout,
+                        "sync_client_kwargs": client_timeout,
+                        "async_client_kwargs": client_timeout,
+                    }
+                )
+            else:
+                llm_kwargs.update({"timeout": remaining, "max_retries": 0})
+            llm = get_llm(provider=provider, model=model, **llm_kwargs)
             if hasattr(llm, "with_structured_output"):
                 structured_llm = llm.with_structured_output(InterpretationResult)
-                raw = structured_llm.invoke(
-                    _build_structured_llm_messages(question, pack, explainer_seed, provider_name)
+                raw = invoke_with_llm_timeout(
+                    lambda: structured_llm.invoke(
+                        _build_structured_llm_messages(
+                            question,
+                            pack,
+                            explainer_seed,
+                            provider_name,
+                        )
+                    ),
+                    timeout_seconds=max(0.0, deadline - time.monotonic()),
+                    label=f"chart interpreter {provider_name}/{model}",
                 )
+                if raw is None:
+                    continue
                 result = _coerce_structured_response(raw)
                 evidence_used = dict(result.evidence_used or {})
                 evidence_used.setdefault("llm_provider", provider_name)
@@ -3102,12 +3145,14 @@ def interpret_with_context(
     rubric = _rubric_for_intent(str(intent_answer.get("question_intent") or "general"))
 
     llm_result = None
+    llm_deadline = time.monotonic() + llm_timeout_seconds()
     if allow_llm_synthesis and _grounded_reasoning_enabled():
         try:
             grounded_result = invoke_grounded_reasoning(
                 clean_question,
                 pack,
                 rubric=rubric,
+                deadline=llm_deadline,
             )
         except Exception as exc:
             logger.debug("Chart interpreter grounded reasoning failed: %s", exc)
@@ -3119,9 +3164,18 @@ def interpret_with_context(
 
     if llm_result is None:
         try:
-            llm_result = (
-                _invoke_structured_llm(clean_question, pack) if allow_llm_synthesis else None
-            )
+            if allow_llm_synthesis:
+                invoke_params = inspect.signature(_invoke_structured_llm).parameters
+                if "deadline" in invoke_params:
+                    llm_result = _invoke_structured_llm(
+                        clean_question,
+                        pack,
+                        deadline=llm_deadline,
+                    )
+                else:
+                    llm_result = _invoke_structured_llm(clean_question, pack)
+            else:
+                llm_result = None
         except Exception as exc:
             logger.debug("Chart interpreter structured LLM failed: %s", exc)
             llm_result = None

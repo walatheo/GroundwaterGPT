@@ -14,13 +14,15 @@ import ResearchSessionPanel from './ResearchSessionPanel'
 const AgentChart = lazy(() => import('./AgentChart'))
 const ResearchChartsPanel = lazy(() => import('./ResearchChartsPanel'))
 const VISUAL_QUERY_RE = /plot|chart|trend|visuali[sz]e|graph/i
-const INTERPRETATION_QUERY_RE = /interpret|explain|read|meaning|what does|chart|trend|compare .*well|lee l-\d+|water supply|groundwater sources?|supply source|drinking water|aquifer.*supply|changes? in groundwater levels|30 years|which wells?|fastest|highlighted|cohort|diverge|proxy/i
-const CHART_FOLLOWUP_RE = /which wells?|fastest|highlighted|cohort|average|trend line|diverge|divergent|proxy|source|supply|compare|this chart|the chart|on the chart|using the chart|what should/i
+const INTERPRETATION_QUERY_RE = /interpret|explain|read|meaning|what does|chart|compare .*well|lee l-\d+|which wells?|fastest|highlighted|cohort|diverge|proxy/i
+const CHART_FOLLOWUP_RE = /which wells?|fastest|highlighted|cohort|average|trend line|diverge|divergent|compare|this chart|the chart|on the chart|using the chart|what should/i
+const WELL_REFERENCE_RE = /\b(?:[a-z]{1,3}[\s-]?\d{3,5}|\d{15})\b/i
+const EXPLICIT_CHART_REFERENCE_RE = /\b(this chart|the chart|on the chart|using the chart|highlighted|cohort|trend line|dataset)\b/i
 const ENABLE_LLM_INTERPRETATION = String(import.meta.env.VITE_ENABLE_LLM_INTERPRETATION || '').toLowerCase() === 'true'
 const SHOWCASE_MODE = ['1', 'true', 'yes', 'on'].includes(
   String(import.meta.env.VITE_GROUNDWATER_SHOWCASE_MODE || '').toLowerCase()
 )
-const REQUEST_LLM_INTERPRETATION = SHOWCASE_MODE || ENABLE_LLM_INTERPRETATION
+const REQUEST_LLM_INTERPRETATION = ENABLE_LLM_INTERPRETATION
 
 /** Custom component overrides for ReactMarkdown (no @tailwindcss/typography). */
 const markdownComponents = {
@@ -157,6 +159,14 @@ function turnHistoryFromMessages(messages) {
       direct_answer: String(message.directAnswer || '').slice(0, 500),
     }
   })
+}
+
+function shouldReuseActiveChartContext(text, activeChartContext, { forceInterpretation = false } = {}) {
+  if (!activeChartContext) return false
+  if (forceInterpretation) return true
+  if (EXPLICIT_CHART_REFERENCE_RE.test(text)) return true
+  if (WELL_REFERENCE_RE.test(text)) return false
+  return CHART_FOLLOWUP_RE.test(text) || VISUAL_QUERY_RE.test(text)
 }
 
 function unitMeanRate(unit) {
@@ -440,8 +450,6 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
   const [activeChartContext, setActiveChartContext] = useState(null)
   const messagesEndRef = useRef(null)
   const hasMountedRef = useRef(false)
-  const learnerImpressionRef = useRef(new Set())
-  const learnerFeedbackRef = useRef(new Set())
 
   const logLearnerEvent = async (event) => {
     try {
@@ -471,29 +479,17 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
 
   useEffect(() => backendStatus.subscribe(setBackendState), [])
 
-  useEffect(() => {
-    messages.forEach(message => {
-      const learnerBrief = message.interpretationResponse?.learner_brief
-      if (!learnerBrief || !message.id || learnerImpressionRef.current.has(message.id)) return
-      learnerImpressionRef.current.add(message.id)
-      logLearnerEvent({
-        event_type: 'learner_brief_shown',
-        message_id: message.id,
-        question: message.questionAsked || '',
-        chart_id: message.chartContextRef?.chart_id || message.chart?.title || '',
-        details: {
-          has_terms_to_know: Boolean(message.interpretationResponse?.terms_to_know?.length),
-          has_misconceptions: Boolean(message.interpretationResponse?.misconceptions_to_avoid?.length),
-        },
-      })
-    })
-  }, [messages])
-
   const sendMessage = async (text = input, { chartContext, forceInterpretation = false } = {}) => {
     if (!text.trim()) return
 
     const priorMessages = messages
-    const requestChartContext = chartContext || activeChartContext || null
+    const explicitChartContext = chartContext || null
+    const shouldUseActiveChartContext = shouldReuseActiveChartContext(
+      text,
+      activeChartContext,
+      { forceInterpretation }
+    )
+    const requestChartContext = explicitChartContext || (shouldUseActiveChartContext ? activeChartContext : null)
     const turnHistory = turnHistoryFromMessages(priorMessages)
     const userMessage = { id: makeMessageId(), role: 'user', content: text }
     setMessages(prev => [...prev, userMessage])
@@ -600,10 +596,15 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
       } else {
         // Quick chat mode
         const wantsInterpretation = (
-          SHOWCASE_MODE
-          || forceInterpretation
+          forceInterpretation
           || INTERPRETATION_QUERY_RE.test(text)
-          || Boolean(requestChartContext && CHART_FOLLOWUP_RE.test(text))
+          || Boolean(
+            requestChartContext
+            && (
+              EXPLICIT_CHART_REFERENCE_RE.test(text)
+              || (!WELL_REFERENCE_RE.test(text) && CHART_FOLLOWUP_RE.test(text))
+            )
+          )
         )
         const data = wantsInterpretation
           ? await sendInterpretationQuery(text, {
@@ -615,17 +616,20 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
           : await sendChatMessage(text, {
               chartContext: requestChartContext,
               turnHistory,
+              allowLlmSynthesis: false,
+              ...(VISUAL_QUERY_RE.test(text) || Boolean(requestChartContext) ? { includeChart: true } : {}),
             })
         const { text: replyText } = extractChart(data.response)
         // Canonical contract first: grounded_answer.direct_answer is the
         // backend's product-level reply. Legacy fields are fallbacks for
         // payloads from paths that haven't been stamped yet.
         const groundedAnswer = data.grounded_answer || null
+        const interpretationDirect = data.interpretation_response?.direct_answer || ''
         const directFromContract = groundedAnswer?.direct_answer || ''
-        const answerBrief = directFromContract
+        const answerBrief = interpretationDirect
+          || directFromContract
           || data.answer_brief
           || data.interpretation_response?.interpretation
-          || data.llm_synthesis
           || null
         const chart = data.chart || null
         const chartContextRef = chartContextFromPayload(chart) || requestChartContext
@@ -667,7 +671,6 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
           progressionSource: data.progression_source || (data.interpretation_response || {}).progression_source || '',
           questionIntent: (data.interpretation_response || {}).question_intent || '',
           directAnswer: (data.interpretation_response || {}).direct_answer
-            || ((data.interpretation_response || {}).learner_brief || {}).direct_answer
             || '',
           requestedVisualization: (
             VISUAL_QUERY_RE.test(text)
@@ -725,7 +728,7 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
           {/* Showcase keeps the user on the grounded interpretation surface. */}
           <div className="flex overflow-hidden rounded-xl bg-white/10 text-sm ring-1 ring-white/10">
             <div className="flex items-center gap-1 bg-white/20 px-3 py-1.5 font-semibold">
-              <MessageCircle className="w-3.5 h-3.5" /> {SHOWCASE_MODE ? 'LLM Path' : 'Chat'}
+              <MessageCircle className="w-3.5 h-3.5" /> {SHOWCASE_MODE ? 'Grounded Chat' : 'Chat'}
             </div>
           </div>
         </div>
@@ -733,7 +736,7 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
           {SHOWCASE_MODE ? (
             <span className="rounded-full bg-white/10 px-3 py-1.5 text-teal-50/85">
-              LLM interpretation path active for user testing with deterministic groundwater evidence underneath
+              Deterministic groundwater answers first, with chart interpretation available when needed
             </span>
           ) : (
             <span className="rounded-full bg-white/10 px-3 py-1.5 text-teal-50/85">
@@ -822,7 +825,7 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
                   >
                     {msg.groundingStatus}
                   </span>
-                  {msg.routeMode && (
+                  {!SHOWCASE_MODE && msg.routeMode && (
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{msg.routeMode}</span>
                   )}
                 </div>
@@ -830,12 +833,34 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
               <div className="text-sm leading-relaxed">
                 <ReactMarkdown components={markdownComponents}>{msg.content}</ReactMarkdown>
               </div>
+              {msg.groundedAnswer && Array.isArray(msg.groundedAnswer.grounded_findings) && msg.groundedAnswer.grounded_findings.length > 0 && (
+                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600">Grounded findings</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-slate-700">
+                    {msg.groundedAnswer.grounded_findings.slice(0, 4).map((finding, i) => (
+                      <li key={i}>{finding}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {msg.groundedAnswer && Array.isArray(msg.groundedAnswer.limits) && msg.groundedAnswer.limits.length > 0 && (
-                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-slate-600">
-                  {msg.groundedAnswer.limits.slice(0, 3).map((limit, i) => (
-                    <li key={i}>{limit}</li>
-                  ))}
-                </ul>
+                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-amber-800">Limits</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-slate-700">
+                    {msg.groundedAnswer.limits.slice(0, 2).map((limit, i) => (
+                      <li key={i}>{limit}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {msg.groundedAnswer?.next_best_question && !msg.interpretationResponse && msg.answerType !== 'insufficient_evidence' && (
+                <button
+                  type="button"
+                  onClick={() => sendMessage(msg.groundedAnswer.next_best_question)}
+                  className="mt-3 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+                >
+                  Ask next: {msg.groundedAnswer.next_best_question}
+                </button>
               )}
               {msg.groundedAnswer?.next_best_question && msg.answerType === 'insufficient_evidence' && (
                 <button
@@ -884,95 +909,14 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
               {msg.interpretationResponse && (
                 <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                   <div className="text-xs font-medium text-emerald-800">
-                    Learner Brief
+                    Interpretation
                   </div>
-                  {msg.interpretationResponse.learner_brief ? (
-                    <div className="mt-2 space-y-2 text-sm text-slate-800">
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-800">Answer</p>
-                        <p className="mt-1 leading-relaxed">{msg.interpretationResponse.learner_brief.direct_answer}</p>
-                      </div>
-                      <div className="grid gap-2 md:grid-cols-3">
-                        <div className="rounded-md bg-white/75 p-2">
-                          <p className="text-[11px] font-medium text-emerald-800">What to notice</p>
-                          <p className="mt-1 text-xs leading-5 text-slate-700">{msg.interpretationResponse.learner_brief.what_to_notice}</p>
-                        </div>
-                        <div className="rounded-md bg-white/75 p-2">
-                          <p className="text-[11px] font-medium text-emerald-800">Why it matters</p>
-                          <p className="mt-1 text-xs leading-5 text-slate-700">{msg.interpretationResponse.learner_brief.why_it_matters}</p>
-                        </div>
-                        <div className="rounded-md bg-white/75 p-2">
-                          <p className="text-[11px] font-medium text-emerald-800">Important limit</p>
-                          <p className="mt-1 text-xs leading-5 text-slate-700">{msg.interpretationResponse.learner_brief.important_limit}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    msg.interpretationResponse.interpretation && (
-                      msg.interpretationResponse.interpretation !== msg.content && (
-                        <p className="mt-1 text-sm leading-relaxed text-slate-800">
-                          {msg.interpretationResponse.interpretation}
-                        </p>
-                      )
-                    )
-                  )}
-
-                  {Array.isArray(msg.interpretationResponse.terms_to_know) && msg.interpretationResponse.terms_to_know.length > 0 && (
-                    <details
-                      className="mt-3 rounded-md border border-emerald-200 bg-white/80 p-2"
-                      onToggle={event => {
-                        if (event.currentTarget.open) {
-                          logLearnerEvent({
-                            event_type: 'terms_to_know_expanded',
-                            message_id: msg.id,
-                            question: msg.questionAsked || '',
-                            chart_id: msg.chartContextRef?.chart_id || msg.chart?.title || '',
-                            details: { count: msg.interpretationResponse.terms_to_know.length },
-                          })
-                        }
-                      }}
-                    >
-                      <summary className="cursor-pointer text-[11px] font-medium text-emerald-800">Terms to Know</summary>
-                      <div className="mt-2 space-y-2">
-                        {msg.interpretationResponse.terms_to_know.slice(0, 4).map((term, i) => (
-                          <button
-                            key={`${term.term}-${i}`}
-                            type="button"
-                            onClick={() => logLearnerEvent({
-                              event_type: 'terms_to_know_clicked',
-                              message_id: msg.id,
-                              question: msg.questionAsked || '',
-                              chart_id: msg.chartContextRef?.chart_id || msg.chart?.title || '',
-                              details: { term: term.term },
-                            })}
-                            className="block w-full rounded-md border border-emerald-100 bg-white px-2 py-2 text-left"
-                          >
-                            <p className="text-xs font-medium text-slate-800">{term.term}</p>
-                            <p className="mt-1 text-[11px] leading-5 text-slate-600">{term.plain_definition}</p>
-                            <p className="mt-1 text-[11px] leading-5 text-slate-500">{term.why_it_matters_here}</p>
-                          </button>
-                        ))}
-                      </div>
-                    </details>
-                  )}
-
-                  {Array.isArray(msg.interpretationResponse.misconceptions_to_avoid) && msg.interpretationResponse.misconceptions_to_avoid.length > 0 && (
-                    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2">
-                      <p className="text-[11px] font-medium text-amber-800">Common Misreadings</p>
-                      <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-slate-700">
-                        {msg.interpretationResponse.misconceptions_to_avoid.slice(0, 4).map((item, i) => (
-                          <li key={i}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {msg.interpretationResponse.learner_brief?.next_best_question && (
-                    <div className="mt-3 rounded-md border border-emerald-200 bg-white/80 p-2">
-                      <p className="text-[11px] font-medium text-emerald-800">Next best question</p>
-                      <p className="mt-1 text-xs leading-5 text-slate-700">{msg.interpretationResponse.learner_brief.next_best_question}</p>
-                    </div>
-                  )}
+                  {msg.interpretationResponse.interpretation
+                    && msg.interpretationResponse.interpretation !== msg.content && (
+                      <p className="mt-2 text-sm leading-relaxed text-slate-800">
+                        {msg.interpretationResponse.interpretation}
+                      </p>
+                    )}
 
                   {resolveNextGoal(msg) && (
                     <div className="mt-3 rounded-md border border-emerald-200 bg-white/80 p-2">
@@ -1022,30 +966,6 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
                     )
                   })()}
 
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-emerald-200 pt-2">
-                    <span className="text-[11px] font-medium text-emerald-800">This helped me understand the chart</span>
-                    {['yes', 'no'].map(choice => (
-                      <button
-                        key={choice}
-                        type="button"
-                        onClick={() => {
-                          const key = `${msg.id}:${choice}`
-                          if (learnerFeedbackRef.current.has(key)) return
-                          learnerFeedbackRef.current.add(key)
-                          logLearnerEvent({
-                            event_type: 'learner_feedback',
-                            message_id: msg.id,
-                            question: msg.questionAsked || '',
-                            chart_id: msg.chartContextRef?.chart_id || msg.chart?.title || '',
-                            details: { helped: choice === 'yes' },
-                          })
-                        }}
-                        className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-[11px] text-emerald-900 hover:bg-emerald-100"
-                      >
-                        {choice}
-                      </button>
-                    ))}
-                  </div>
                   {msg.interpretationResponse.grounding_status && (
                     <div className="mt-2 text-[10px] text-slate-500">
                       USGS data: {msg.interpretationResponse.grounding_status.uses_usgs_data ? 'yes' : 'no'} · Chart context: {msg.interpretationResponse.grounding_status.uses_chart_context ? 'yes' : 'no'} · LLM: {llmGroundingLabel(msg.interpretationResponse.grounding_status)}
@@ -1329,20 +1249,6 @@ export default function ChatView({ selectedSite, fullScreen = false }) {
                     recommendedViews={msg.recommendedViews || []}
                   />
                 </Suspense>
-              )}
-
-              {msg.llmSynthesis && (
-                <div className="mt-3 bg-cyan-50 border border-cyan-200 rounded-lg p-3">
-                  <div className="text-xs text-cyan-700 font-medium mb-1">
-                    Grounded LLM Chart Explanation
-                  </div>
-                  <div className="mb-2 text-[11px] text-slate-500">
-                    The model explains deterministic USGS chart context; it does not create the measurements.
-                  </div>
-                  <div className="text-sm text-slate-800">
-                    <ReactMarkdown components={markdownComponents}>{msg.llmSynthesis}</ReactMarkdown>
-                  </div>
-                </div>
               )}
 
               {(msg.interpretationDetails?.supply_interpretation || msg.interpretationResponse?.supply_interpretation) && (() => {

@@ -70,11 +70,11 @@ class TestGroundedFindings:
         }
         assert compose_grounded_answer(payload).grounded_findings == ["Trend is flat."]
 
-    def test_caps_at_five(self):
+    def test_caps_at_four(self):
         payload = {
             "chart": {"insights": [f"Insight {i}" for i in range(10)]},
         }
-        assert len(compose_grounded_answer(payload).grounded_findings) == 5
+        assert len(compose_grounded_answer(payload).grounded_findings) == 4
 
     def test_fallback_to_meaning_brief_when_no_chart(self):
         payload = {

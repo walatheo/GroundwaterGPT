@@ -196,10 +196,15 @@ export async function fetchComparisonChart(siteIds, { startDate, endDate } = {})
  * @param {string} message — the user's question
  * @returns {{ response: string, context: string, sources: string[], mode: string, status: string }}
  */
-export async function sendChatMessage(message, { chartContext, turnHistory } = {}) {
+export async function sendChatMessage(
+  message,
+  { chartContext, turnHistory, allowLlmSynthesis, includeChart } = {}
+) {
   const body = { message }
   if (chartContext) body.chart_context = chartContext
   if (turnHistory) body.turn_history = turnHistory
+  if (typeof allowLlmSynthesis === 'boolean') body.allow_llm_synthesis = allowLlmSynthesis
+  if (typeof includeChart === 'boolean') body.include_chart = includeChart
   const response = await apiFetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

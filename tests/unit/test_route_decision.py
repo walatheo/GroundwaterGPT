@@ -96,6 +96,21 @@ class TestDeterministicRouting:
         assert decision.intent == "exact_well_lookup"
         assert len(decision.named_sites) == 1
 
+    def test_named_well_comparison_gets_comparison_intent(self):
+        decision = resolve_route(
+            "compare G-3336 and G-5004",
+            None,
+            [],
+            detectors=_detectors(
+                named_sites=[
+                    {"site_id": "G-3336", "name": "G-3336"},
+                    {"site_id": "G-5004", "name": "G-5004"},
+                ],
+            ),
+        )
+        assert decision.route_mode == RouteMode.EXACT_WELL
+        assert decision.intent == "named_well_comparison"
+
     def test_aquifer_hit_routes_to_cohort(self):
         decision = resolve_route(
             "how is the Biscayne aquifer?",
@@ -146,6 +161,28 @@ class TestDeterministicRouting:
         )
         assert decision.route_mode == RouteMode.NETWORK
         assert decision.is_network_wide is True
+
+    def test_dataset_fastest_well_routes_to_network_ranking(self):
+        decision = resolve_route(
+            "Which well is changing fastest in this dataset?",
+            None,
+            [],
+            detectors=_detectors(),
+        )
+        assert decision.route_mode == RouteMode.NETWORK
+        assert decision.is_ranking_ask is True
+        assert decision.ranking_scope == "well_rate"
+
+    def test_most_stressed_aquifer_routes_to_network_ranking(self):
+        decision = resolve_route(
+            "Which aquifer looks most stressed in this dataset?",
+            None,
+            [],
+            detectors=_detectors(),
+        )
+        assert decision.route_mode == RouteMode.NETWORK
+        assert decision.is_ranking_ask is True
+        assert decision.ranking_scope == "aquifer_stress"
 
     def test_kb_match_routes_to_fallback(self):
         decision = resolve_route(
@@ -206,6 +243,28 @@ class TestUnsupportedDetection:
         assert decision.intent == "unsupported_question"
         assert decision.unsupported_reason == "future_prediction"
 
+    def test_proxy_question_is_refused(self):
+        decision = resolve_route(
+            "Can these monitoring wells stand in for drinking-water wells?",
+            None,
+            [],
+            detectors=_detectors(),
+        )
+        assert decision.route_mode == RouteMode.UNSUPPORTED
+        assert decision.intent == "monitoring_vs_supply_proxy"
+        assert decision.unsupported_reason == "monitoring_vs_supply_proxy"
+
+    def test_ambiguous_reference_is_insufficient(self):
+        decision = resolve_route(
+            "Tell me about groundwater there.",
+            None,
+            [],
+            detectors=_detectors(),
+        )
+        assert decision.route_mode == RouteMode.UNSUPPORTED
+        assert decision.intent == "ambiguous_reference"
+        assert decision.unsupported_reason == "ambiguous_reference"
+
     def test_out_of_scope_with_named_site_still_marked_unsupported(self):
         # Geography refusal overrides the deterministic route.
         decision = resolve_route(
@@ -263,6 +322,39 @@ class TestOrderingAndPrecedence:
             ),
         )
         assert decision.route_mode == RouteMode.EXACT_WELL
+
+    def test_named_site_compare_ignores_unrelated_chart_context(self):
+        decision = resolve_route(
+            "compare G-3336 and G-5004",
+            {"chart_id": "x", "site_ids": ["LEE-1", "LEE-2"]},
+            [],
+            detectors=_detectors(
+                should_prefer_chart_context=True,
+                named_sites=[
+                    {"site_id": "G-3336", "name": "G-3336"},
+                    {"site_id": "G-5004", "name": "G-5004"},
+                ],
+            ),
+        )
+        assert decision.route_mode == RouteMode.EXACT_WELL
+        assert decision.intent == "named_well_comparison"
+
+    def test_named_site_compare_uses_matching_chart_context_when_explicit(self):
+        ctx = {"chart_id": "x", "site_ids": ["G-3336", "G-5004"]}
+        decision = resolve_route(
+            "compare G-3336 and G-5004 using the chart",
+            ctx,
+            [],
+            detectors=_detectors(
+                should_prefer_chart_context=True,
+                named_sites=[
+                    {"site_id": "G-3336", "name": "G-3336"},
+                    {"site_id": "G-5004", "name": "G-5004"},
+                ],
+            ),
+        )
+        assert decision.route_mode == RouteMode.CHART_FOLLOWUP
+        assert decision.chart_context_to_use == ctx
 
     def test_named_sites_beat_aquifer(self):
         decision = resolve_route(
