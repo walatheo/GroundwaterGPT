@@ -16,7 +16,6 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState(SHOWCASE_MODE ? 'chat' : 'map')
-  const [workbenchSeed, setWorkbenchSeed] = useState(null)
 
   // Fetch sites on mount
   useEffect(() => {
@@ -68,19 +67,6 @@ function App() {
 
   const handleSiteSelect = (site) => {
     setSelectedSite(site)
-  }
-
-  const handleOpenWorkbench = ({ siteIds = [], sourceLabel = '' }) => {
-    setWorkbenchSeed({
-      nonce: Date.now(),
-      siteIds,
-      sourceLabel,
-    })
-    setActiveTab('research_workbench')
-  }
-
-  const handleWorkbenchSeedConsumed = () => {
-    setWorkbenchSeed(null)
   }
 
   const countyCount = new Set(sites.map(site => site.county).filter(Boolean)).size
@@ -142,9 +128,6 @@ function App() {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           setSelectedSite={setSelectedSite}
-          workbenchSeed={workbenchSeed}
-          onWorkbenchSeedConsumed={handleWorkbenchSeedConsumed}
-          onOpenWorkbench={handleOpenWorkbench}
           networkSummary={networkSummary}
         />
       </main>

@@ -5,8 +5,6 @@ import {
   Activity,
   Droplets,
   MessageSquare,
-  FlaskConical,
-  Microscope,
   Waves,
   ArrowRight,
 } from 'lucide-react'
@@ -17,8 +15,6 @@ const navItems = [
   { id: 'heatmap', label: 'Heatmap', icon: BarChart3 },
   { id: 'analysis', label: 'Analysis', icon: Activity },
   { id: 'chat', label: 'AI Assistant', icon: MessageSquare, badge: 'Beta' },
-  { id: 'research_workbench', label: 'Research Workbench', icon: Microscope, badge: 'New' },
-  { id: 'research_workflow', label: 'Research Lab', icon: FlaskConical, badge: 'New' },
 ]
 
 export default function Sidebar({
@@ -108,8 +104,6 @@ export default function Sidebar({
                   {item.id === 'timeseries' && 'Historical water-level trajectories'}
                   {item.id === 'heatmap' && 'Seasonal intensity and recurrence'}
                   {item.id === 'analysis' && 'Derived trends, ranges, and summaries'}
-                  {item.id === 'research_workbench' && 'Side-by-side well comparison lab'}
-                  {item.id === 'research_workflow' && 'Experiment planning and paper drafting'}
                 </span>
               </span>
               {item.badge && (

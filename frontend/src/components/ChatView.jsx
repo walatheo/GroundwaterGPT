@@ -423,7 +423,7 @@ const EXAMPLE_QUESTIONS = [
   "Compare Lee L-581 and Lee L-588.",
 ]
 
-export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = false }) {
+export default function ChatView({ selectedSite, fullScreen = false }) {
   const [messages, setMessages] = useState([
     {
       id: makeMessageId(),
@@ -1628,22 +1628,6 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
                     ))}
                   </ul>
                 </details>
-              )}
-
-              {onOpenWorkbench && msg.wells && msg.wells.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => onOpenWorkbench({
-                      siteIds: msg.wells.map((well) => well.site_id).filter(Boolean).slice(0, 8),
-                      sourceLabel: msg.mode || 'assistant',
-                    })}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100"
-                  >
-                    <FlaskConical className="h-3.5 w-3.5" />
-                    Open in Workbench
-                  </button>
-                </div>
               )}
 
               {msg.mode && (

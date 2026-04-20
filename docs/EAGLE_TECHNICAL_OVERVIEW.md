@@ -89,15 +89,14 @@ This is the layer the manuscript should describe as the reference-truth pipeline
 
 ### 3.1 FastAPI surface
 
-The backend is a FastAPI application defined in [api/main.py](api/main.py) (54 lines). Five routers are mounted at [api/main.py:34-38](api/main.py#L34-L38):
+The backend is a FastAPI application defined in [api/main.py](api/main.py). Four routers are mounted:
 
-- `data_router` — [api/routes/data.py](api/routes/data.py) (239 lines): `GET /api/sites`, `GET /api/sites/{site_id}`, `GET /api/sites/{site_id}/data`, `GET /api/sites/{site_id}/heatmap`, `GET /api/compare`, `GET /api/sites/{site_id}/chart`, `GET /api/compare/chart`.
-- `chat_router` — [api/routes/chat.py](api/routes/chat.py) (2793 lines): `POST /api/chat`, `POST /api/interpret`, `POST /api/research`, `POST /api/research/stream`, `GET /api/chat/status`. Hosts the routing chain, chart-follow-up interpreter handoff, response normalization, provenance attachment, and both deterministic and LLM paths.
-- `knowledge_router` — [api/routes/knowledge.py](api/routes/knowledge.py) (88 lines): `GET /api/knowledge/stats`, `GET /api/knowledge/status`, `POST /api/knowledge/ingest`.
-- `research_workflow_router` — [api/routes/research_workflow.py](api/routes/research_workflow.py) (255 lines): `POST /api/research/plans`, `GET /api/research/plans`, `GET /api/research/plans/{plan_id}`, `POST /api/research/plans/{plan_id}/runs`, `POST /api/research/plans/{plan_id}/draft`, plus the `POST /api/research/workbench` mount at [line 243](api/routes/research_workflow.py#L243) that delegates to `build_research_workbench_payload` in [api/routes/_research_workbench.py](api/routes/_research_workbench.py) (581 lines).
-- `wells_router` — [api/routes/wells.py](api/routes/wells.py) (176 lines): `GET /api/wells` — the canonical per-well metadata listing consumed by the frontend dashboard.
+- `data_router` — [api/routes/data.py](api/routes/data.py): `GET /api/sites`, `GET /api/sites/{site_id}`, `GET /api/sites/{site_id}/data`, `GET /api/sites/{site_id}/heatmap`, `GET /api/compare`, `GET /api/sites/{site_id}/chart`, `GET /api/compare/chart`.
+- `chat_router` — [api/routes/chat.py](api/routes/chat.py): `POST /api/chat`, `POST /api/interpret`, `POST /api/research`, `POST /api/research/stream`, `GET /api/chat/status`. Hosts the routing chain, chart-follow-up interpreter handoff, response normalization, provenance attachment, and both deterministic and LLM paths.
+- `knowledge_router` — [api/routes/knowledge.py](api/routes/knowledge.py): `GET /api/knowledge/stats`, `GET /api/knowledge/status`, `POST /api/knowledge/ingest`.
+- `wells_router` — [api/routes/wells.py](api/routes/wells.py): `GET /api/wells` — the canonical per-well metadata listing consumed by the frontend dashboard.
 
-CORS is open only to `http://localhost:3000` and `http://127.0.0.1:3000` ([api/main.py:25-31](api/main.py#L25-L31)). The `_research_workbench` module is not its own router — it is a builder library imported by `research_workflow.py`.
+CORS is open only to `http://localhost:3000` and `http://127.0.0.1:3000` ([api/main.py](api/main.py)).
 
 ### 3.2 Routing chain — selecting the cohort for a question
 
@@ -367,19 +366,11 @@ Optional vector KB retrieval can be enabled with `GROUNDWATERGPT_ENABLE_INTERPRE
 
 Every chat response carries `claim_citations`, `claim_verdicts`, `citation_integrity`, `structured_response`, and provenance regardless of which side served it. Chart-interpreter responses additionally carry `interpretation_response`, `direct_answer`, `supporting_evidence`, `answer_relevant_observations`, `interpretation_rubric`, `comparison_groups`, `largest_gap`, `numeric_claims`, `groundwater_concepts`, `meaning_brief`, `what_this_means`, `interpretive_findings`, `possible_drivers`, `evidence_needed`, `management_implications`, `confidence_notes`, `chart_context_used`, and `turn_history_used`. The visible chat answer remains short, but the optional Qwen/Ollama synthesis layer now rewrites the deterministic explainer seed into plain-language prose instead of paraphrasing the chart summary block. The deeper "Observed signal / hydrogeologic meaning / what this means / evidence needed / confidence" material remains in structured fields for the Analytical Depth panel and audit trail. The generic in-memory KB remains a final fallback for standalone concept questions; context-bearing follow-ups now route to the grounded interpreter before the KB can return a generic well definition. If Qwen or another structured LLM provider is enabled, its output is treated as optional synthesis over the same deterministic seed, numeric reconciliation rules, and explainer-quality guardrails; it does not replace the deterministic answer path.
 
-### 7.2 Research workflow — plans, runs, drafts
-
-[api/routes/research_workflow.py](api/routes/research_workflow.py) (255 lines) exposes an experiment-plan surface for turning a research session into a reproducible record: `POST /api/research/plans` ([line 119](api/routes/research_workflow.py#L119), create plans with `title`, `research_question`, `hypothesis`, `methodology`, `datasets`, `metrics`, `baselines`), `GET /api/research/plans` ([line 145](api/routes/research_workflow.py#L145)), `GET /api/research/plans/{plan_id}` ([line 160](api/routes/research_workflow.py#L160)), `POST /api/research/plans/{plan_id}/runs` ([line 177](api/routes/research_workflow.py#L177), log a run with `config`, `metrics`, `findings`, reproducibility fields: `seed`, `code_commit`, `environment`, `executor`, `dependency_lock`, artifact hashes), and `POST /api/research/plans/{plan_id}/draft` ([line 212](api/routes/research_workflow.py#L212), generate a target-venue-aware manuscript draft via the LLM). This is the hook that a peer-reviewed author would use to cite the system's output alongside a reproducible run record. It is live and served to the frontend.
-
-### 7.3 Research workbench
-
-[api/routes/_research_workbench.py](api/routes/_research_workbench.py) (581 lines) is a separate comparative-analysis builder library — not its own router — exposed via `POST /api/research/workbench` at [api/routes/research_workflow.py:243](api/routes/research_workflow.py#L243), which calls `build_research_workbench_payload`. It supports date-window presets (`last_5y`, `last_10y`, `full_record`, `custom`), aggregations (`monthly`, `quarterly`, `annual`), and normalizations (`raw`, `delta_from_first`, `z_score`). The workbench produces its own chart payloads and is consumed by [frontend/src/components/ResearchWorkbenchView.jsx](frontend/src/components/ResearchWorkbenchView.jsx). It is independent of the chat/research path and is live; it does not currently emit `claim_citations` or a `structured_response`, which is something the manuscript would need to either explain or extend.
-
-### 7.4 Forecasting
+### 7.2 Forecasting
 
 No forecast pipeline is currently maintained in the serving repository. Future forecasting work should return as a separate feature with time-aware validation, explicit uncertainty, a served endpoint, and benchmark coverage before it is referenced in user-facing or manuscript-facing claims.
 
-### 7.5 DuckDuckGo web search (default off)
+### 7.3 DuckDuckGo web search (default off)
 
 [src/agent/research_agent.py](src/agent/research_agent.py) imports `ddgs` / `duckduckgo_search` at module load time and exposes a `WebSearch` tool to the agent. The tool is **off by default** in the serving configuration: `research_web_search_enabled = _env_flag("GROUNDWATERGPT_ENABLE_WEB_SEARCH", default=False)` at [api/routes/chat.py:363](api/routes/chat.py#L363), and `DeepResearchAgent` is constructed with `use_web_search=research_web_search_enabled`. It does not run in the deployed demo. The manuscript should not describe the system as a web-research agent.
 
@@ -389,11 +380,11 @@ No forecast pipeline is currently maintained in the serving repository. Future f
 
 ### 8.1 Stack
 
-The frontend is a React 18.2 + Vite 5 SPA styled with Tailwind 3.3. Charts use `recharts` 2.10 for inline chart rendering and `@visactor/react-vchart` 2.0.22 in the research workbench. Maps use Leaflet 1.9.4 + `react-leaflet` 4.2.1. Markdown rendering is `react-markdown` 10.1.0. The Vite dev server runs on port 3000 and proxies `/api` to `http://localhost:8000`. E2E tests use Playwright.
+The frontend is a React 18.2 + Vite 5 SPA styled with Tailwind 3.3. Charts use `recharts` 2.10 for inline chart rendering. Maps use Leaflet 1.9.4 + `react-leaflet` 4.2.1. Markdown rendering is `react-markdown` 10.1.0. The Vite dev server runs on port 3000 and proxies `/api` to `http://localhost:8000`. E2E tests use Playwright.
 
 ### 8.2 Component graph
 
-The top-level `App` mounts a sidebar-driven mode switcher with `Dashboard` (stats + map), `ChatView` (sponsor-facing grounded chat), `AnalysisView` (per-site / per-cohort panel), `ResearchSessionPanel` (session history), `ResearchWorkflowView` (plans, runs, drafts), and `ResearchWorkbenchView` (comparative workbench). When the active tab is chat, `Dashboard` now mounts `ChatView` as a full-height workspace instead of rendering it inside the generic dashboard card. `App` also removes page overflow for the chat tab, so the transcript is the single scroll owner. The previous Research toggle is hidden from the sponsor chat surface because live deep research remains backend-only future work until its timeout and citation-coverage issues are resolved.
+The top-level `App` mounts a sidebar-driven mode switcher with `Dashboard` (stats + map), `ChatView` (sponsor-facing grounded chat), `AnalysisView` (per-site / per-cohort panel), and `ResearchSessionPanel` (session history for deep-research sessions inside chat). When the active tab is chat, `Dashboard` now mounts `ChatView` as a full-height workspace instead of rendering it inside the generic dashboard card. `App` also removes page overflow for the chat tab, so the transcript is the single scroll owner. The previous Research toggle is hidden from the sponsor chat surface because live deep research remains backend-only future work until its timeout and citation-coverage issues are resolved.
 
 `ChatView.jsx` is the primary surface. It subscribes to a `backendStatus` observable exported from [frontend/src/api/client.js](frontend/src/api/client.js), renders a "Backend unreachable — check uvicorn on :8000" banner when the observable is `'down'`, and auto-dismisses it on the next successful fetch. The chat message list renders an inline `<AgentChart>` whenever `msg.chart` is present (true whenever the cohort could be resolved, by the cross-path parity invariant). A visualization request whose cohort could not be resolved shows a "No time series available for this query" note, but chart-interpreter follow-ups suppress that note because they are explaining an existing chart rather than requesting a new one. The report body is rendered as markdown; claim-and-evidence references in square brackets render inline.
 
@@ -434,7 +425,7 @@ The observable is ~15 lines — a `Set` of listeners plus `subscribe` / `getStat
 - `test_chart_api.py`: `/api/sites/{id}/chart` and `/api/compare/chart` tests.
 - `test_knowledge_api.py`: KB stat / status / ingest.
 - `test_agent.py`: research-agent tests with stubbed LLM, including `TestStructuredResearchSynthesis` which asserts `_heuristic_structured_response` + `_render_structured_report` preserve claim-and-evidence IDs end-to-end.
-- `test_tools.py`, `test_claim_disagreement.py`, `test_research_workflow_api.py`, `test_research_workbench.py`.
+- `test_tools.py`, `test_claim_disagreement.py`.
 
 The benchmark suite [tests/benchmark/chat_eval_cases.json](tests/benchmark/chat_eval_cases.json) contains **68 cases** spanning three difficulty levels (L1, L2, L3) across routing modes (`fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`). Each case lists up to 20 `required_checks` (`has_report`, `has_sources`, `has_claim_citations`, `reports_net_change_ft`, `reports_annual_rate`, `has_aquifer_sections`, `has_cross_aquifer_comparison`, `states_data_period`, `response_has_citation_integrity`, …) and typed assertions (`expected_mode`, `min_wells`, `min_report_length`, …). The harness is [scripts/run_chat_benchmark.py](scripts/run_chat_benchmark.py).
 
@@ -531,7 +522,7 @@ This is the sponsor-facing LLM result: the model communicates with the determini
 - **Reproducibility of the LLM path.** The LLM is stochastic; running the same query twice produces subtly different phrasing. Structured-response sanitization guarantees no *new* unbacked claims but cannot guarantee identical wording. The deterministic portion **is** reproducible and hash-verifiable.
 - **Scope is fixed and narrow.** 44 wells, 5 counties, 7 aquifer labels. Adding wells requires a metadata edit.
 - **Keyword routing is brittle at the edges.** Novel phrasings may miss a specialized branch. In the demo configuration (agent disabled), such queries fall to the KB fallback — they get a generic answer, not an agent-synthesized one. The intent classifier for chart follow-ups uses regex, which handles tested phrasings but may misclassify novel wording.
-- **Date-window handling is uneven across surfaces.** Explicit `start_date` / `end_date` filtering and preset windows (`last_5y`, `last_10y`, `full_record`, `custom`) exist in the chart/data endpoints and the research workbench, but natural-language chat and the chart-follow-up interpreter do not yet reliably turn a prompt like "from 2010 to 2020" into those structured filters. For manuscript claims, timeframe-aware analysis should therefore be described as available in the workbench/API layer, not as a uniformly solved chat capability.
+- **Date-window handling is uneven across surfaces.** Explicit `start_date` / `end_date` filtering and preset windows (`last_5y`, `last_10y`, `full_record`, `custom`) exist in the chart/data endpoints, but natural-language chat and the chart-follow-up interpreter do not yet reliably turn a prompt like "from 2010 to 2020" into those structured filters. For manuscript claims, timeframe-aware analysis should therefore be described as available in the API layer, not as a uniformly solved chat capability.
 - **Knowledge base coverage is small.** Three hydrogeology PDFs + per-well summaries + hand-written Q&A. A document-level inventory is needed.
 - **Forecasting is out of manuscript scope.** Historical forecast code is not wired to the serving API and should not be used for manuscript claims until it has time-aware validation and a served endpoint.
 - **Concurrency and persistence.** Benchmark runs sequentially; session store is file-based; no concurrency measurement.
@@ -604,7 +595,7 @@ These are not dead, but they are large enough that they hide the architecture th
 
 ### 11.7 Remaining cleanup impact
 
-After this pass, the largest remaining items are methodological rather than architectural: stronger hydrologic trend statistics than monthly OLS, evidence binding for the research workbench, and a final decision about whether the dormant DuckDuckGo code path belongs in the submission repository at all. The next meaningful improvements would come from broader data coverage and actual evaluation, not more UI- or prompt-level layering: more wells / covariates would allow better calibration of risk labels and causal caveats, and a real multi-case LLM benchmark would be required before claiming that the optional LLM layer materially improves interpretation quality.
+After this pass, the largest remaining items are methodological rather than architectural: stronger hydrologic trend statistics than monthly OLS and a final decision about whether the dormant DuckDuckGo code path belongs in the submission repository at all. The next meaningful improvements would come from broader data coverage and actual evaluation, not more UI- or prompt-level layering: more wells / covariates would allow better calibration of risk labels and causal caveats, and a real multi-case LLM benchmark would be required before claiming that the optional LLM layer materially improves interpretation quality.
 
 ---
 
@@ -621,8 +612,6 @@ After this pass, the largest remaining items are methodological rather than arch
 | Chat / research endpoints, `/api/interpret`, routing chain, SSE streaming | [api/routes/chat.py](api/routes/chat.py) | 2793 lines |
 | Knowledge base router | [api/routes/knowledge.py](api/routes/knowledge.py) | 88 lines |
 | Data router | [api/routes/data.py](api/routes/data.py) | 239 lines |
-| Research workflow (plans, runs, drafts, workbench mount) | [api/routes/research_workflow.py](api/routes/research_workflow.py) | 255 lines |
-| Research workbench (comparative panel) | [api/routes/_research_workbench.py](api/routes/_research_workbench.py) | 581 lines |
 | Site metadata loader | [api/site_metadata.py](api/site_metadata.py) | — |
 | FastAPI app factory | [api/main.py](api/main.py) | 54 lines |
 | Wells listing router | [api/routes/wells.py](api/routes/wells.py) | 176 lines |

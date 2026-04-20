@@ -26,35 +26,20 @@ from .source_verification import (
     verify_usgs_data,
 )
 
-# The remaining modules require chromadb / sentence-transformers / onnxruntime.
-# Wrap them so the package can still be imported when those deps are missing
-# (e.g. Python 3.13 where onnxruntime has no wheel yet).  Each attribute is
-# set to None when unavailable; callers that need it should check first.
+# DeepResearchAgent requires chromadb / sentence-transformers / onnxruntime.
+# Wrap so the package can still be imported when those deps are missing
+# (e.g. Python 3.13 where onnxruntime has no wheel yet). Callers that need
+# the agent should check for None first.
 try:
     from .research_agent import DeepResearchAgent, deep_research
-    from .research_workflow import (
-        GroundwaterResearchContext,
-        GroundwaterResearchWorkflow,
-        conduct_groundwater_research,
-        research_async,
-    )
 except ImportError:
-    # Heavy deps unavailable — set symbols to None so partial imports don't crash.
     DeepResearchAgent = None  # type: ignore[assignment,misc]
     deep_research = None  # type: ignore[assignment]
-    GroundwaterResearchWorkflow = None  # type: ignore[assignment,misc]
-    GroundwaterResearchContext = None  # type: ignore[assignment,misc]
-    conduct_groundwater_research = None  # type: ignore[assignment]
-    research_async = None  # type: ignore[assignment]
 
 __all__ = [
     # Agent systems
     "DeepResearchAgent",
     "deep_research",
-    "GroundwaterResearchWorkflow",
-    "GroundwaterResearchContext",
-    "conduct_groundwater_research",
-    "research_async",
     # LLM factory
     "get_llm",
     "LLMProvider",

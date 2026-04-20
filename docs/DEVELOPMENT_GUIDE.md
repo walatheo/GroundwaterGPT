@@ -47,7 +47,6 @@ api/
     data.py                    Site data, heatmap, comparison endpoints
     wells.py                   Well catalogue endpoint
     knowledge.py               Knowledge-base status and ingestion endpoints
-    research_workflow.py       Research plans, runs, drafts, workbench
     _site_analysis.py          Deterministic trend/cohort/chart analysis
     _citation.py               Claim/citation metrics
     _provenance.py             Reproducibility payloads
@@ -55,8 +54,8 @@ api/
 frontend/
   src/App.jsx                  Main React shell
   src/api/client.js            API client helpers
-  src/components/              Dashboard, charts, map, chat, research views
-  tests/e2e/                   Playwright coverage for chart/workbench flows
+  src/components/              Dashboard, charts, map, chat views
+  tests/e2e/                   Playwright coverage for chart flows
 
 src/
   agent/                       Experimental DeepResearchAgent, shared evidence-guided synthesis, tools, knowledge

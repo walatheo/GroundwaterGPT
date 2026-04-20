@@ -53,6 +53,9 @@ knowledge_base/
 .DS_Store
 Thumbs.db
 
+# Claude Code worktrees, plans, and agent artifacts
+.claude/
+
 # Jupyter
 .ipynb_checkpoints/
 

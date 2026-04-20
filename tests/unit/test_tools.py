@@ -13,18 +13,13 @@ import pytest
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import src.agent.tools as tools_module  # noqa: E402
 from src.agent.tools import _load_site_csv  # noqa: E402
 from src.agent.tools import (  # noqa: E402
     GROUNDWATER_TOOLS,
     _load_site_metadata,
-    create_research_experiment_plan,
-    draft_research_paper,
     generate_comparison_chart,
     generate_time_series_plot,
     list_available_sites,
-    list_research_experiment_plans,
-    log_experiment_run,
     query_site_data,
 )
 
@@ -50,7 +45,7 @@ class TestToolRegistry:
 
     def test_tool_count(self):
         """All registered tools should be present."""
-        assert len(GROUNDWATER_TOOLS) == 8
+        assert len(GROUNDWATER_TOOLS) == 4
 
     def test_all_tools_have_names(self):
         """Each tool has a non-empty name attribute."""
@@ -70,10 +65,6 @@ class TestToolRegistry:
             "generate_comparison_chart",
             "list_available_sites",
             "query_site_data",
-            "create_research_experiment_plan",
-            "list_research_experiment_plans",
-            "log_experiment_run",
-            "draft_research_paper",
         }
         assert names == expected
 
@@ -235,61 +226,3 @@ class TestLoadSiteCsv:
         """Missing CSV raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError):
             _load_site_csv("000000000000000")
-
-
-# ===================================================================
-# Research workflow tools
-# ===================================================================
-
-
-class TestResearchWorkflowTools:
-    """Test experiment planning + paper drafting tools."""
-
-    def _redirect_research_dirs(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(tools_module, "OUTPUTS_DIR", tmp_path / "outputs")
-        monkeypatch.setattr(tools_module, "RESEARCH_DIR", tmp_path / "outputs" / "research")
-        monkeypatch.setattr(
-            tools_module,
-            "EXPERIMENTS_DIR",
-            tmp_path / "outputs" / "research" / "experiments",
-        )
-        monkeypatch.setattr(
-            tools_module,
-            "MANUSCRIPTS_DIR",
-            tmp_path / "outputs" / "research" / "manuscripts",
-        )
-
-    def test_create_list_log_and_draft(self, tmp_path, monkeypatch):
-        self._redirect_research_dirs(tmp_path, monkeypatch)
-
-        created = create_research_experiment_plan.invoke(
-            {
-                "title": "Agentic Groundwater Study",
-                "research_question": "Can agentic workflows improve reproducibility?",
-                "hypothesis": "Structured run logging improves reproducibility.",
-                "methodology": "Compare baseline vs agentic workflows.",
-                "datasets": ["USGS Florida Sites"],
-                "metrics": ["f1", "reproducibility_score"],
-                "baselines": ["manual pipeline"],
-            }
-        )
-        assert "Experiment Plan Created" in created
-
-        listed = list_research_experiment_plans.invoke({})
-        assert "Experiment Plans" in listed
-        plan_id = listed.split("`")[1]
-
-        logged = log_experiment_run.invoke(
-            {
-                "plan_id": plan_id,
-                "run_name": "baseline",
-                "config_json": json.dumps({"model": "ridge", "seed": 42}),
-                "metrics_json": json.dumps({"f1": 0.81, "reproducibility_score": 0.74}),
-                "findings": "Baseline is stable.",
-            }
-        )
-        assert "Run Logged" in logged
-
-        drafted = draft_research_paper.invoke({"plan_id": plan_id, "target_venue": "NeurIPS"})
-        assert "Draft saved to" in drafted
-        assert "## Abstract (Draft)" in drafted

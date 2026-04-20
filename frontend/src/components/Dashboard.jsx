@@ -3,8 +3,6 @@ import TimeSeriesChart from './TimeSeriesChart'
 import HeatmapChart from './HeatmapChart'
 import AnalysisView from './AnalysisView'
 import ChatView from './ChatView'
-import ResearchWorkbenchView from './ResearchWorkbenchView'
-import ResearchWorkflowView from './ResearchWorkflowView'
 import StatsCard from './StatsCard'
 import { TrendingUp, TrendingDown, Minus, Droplet, Database, Activity } from 'lucide-react'
 
@@ -19,9 +17,6 @@ export default function Dashboard({
   activeTab,
   setActiveTab,
   setSelectedSite,
-  workbenchSeed,
-  onWorkbenchSeedConsumed,
-  onOpenWorkbench,
   networkSummary,
 }) {
   const getTrendIcon = (trend) => {
@@ -68,16 +63,6 @@ export default function Dashboard({
       title: 'Ask groundwater questions in plain language',
       description: 'Quick chat handles targeted groundwater prompts, and research mode adds deeper synthesis with citations.',
     },
-    research_workbench: {
-      eyebrow: 'Workbench',
-      title: 'Compare wells with provenance-aware outputs',
-      description: 'Inspect paired sites, export methods metadata, and keep comparisons grounded in monitored records.',
-    },
-    research_workflow: {
-      eyebrow: 'Research Lab',
-      title: 'Plan, document, and draft reproducible studies',
-      description: 'Create experiment plans, capture runs, and draft research outputs without leaving the platform.',
-    },
   }
 
   const activeCopy = tabCopy[activeTab] || tabCopy.map
@@ -92,7 +77,7 @@ export default function Dashboard({
   if (activeTab === 'chat') {
     return (
       <div className="h-[calc(100dvh-76px)] min-h-[640px] bg-white/90 lg:h-screen lg:min-h-0">
-        <ChatView selectedSite={site} onOpenWorkbench={onOpenWorkbench} fullScreen />
+        <ChatView selectedSite={site} fullScreen />
       </div>
     )
   }
@@ -146,7 +131,7 @@ export default function Dashboard({
       )}
 
       {/* Stats Cards (shown when site selected) */}
-      {site && stats && !loading && !['research_workflow', 'research_workbench'].includes(activeTab) && (
+      {site && stats && !loading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <StatsCard
             title="Min Level"
@@ -180,7 +165,7 @@ export default function Dashboard({
       )}
 
       {/* Site Info Banner */}
-      {site && !['research_workflow', 'research_workbench'].includes(activeTab) && (
+      {site && (
         <div className="mb-6 rounded-[26px] border border-slate-200/70 bg-[linear-gradient(135deg,_#0f766e,_#155e75)] p-5 text-white shadow-[0_24px_70px_rgba(14,116,144,0.22)]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -218,19 +203,10 @@ export default function Dashboard({
         {activeTab === 'analysis' && (
           <AnalysisView data={data} site={site} stats={stats} />
         )}
-        {activeTab === 'research_workbench' && (
-          <ResearchWorkbenchView
-            sites={sites}
-            selectedSite={site}
-            seed={workbenchSeed}
-            onSeedConsumed={onWorkbenchSeedConsumed}
-          />
-        )}
-        {activeTab === 'research_workflow' && <ResearchWorkflowView />}
       </div>
 
       {/* No site selected message */}
-      {!site && !['map', 'research_workflow', 'research_workbench'].includes(activeTab) && (
+      {!site && activeTab !== 'map' && (
         <div className="flex h-96 items-center justify-center text-slate-400">
           <div className="text-center">
             <Droplet className="w-12 h-12 mx-auto mb-4 opacity-50" />

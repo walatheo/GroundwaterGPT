@@ -164,7 +164,7 @@ EAGLE follows **whitebox principles** — all AI-surfaced conclusions are tracea
 ┌─────────────────────────────────────────────────────────────┐
 │                    PRESENTATION LAYER                        │
 │  frontend/src (React + Vite)                                │
-│  - Dashboard, map, charts, chat, research workbench         │
+│  - Dashboard, map, charts, chat                             │
 │  - Inline chart rendering from deterministic API payloads   │
 └─────────────────────┬───────────────────────────────────────┘
                       │
