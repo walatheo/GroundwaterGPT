@@ -63,14 +63,14 @@ def grounded_reasoning_enabled() -> bool:
 
 def llm_timeout_seconds() -> float:
     """Return the synthesis ceiling, leaving headroom for deterministic work."""
-    raw = os.getenv("GROUNDWATERGPT_LLM_TIMEOUT_SECONDS", "28").strip()
+    raw = os.getenv("GROUNDWATERGPT_LLM_TIMEOUT_SECONDS", "60").strip()
     try:
         seconds = float(raw)
     except Exception:
-        seconds = 28.0
+        seconds = 60.0
     if not math.isfinite(seconds):
-        seconds = 28.0
-    return max(1.0, min(seconds, 28.0))
+        seconds = 60.0
+    return max(1.0, min(seconds, 120.0))
 
 
 def invoke_with_llm_timeout(
