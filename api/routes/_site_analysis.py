@@ -20,7 +20,6 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Optional, TypedDict
 
-import httpx
 import pandas as pd
 
 from api.routes._citation import (
@@ -36,8 +35,6 @@ from api.routes._detection import (
     _distance_miles,
     _usgs_site_url,
 )
-from api.routes._explainer import validate_explanation
-from api.routes._grounded_answer import compose_grounded_answer
 
 logger = logging.getLogger(__name__)
 
@@ -107,98 +104,6 @@ def _llm_synthesis_enabled() -> bool:
     """
     raw = os.environ.get("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", "").strip().lower()
     return raw not in {"1", "true", "yes", "on"}
-
-
-def _legacy_http_llm_synthesis(
-    *,
-    question: str,
-    location_name: str,
-    answer_brief: str,
-    interpretation_details: dict,
-    claim_citations: list[dict],
-    source_urls: list[str],
-    chart_payload: dict | None,
-    site_computed: list[dict],
-    timeout_seconds: float = 5.0,
-) -> tuple[str | None, dict | None]:
-    """Best-effort local Ollama narration over deterministic evidence only."""
-    payload = {
-        "answer_brief": answer_brief,
-        "interpretation_details": interpretation_details,
-        "claim_citations": claim_citations,
-        "sources": source_urls,
-        "chart": chart_payload,
-        "wells": [
-            {
-                "site_id": site.get("site_id"),
-                "name": site.get("name"),
-                "aquifer": site.get("aq_label") or site.get("aq_zone"),
-            }
-            for site in site_computed
-        ],
-    }
-    grounded = compose_grounded_answer(payload, question=question)
-    if not grounded.direct_answer:
-        return None, None
-
-    findings_block = "\n".join(f"- {item}" for item in grounded.grounded_findings[:4]) or "- none"
-    limits_block = "\n".join(f"- {item}" for item in grounded.limits[:3]) or "- none"
-    chart_insights = (chart_payload or {}).get("insights") or []
-    chart_block = "\n".join(f"- {item}" for item in chart_insights[:3]) or "- none"
-    model = os.getenv("SYNTHESIS_MODEL") or os.getenv("LLM_MODEL") or "llama3.2"
-    endpoint = os.getenv("GROUNDWATERGPT_OLLAMA_URL", "http://localhost:11434/api/generate")
-    prompt = (
-        "You are a groundwater analyst. Explain the deterministic groundwater findings "
-        "in 3 to 5 sentences. Do not invent numbers, dates, well counts, or causes. "
-        "Use only the evidence provided.\n\n"
-        f"Question: {question}\n"
-        f"Location: {location_name}\n"
-        f"Direct answer: {grounded.direct_answer}\n\n"
-        f"Grounded findings:\n{findings_block}\n\n"
-        f"Chart insights:\n{chart_block}\n\n"
-        f"Limits:\n{limits_block}\n"
-    )
-
-    try:
-        response = httpx.post(
-            endpoint,
-            json={"model": model, "prompt": prompt, "stream": False},
-            timeout=max(0.5, timeout_seconds),
-        )
-        response.raise_for_status()
-        body = response.json()
-    except Exception as exc:
-        logger.debug("Legacy local synthesis unavailable: %s", exc)
-        return None, None
-
-    narrative = str(body.get("response") or body.get("text") or body.get("content") or "").strip()
-    if len(narrative) < 50:
-        return None, None
-
-    violations = validate_explanation(narrative, grounded)
-    if violations:
-        logger.debug("Legacy local synthesis rejected: %s", violations)
-        return None, None
-
-    citation_block = [
-        {
-            "source": "deterministic_chart_context",
-            "basis": "Narrative constrained to deterministic chart context and grounded findings.",
-            "verified": True,
-            "trust_level": "verified",
-        }
-    ]
-    for url in source_urls[:2]:
-        citation_block.append({"url": url, "verified": True, "trust_level": "verified"})
-
-    claim = {
-        "claim_id": f"claim_{len(claim_citations) + 1:03d}",
-        "claim": narrative[:200],
-        "confidence": 0.65,
-        "citations": citation_block,
-        "source_type": "llm_synthesis",
-    }
-    return narrative, claim
 
 
 # ---------------------------------------------------------------------------
@@ -2273,31 +2178,6 @@ def _site_research_fallback(
                         )
         except Exception as exc:
             logger.debug("Grounded reasoning unavailable: %s", exc)
-        if not synthesis_section:
-            remaining = max(0.0, synthesis_deadline - time.monotonic())
-            if remaining <= 0:
-                logger.warning(
-                    "Skipping legacy local synthesis because the 30s LLM budget was exhausted"
-                )
-            else:
-                llm_text, llm_claim = _legacy_http_llm_synthesis(
-                    question=question,
-                    location_name=location_name,
-                    answer_brief=answer_brief,
-                    interpretation_details=interpretation_details,
-                    claim_citations=claim_citations,
-                    source_urls=source_urls,
-                    chart_payload=chart_payload,
-                    site_computed=site_computed,
-                    timeout_seconds=min(5.0, remaining),
-                )
-                if llm_text:
-                    synthesis_section = llm_text
-                    answer_brief = llm_text
-                    interpretation_details["llm_brief"] = llm_text
-                    interpretation_details["reasoning_source"] = "llm_polish"
-                    if llm_claim is not None:
-                        claim_citations.append(llm_claim)
 
     # Build full report
     aquifer_summary = ", ".join(sorted_aquifers)

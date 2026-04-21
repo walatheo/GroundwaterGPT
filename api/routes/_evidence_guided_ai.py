@@ -363,7 +363,7 @@ def _providers() -> list[tuple[str, str]]:
     providers.append(
         (
             "ollama",
-            os.getenv("GROUNDWATERGPT_PROGRESS_MODEL", os.getenv("SYNTHESIS_MODEL", "llama3.2")),
+            os.getenv("GROUNDWATERGPT_PROGRESS_MODEL", os.getenv("SYNTHESIS_MODEL", "qwen3:8b")),
         )
     )
     return providers

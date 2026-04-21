@@ -2942,7 +2942,14 @@ def _invoke_structured_llm(
     providers = []
     if os.getenv("DASHSCOPE_API_KEY"):
         providers.append(("qwen", os.getenv("GROUNDWATERGPT_INTERPRETER_MODEL", "qwen-plus")))
-    providers.append(("ollama", os.getenv("SYNTHESIS_MODEL", "llama3.2")))
+    if os.environ.get("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return None
+    providers.append(("ollama", os.getenv("SYNTHESIS_MODEL", "qwen3:8b")))
 
     numeric_claims = _numeric_claims_from_pack(pack)
     if not pack.get("site_ids") or not numeric_claims:

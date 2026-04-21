@@ -1967,6 +1967,13 @@ def chat_endpoint(query: dict):
         query.get("allow_llm_synthesis"),
         default=True,
     )
+    if os.environ.get("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        allow_llm_synthesis = False
     include_chart = _payload_bool(
         query.get("include_chart"),
         default=True,

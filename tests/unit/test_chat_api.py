@@ -316,6 +316,7 @@ class TestChatEndpoint:
                 "section_confidence": {},
             }
 
+        monkeypatch.delenv("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", raising=False)
         monkeypatch.setattr(chat_routes, "_site_research_fallback", _fake_site_fallback)
         resp = client.post(
             "/api/chat",

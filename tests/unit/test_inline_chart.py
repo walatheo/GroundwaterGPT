@@ -222,48 +222,6 @@ class TestInlineChartIntegration:
         assert result["chart"]["insights"]
         assert result["chart"]["explainability"]["data_contract"]
 
-    def test_site_research_fallback_llm_synthesis_cites_chart_context(self, monkeypatch):
-        sites = [
-            _make_site("site_001", "Well A", ["2024-01-01", "2024-02-01"], [10.0, 11.0]),
-            _make_site("site_002", "Well B", ["2024-01-01", "2024-02-01"], [12.0, 13.0]),
-        ]
-
-        class _Response:
-            def raise_for_status(self):
-                return None
-
-            def json(self):
-                return {
-                    "response": (
-                        "The chart shows monthly USGS means and a cohort trend. "
-                        "Students should compare the highlighted wells with the cohort average."
-                    )
-                }
-
-        def _fake_post(*_args, **_kwargs):
-            return _Response()
-
-        import httpx
-
-        monkeypatch.delenv("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", raising=False)
-        monkeypatch.setattr(httpx, "post", _fake_post)
-
-        result = _site_research_fallback(
-            "interpret sustainability risk from this chart",
-            sites,
-            "Synthetic Area",
-        )
-
-        llm_claims = [
-            claim
-            for claim in result["claim_citations"]
-            if claim.get("source_type") == "llm_synthesis"
-        ]
-        assert result["llm_synthesis"]
-        assert llm_claims
-        assert llm_claims[0]["citations"][0]["source"] == "deterministic_chart_context"
-        assert result["hallucination_guardrail"]["all_factual_claims_cited"] is True
-
     def test_chat_endpoint_returns_chart(self):
         _first_site_id()
         resp = client.post("/api/chat", json={"message": "Estero trends"})
