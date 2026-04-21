@@ -14,7 +14,7 @@ ww# EAGLE Technical Overview
 4. Language-model synthesis layer and the evidence-ID binding
 5. Join point, typed session contract, provenance, streaming, citation integrity
 6. Worked example: the Village of Estero question
-7. Auxiliary surfaces (research workflow, workbench, chat surface)
+7. Auxiliary surfaces (research workbench, chat surface)
 8. Frontend surface — how auditability reaches the user
 9. Evaluation and measured behaviour
 10. Strengths, limitations, threats to validity
@@ -158,7 +158,7 @@ The LLM layer exists to phrase deterministic findings as a direct answer to a fr
 
 **Operational status.** The codebase contains two LLM entry points, but only the first is active in the demo and evaluation:
 
-1. **Hybrid in-process narration (active in demo, disabled in benchmarks).** Inside `_site_research_fallback`, every keyword-routed chat branch (site / aquifer / multi-location / single-location / network-wide) defaults `allow_llm_synthesis=True`, and the fallback posts a scoped hydrogeologist prompt to a local Ollama server (default `llama3.2` at `http://localhost:11434`) that narrates the deterministic numbers the pipeline has already produced. The narration is gated by `_llm_synthesis_enabled()` at [api/routes/_site_analysis.py](api/routes/_site_analysis.py), which reads the `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS` env var — set it to `1` and the response reverts to pure-deterministic output. The deterministic benchmark sets this flag; the live demo leaves it unset. This is the only LLM path exercised in normal operation.
+1. **Hybrid in-process narration (active in demo, disabled in benchmarks).** Inside `_site_research_fallback`, every keyword-routed chat branch (site / aquifer / multi-location / single-location / network-wide) defaults `allow_llm_synthesis=True`, and the fallback posts a scoped hydrogeologist prompt to a local Ollama server (default `qwen3:8b` at `http://localhost:11434`) that narrates the deterministic numbers the pipeline has already produced. The narration is gated by `_llm_synthesis_enabled()` at [api/routes/_site_analysis.py](api/routes/_site_analysis.py), which reads the `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS` env var — set it to `1` and the response reverts to pure-deterministic output. The deterministic benchmark sets this flag; the live demo leaves it unset. This is the only LLM path exercised in normal operation.
 2. **`DeepResearchAgent` (dormant).** The demo startup script ([scripts/start_demo.sh:84](scripts/start_demo.sh#L84)) sets `GROUNDWATERGPT_SKIP_AGENT_INIT=1`, which prevents the agent from constructing ([api/routes/chat.py:558](api/routes/chat.py#L558)). All unit tests run with the same flag. The 68-case chat benchmark and the 25-case interpretation benchmark both run without the agent. A one-case manual smoke test exists (§9.3) but scored 0.200 and failed thresholds. **The manuscript should not describe the research agent as an active component of the evaluated system.**
 
 ### 4.1 `DeepResearchAgent` — architectural note (dormant)
@@ -327,7 +327,7 @@ A reviewer who wants to re-derive the Estero answer can check out `provenance.co
 
 ### 7.1 Chat surface
 
-`POST /api/chat` routes through the same manuscript-safe contract as the research surface. The six keyword-routed branches (site / aquifer / multi-location / single-location / network-wide / KB fallback) each delegate to `_site_research_fallback(..., allow_llm_synthesis=True)`, which runs the deterministic pipeline and then — unless `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS` is set — hands the structured findings to a local Ollama model (`llama3.2` by default) for a short hydrogeologist narration. If no keyword route matches and the user is on the `/api/chat` path, the code checks `_research_agent is not None`; in the demo configuration this is always `False`, so the question falls to the KB fallback. **In practice, every demo and benchmark question is served by the deterministic pipeline plus optional in-process Ollama narration — the `DeepResearchAgent` is never invoked.**
+`POST /api/chat` routes through the same manuscript-safe contract as the research surface. The six keyword-routed branches (site / aquifer / multi-location / single-location / network-wide / KB fallback) each delegate to `_site_research_fallback(..., allow_llm_synthesis=True)`, which runs the deterministic pipeline and then — unless `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS` is set — hands the structured findings to a local Ollama model (`qwen3:8b` by default) for a short hydrogeologist narration. If no keyword route matches and the user is on the `/api/chat` path, the code checks `_research_agent is not None`; in the demo configuration this is always `False`, so the question falls to the KB fallback. **In practice, every demo and benchmark question is served by the deterministic pipeline plus optional in-process Ollama narration — the `DeepResearchAgent` is never invoked.**
 
 The quick-chat payload now exposes three layers of answer text: `answer_brief` for the natural-language answer users should read first, `raw_report` for the complete deterministic report, and `interpretation_details` for structured fields such as `aquifer_summaries`, `supply_interpretation`, risk level, limitations, and the deterministic brief. This is the API-level fix for the earlier failure mode where chat looked like it was dumping the full stored report rather than answering the user's question.
 
@@ -347,11 +347,15 @@ Optional vector KB retrieval can be enabled with `GROUNDWATERGPT_ENABLE_INTERPRE
 
 Every chat response carries `claim_citations`, `claim_verdicts`, `citation_integrity`, `structured_response`, and provenance regardless of which side served it. Chart-interpreter responses additionally carry `interpretation_response`, `direct_answer`, `supporting_evidence`, `answer_relevant_observations`, `comparison_groups`, `largest_gap`, `numeric_claims`, `groundwater_concepts`, `interpretive_findings`, `possible_drivers`, `evidence_needed`, `management_implications`, `confidence_notes`, `chart_context_used`, and `turn_history_used`. The visible chat answer is intentionally short: direct answer, one or two evidence sentences, and one caveat. The deeper "Observed signal / hydrogeologic meaning / evidence needed / confidence" material remains in structured fields for the Analytical Depth panel and audit trail. The generic in-memory KB remains a final fallback for standalone concept questions; context-bearing follow-ups now route to the grounded interpreter before the KB can return a generic well definition.
 
-### 7.2 Forecasting
+### 7.2 Research Workbench (side-by-side well comparison)
+
+`POST /api/research/workbench` is the only endpoint exposed by [api/routes/research_workflow.py](api/routes/research_workflow.py) (the broader experiment-plan and paper-drafter surfaces were removed from the demo scope). It accepts a list of site IDs, optional county/aquifer/confined filters, a date window (preset or explicit `start_date` / `end_date`), an aggregation mode (`monthly` default), and a normalization mode (`raw` default). The payload builder in [api/routes/_research_workbench.py](api/routes/_research_workbench.py) loads the per-site CSVs through `api.helpers.load_site_data`, applies the date window, computes per-site trend labels with `_trend_label`, and returns a `research_workbench` envelope with `resolved_sites`, `primary_chart`, `chart_specs`, `metrics_table`, `methods`, `citations`, and `export_bundle`. The frontend [ResearchWorkbenchView.jsx](frontend/src/components/ResearchWorkbenchView.jsx) renders this as a filterable site picker, a date-window selector, a side-by-side chart, and a metrics table that can be exported. This surface is deterministic only — no LLM synthesis runs on the workbench path.
+
+### 7.3 Forecasting
 
 No forecast pipeline is currently maintained in the serving repository. Future forecasting work should return as a separate feature with time-aware validation, explicit uncertainty, a served endpoint, and benchmark coverage before it is referenced in user-facing or manuscript-facing claims.
 
-### 7.3 DuckDuckGo web search (default off)
+### 7.4 DuckDuckGo web search (default off)
 
 [src/agent/research_agent.py](src/agent/research_agent.py) imports `ddgs` / `duckduckgo_search` at module load time and exposes a `WebSearch` tool to the agent. The tool is **off by default** in the serving configuration: `research_web_search_enabled = _env_flag("GROUNDWATERGPT_ENABLE_WEB_SEARCH", default=False)` at [api/routes/chat.py:363](api/routes/chat.py#L363), and `DeepResearchAgent` is constructed with `use_web_search=research_web_search_enabled`. It does not run in the deployed demo. The manuscript should not describe the system as a web-research agent.
 
@@ -431,7 +435,7 @@ The key implication for the manuscript: the headline ("68/68 benchmark pass, 100
 
 ### 9.3 Current live-agent smoke benchmark
 
-The repository now includes [scripts/run_agent_benchmark.py](scripts/run_agent_benchmark.py), which routes the same benchmark case format through `DeepResearchAgent` using the live-agent threshold file. A bounded local smoke run was cached in [agent_benchmark_report.json](agent_benchmark_report.json) using Ollama `llama3.2` and `--limit 1`.
+The repository now includes [scripts/run_agent_benchmark.py](scripts/run_agent_benchmark.py), which routes the same benchmark case format through `DeepResearchAgent` using the live-agent threshold file. A bounded local smoke run was cached in [agent_benchmark_report.json](agent_benchmark_report.json) using Ollama `qwen3:8b` and `--limit 1`.
 
 - Cases: **1 / 68** shared benchmark cases, routed through `deep_research`.
 - Agent-routed rate: **1.000**.
@@ -630,8 +634,8 @@ After this pass, the largest remaining items are methodological rather than arch
 - Knowledge base: ChromaDB persistent store, `BAAI/bge-small-en-v1.5` embeddings (384-dim), `chroma.sqlite3` ≈ 156 MB.
 - Benchmark (deterministic layer): **68 / 68 passing**, overall score **1.000**, average citation coverage **1.000**, average claim-citation coverage **1.000**, average section-citation coverage **1.000**, average claim-verdict coverage **1.000**, average contradicted-claim rate **0.010**, average high-risk-claim rate **0.010**, median latency **1.554 s**, max latency **3.247 s**. Routing modes exercised: `fallback`, `site_fallback`, `aquifer_fallback`, `network_fallback`.
 - Benchmark (interpretation / chart-explainability): **25 eval cases**, all evaluated in the latest deterministic run, overall score **0.943**, grounding coverage **1.000**, chart context coverage **1.000**, data reference coverage **1.000**, suggested-question coverage **1.000**, numeric match rate **1.000**, guardrail pass rate **1.000**, fake measurement policy fail rate **0.000**, median latency **1.066 s**, max latency **2.517 s**, threshold pass **true**. Levels: core, source, aquifer, followup, chart-meta, numeric, guardrail, hydro-context.
-- Benchmark (bounded live-agent smoke): **1 / 68 cases**, Ollama `llama3.2`, mode `deep_research`, overall score **0.200**, agent-routed rate **1.000**, structured-response coverage **1.000**, provenance coverage **1.000**, citation coverage **0.000**, claim-verdict coverage **0.000**, median/max latency **270.155 s**, threshold pass **false**.
-- Benchmark (chart-explainability LLM smoke): **1 case**, Ollama `llama3.2`, LLM synthesis coverage **1.000**, chart explainability coverage **1.000**, average elapsed **44.816 s**, threshold pass **true**.
+- Benchmark (bounded live-agent smoke): **1 / 68 cases**, Ollama `qwen3:8b`, mode `deep_research`, overall score **0.200**, agent-routed rate **1.000**, structured-response coverage **1.000**, provenance coverage **1.000**, citation coverage **0.000**, claim-verdict coverage **0.000**, median/max latency **270.155 s**, threshold pass **false**.
+- Benchmark (chart-explainability LLM smoke): **1 case**, Ollama `qwen3:8b`, LLM synthesis coverage **1.000**, chart explainability coverage **1.000**, average elapsed **44.816 s**, threshold pass **true**.
 - Unit tests: **219 passing** as of 2026-04-16.
 - Citation thresholds: `MIN_CLAIM_CITATION_COVERAGE = 0.90`, `MIN_SECTION_CITATION_COVERAGE = 0.90`.
 - Insights bullet cap: 5 (ordered: highlighted wells → cohort trend + risk → fastest decline → strongest rise → largest divergence).

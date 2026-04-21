@@ -19,6 +19,9 @@ export default function Dashboard({
   setActiveTab,
   setSelectedSite,
   networkSummary,
+  workbenchSeed,
+  onOpenWorkbench,
+  onWorkbenchSeedConsumed,
 }) {
   const getTrendIcon = (trend) => {
     if (trend > 0.1) return <TrendingUp className="w-4 h-4 text-red-500" />
@@ -83,7 +86,7 @@ export default function Dashboard({
   if (activeTab === 'chat') {
     return (
       <div className="h-[calc(100dvh-76px)] min-h-[640px] bg-white/90 lg:h-screen lg:min-h-0">
-        <ChatView selectedSite={site} fullScreen />
+        <ChatView selectedSite={site} onOpenWorkbench={onOpenWorkbench} fullScreen />
       </div>
     )
   }
@@ -210,7 +213,12 @@ export default function Dashboard({
           <AnalysisView data={data} site={site} stats={stats} />
         )}
         {activeTab === 'research_workbench' && (
-          <ResearchWorkbenchView sites={sites} selectedSite={site} />
+          <ResearchWorkbenchView
+            sites={sites}
+            selectedSite={site}
+            seed={workbenchSeed}
+            onSeedConsumed={onWorkbenchSeedConsumed}
+          />
         )}
       </div>
 

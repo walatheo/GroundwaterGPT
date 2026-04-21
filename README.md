@@ -31,8 +31,8 @@ Build note, 2026-04-14: after lazy-loading chart panels, the initial Vite JS chu
 EAGLE is a **research-facing whitebox application** that combines:
 - **Deterministic USGS Analysis**: Monthly aggregation, trend summaries, cohort comparison, and chart payloads from local monitoring records
 - **Evidence-Linked Assistance**: Claim IDs, evidence IDs, citation integrity checks, and provenance metadata
-- **Research Workflow**: Plans, reproducible run logging, and manuscript draft scaffolding
-- **Interactive Dashboard**: Map, time-series, heatmap, workbench, and chat/research views
+- **Research Workbench**: Side-by-side well comparison with date-window filtering and export
+- **Interactive Dashboard**: Map, time-series, heatmap, workbench, and chat views
 
 ### Key Features
 

@@ -14,7 +14,7 @@ The application has four active layers:
 
 | Layer | Files | Responsibility |
 | --- | --- | --- |
-| Frontend | `frontend/src/` | React dashboard, map, chart panels, chat, research workflow UI |
+| Frontend | `frontend/src/` | React dashboard, map, chart panels, chat, research workbench UI |
 | API | `api/main.py`, `api/routes/` | FastAPI route registration, deterministic chat routing, interpretation, site/well/data endpoints |
 | Analysis | `api/routes/_site_analysis.py`, `api/routes/_research_workbench.py` | Monthly aggregation, trend summaries, cohort comparison, chart payloads |
 | Agent and evidence | `src/agent/`, `api/routes/_citation.py`, `api/routes/_provenance.py` | Knowledge search, evidence-linked synthesis, citation metrics, provenance envelopes |
@@ -157,7 +157,7 @@ Current test groups:
 
 | Group | Purpose |
 | --- | --- |
-| `tests/unit/` | Fast API contract checks, deterministic chat fallback, chart payloads, research workflow endpoints |
+| `tests/unit/` | Fast API contract checks, deterministic chat fallback, chart payloads, research workbench endpoint, demo smoke |
 | `tests/data/` | Local CSV shape, canonical file naming, stale artifact guards |
 | `tests/agent/` | Search budget, cost limits, agent status behavior |
 | `tests/benchmark/` | Regression cases for deterministic answer quality and retrieval scoring |

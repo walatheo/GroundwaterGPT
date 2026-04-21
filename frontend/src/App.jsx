@@ -16,6 +16,16 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState(SHOWCASE_MODE ? 'chat' : 'map')
+  const [workbenchSeed, setWorkbenchSeed] = useState(null)
+
+  const handleOpenWorkbench = (seed) => {
+    setWorkbenchSeed(seed ? { ...seed, nonce: Date.now() } : null)
+    setActiveTab('research_workbench')
+  }
+
+  const handleWorkbenchSeedConsumed = () => {
+    setWorkbenchSeed(null)
+  }
 
   // Fetch sites on mount
   useEffect(() => {
@@ -129,6 +139,9 @@ function App() {
           setActiveTab={setActiveTab}
           setSelectedSite={setSelectedSite}
           networkSummary={networkSummary}
+          workbenchSeed={workbenchSeed}
+          onOpenWorkbench={handleOpenWorkbench}
+          onWorkbenchSeedConsumed={handleWorkbenchSeedConsumed}
         />
       </main>
     </div>
