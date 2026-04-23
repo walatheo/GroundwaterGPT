@@ -35,6 +35,7 @@ from api.routes._detection import (
     _distance_miles,
     _usgs_site_url,
 )
+from src.analytics import detect_pelt_changepoints, mann_kendall, sens_slope
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ _AQUIFER_STRESS_QUERY_RE = re.compile(
 )
 
 
-class PerSiteMetric(TypedDict):
+class PerSiteMetric(TypedDict, total=False):
     """Per-well metrics returned by cohort analysis."""
 
     site_id: str
@@ -59,6 +60,16 @@ class PerSiteMetric(TypedDict):
     trend: str
     net_change_ft: float
     annual_change_ft_yr: float
+    annual_change_ci95_low: Optional[float]
+    annual_change_ci95_high: Optional[float]
+    record_start: Optional[str]
+    record_end: Optional[str]
+    record_years: Optional[float]
+    mk_tau: Optional[float]
+    mk_pvalue: Optional[float]
+    sens_slope_ft_yr: Optional[float]
+    changepoint_method: Optional[str]
+    changepoints_pelt: list
 
 
 def _safe_round(value: float | None, digits: int = 4) -> float | None:
@@ -66,6 +77,44 @@ def _safe_round(value: float | None, digits: int = 4) -> float | None:
     if value is None or not math.isfinite(value):
         return None
     return round(value, digits)
+
+
+def _ols_rate_ci95(
+    values: list[float], step_years: float
+) -> tuple[Optional[float], Optional[float]]:
+    """Return a 95% CI for the OLS slope expressed in ft/yr.
+
+    The slope comes from regressing ``values`` on a year-denominated x axis
+    (``step_years`` between samples). Uses the residual-based standard error
+    with a normal approximation (1.96), which is adequate for the sample
+    sizes we publish — a t-based CI would change the width by <3 % at n>=30.
+    Returns ``(None, None)`` when the inputs are too short or degenerate.
+    """
+    n = len(values)
+    if n < 3 or step_years <= 0 or not math.isfinite(step_years):
+        return (None, None)
+    xs = [i * step_years for i in range(n)]
+    try:
+        mean_x = sum(xs) / n
+        mean_y = sum(values) / n
+        sxx = sum((x - mean_x) ** 2 for x in xs)
+        sxy = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, values))
+        if sxx <= 0:
+            return (None, None)
+        slope = sxy / sxx
+        intercept = mean_y - slope * mean_x
+        residuals = [y - (intercept + slope * x) for x, y in zip(xs, values)]
+        rss = sum(r * r for r in residuals)
+        dof = n - 2
+        if dof <= 0:
+            return (None, None)
+        se_slope = math.sqrt(rss / dof / sxx)
+        if not math.isfinite(se_slope):
+            return (None, None)
+        half = 1.96 * se_slope
+        return (round(slope - half, 4), round(slope + half, 4))
+    except Exception:
+        return (None, None)
 
 
 class DivergentSiteSummary(TypedDict):
@@ -401,6 +450,17 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
         net = float(last["value"] - first["value"])
         years = max(0.01, (last["datetime"] - first["datetime"]).days / 365.25)
         ann = net / years
+        values = df["value"].tolist()
+        dates = (
+            df["datetime"].dt.strftime("%Y-%m-%d").tolist()
+            if hasattr(df["datetime"], "dt")
+            else [str(v) for v in df["datetime"]]
+        )
+        step_yr = years / max(len(values) - 1, 1)
+        mk = mann_kendall(values)
+        sen = sens_slope(values, step=step_yr) if step_yr > 0 else None
+        pelt = detect_pelt_changepoints(values, dates=dates, min_size=12)
+        ci_low, ci_high = _ols_rate_ci95(values, step_yr)
         per_site.append(
             {
                 "site_id": site["site_id"],
@@ -408,7 +468,25 @@ def _cross_well_analysis(sites: list[dict]) -> dict:
                 "trend": _trend_label(net),
                 "net_change_ft": round(net, 3),
                 "annual_change_ft_yr": round(ann, 4),
+                "annual_change_ci95_low": ci_low,
+                "annual_change_ci95_high": ci_high,
+                "record_start": (
+                    str(first["datetime"].date())
+                    if hasattr(first["datetime"], "date")
+                    else str(first["datetime"])
+                ),
+                "record_end": (
+                    str(last["datetime"].date())
+                    if hasattr(last["datetime"], "date")
+                    else str(last["datetime"])
+                ),
+                "record_years": round(years, 2),
                 "changepoint": _detect_changepoint(df),
+                "mk_tau": _safe_round(mk.get("tau"), 4),
+                "mk_pvalue": _safe_round(mk.get("p_value"), 6),
+                "sens_slope_ft_yr": _safe_round(sen, 4),
+                "changepoint_method": "pelt" if pelt else None,
+                "changepoints_pelt": pelt,
             }
         )
         annual_changes.append(ann)
@@ -799,7 +877,23 @@ def _build_chart_payload(
     chart_type = "comparison" if len(chart_series) > 1 else "time_series"
     well_count = len(site_series)
     title_suffix = f"{well_count} Wells" if well_count != 1 else "1 Well"
-    return {
+
+    annotations = _build_cohort_annotations(per_site_metrics, site_names, highlighted_keys)
+    cluster_assignments = {
+        str(metric["site_id"]): metric["cluster_id"]
+        for metric in per_site_metrics
+        if metric.get("site_id") and metric.get("cluster_id") is not None
+    }
+
+    months = sorted({str(d)[:7] for d in sorted_dates})
+    climate_payload, climate_correlation = _maybe_attach_climate(
+        months=months,
+        site_series=site_series,
+        sorted_dates=sorted_dates,
+        records=records,
+    )
+
+    payload = {
         "chart_type": chart_type,
         "title": f"{location_name} Monthly Groundwater Levels — {title_suffix}",
         "x_label": "Month",
@@ -814,6 +908,92 @@ def _build_chart_payload(
         ),
         "cohort_risk_level": (cross_well or {}).get("risk_level"),
     }
+    if annotations:
+        payload["annotations"] = annotations
+    if cluster_assignments:
+        payload["cluster_assignments"] = cluster_assignments
+    if climate_payload:
+        payload["climate_series"] = climate_payload
+    if climate_correlation:
+        payload["climate_correlation"] = climate_correlation
+    return payload
+
+
+def _build_cohort_annotations(
+    per_site_metrics: list[dict],
+    site_names: dict[str, str],
+    highlighted_keys: set[str],
+) -> list[dict]:
+    """Build structural-break + cluster annotations for the comparison chart."""
+    annotations: list[dict] = []
+    for metric in per_site_metrics:
+        sid = str(metric.get("site_id"))
+        breaks = metric.get("changepoints_pelt") or []
+        for bp in breaks[:2]:
+            date = bp.get("date")
+            if not date:
+                continue
+            annotations.append(
+                {
+                    "type": "changepoint",
+                    "site_id": sid,
+                    "name": site_names.get(sid, metric.get("name", sid)),
+                    "date": date,
+                    "pre_slope": round(float(bp.get("pre_slope", 0.0)), 4),
+                    "post_slope": round(float(bp.get("post_slope", 0.0)), 4),
+                    "method": bp.get("method", "pelt"),
+                    "highlight": sid in highlighted_keys,
+                }
+            )
+    return annotations
+
+
+def _maybe_attach_climate(
+    *,
+    months: list[str],
+    site_series: dict[str, dict[str, float]],
+    sorted_dates: list[str],
+    records: list[dict],
+):
+    """Return ``(climate_series_payload, correlation_summary)`` or ``(None, None)``."""
+    try:
+        from src.analytics import best_lag_correlation, climate_series_payload, load_monthly_climate
+    except Exception as exc:  # pragma: no cover - import guard
+        logger.debug("climate analytics unavailable: %s", exc)
+        return None, None
+
+    climate = load_monthly_climate()
+    if not climate:
+        return None, None
+
+    series_payload = climate_series_payload(months, climate=climate)
+    if not series_payload:
+        return None, None
+
+    payload_by_month = {row["month"]: row for row in series_payload}
+    for row in records:
+        month_key = str(row.get("date", ""))[:7]
+        climate_row = payload_by_month.get(month_key)
+        if climate_row:
+            row.setdefault("precip_mm", climate_row["precip_mm"])
+
+    correlation = None
+    if site_series:
+        first_sid = next(iter(site_series))
+        values_by_month: dict[str, float] = {}
+        for date_str, value in site_series[first_sid].items():
+            values_by_month[date_str[:7]] = value
+        correlation_result = best_lag_correlation(values_by_month, climate=climate)
+        if correlation_result:
+            correlation = {
+                "site_id": first_sid,
+                "lag_months": correlation_result["lag_months"],
+                "pearson_r": round(correlation_result["pearson_r"], 3),
+                "pearson_p": round(correlation_result["pearson_p"], 4),
+                "spearman_r": round(correlation_result["spearman_r"], 3),
+                "n_months": correlation_result["n_months"],
+            }
+    return series_payload, correlation
 
 
 def _change_direction(rate: float) -> str:
@@ -2155,6 +2335,13 @@ def _site_research_fallback(
                             grounded.implications or grounded.why_it_matters
                         )
                         interpretation_details["grounded_limitations"] = grounded.limitations
+                        interpretation_details["per_site_quant"] = [
+                            block.model_dump(exclude_none=True) for block in grounded.per_site_quant
+                        ]
+                        interpretation_details["driver_hypotheses"] = [
+                            hypothesis.model_dump(exclude_none=True)
+                            for hypothesis in grounded.driver_hypotheses
+                        ]
                         reasoning_trace = interpretation_details["reasoning_trace"]
                         claim_citations.append(
                             {
@@ -2205,6 +2392,7 @@ def _site_research_fallback(
         "insights": insights,
         "sources": source_urls,
         "chart": chart_payload,
+        "chart_specs": [],
         "claim_citations": claim_citations,
         "claim_verdicts": claim_verdicts,
         "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),

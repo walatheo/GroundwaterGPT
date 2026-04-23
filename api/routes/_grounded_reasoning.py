@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -194,7 +194,10 @@ def _compact_hydro_context(hydro_context: dict[str, Any], pack_zones: set[str]) 
 
 
 def _build_reasoning_evidence(
-    pack: dict[str, Any], hydro_context: dict[str, Any] | None
+    pack: dict[str, Any],
+    hydro_context: dict[str, Any] | None,
+    *,
+    question: str | None = None,
 ) -> dict[str, Any]:
     """Extract raw evidence for the LLM to reason over.
 
@@ -204,6 +207,35 @@ def _build_reasoning_evidence(
     wells = [_compact_well(site) for site in pack.get("sites") or pack.get("wells") or []]
 
     cross_well = pack.get("cross_well") or pack.get("comparison_features") or {}
+    per_site = {str(m.get("site_id")): m for m in (cross_well.get("per_site_metrics") or [])}
+    for well in wells:
+        stats = per_site.get(str(well.get("site_id")))
+        if not stats:
+            continue
+        if stats.get("mk_pvalue") is not None:
+            well["mk_p"] = stats["mk_pvalue"]
+        if stats.get("mk_tau") is not None:
+            well["mk_tau"] = stats["mk_tau"]
+        if stats.get("sens_slope_ft_yr") is not None:
+            well["sens_ft_yr"] = stats["sens_slope_ft_yr"]
+        ci_low = stats.get("annual_change_ci95_low")
+        ci_high = stats.get("annual_change_ci95_high")
+        if ci_low is not None and ci_high is not None:
+            well["rate_ci95"] = [ci_low, ci_high]
+        if stats.get("record_start") and stats.get("record_end"):
+            well["record_window"] = [stats["record_start"], stats["record_end"]]
+        if stats.get("record_years") is not None:
+            well["record_years"] = stats["record_years"]
+        pelt = stats.get("changepoints_pelt") or []
+        if pelt:
+            well["pelt_breaks"] = [
+                {
+                    "date": bp.get("date"),
+                    "pre": round(bp.get("pre_slope", 0.0), 4),
+                    "post": round(bp.get("post_slope", 0.0), 4),
+                }
+                for bp in pelt[:3]
+            ]
     evidence: dict[str, Any] = {
         "wells": wells,
         "cohort": {
@@ -254,6 +286,17 @@ def _build_reasoning_evidence(
         pack_zones = {str(w.get("zone") or "").lower() for w in wells if w.get("zone")}
         evidence["hydro"] = _compact_hydro_context(hydro_context, pack_zones)
 
+    if question:
+        try:
+            from src.agent.hybrid_retriever import hybrid_retriever_enabled, hybrid_snippets
+
+            if hybrid_retriever_enabled():
+                snippets = hybrid_snippets(question, k=3)
+                if snippets:
+                    evidence["domain_snippets"] = snippets
+        except Exception as exc:
+            logger.debug("Hybrid retriever attach failed: %s", exc)
+
     return evidence
 
 
@@ -273,6 +316,53 @@ class GroundedNumericClaim(BaseModel):
         "record_years",
         "latest_depth_to_water_ft",
     ]
+
+
+class SiteQuantBlock(BaseModel):
+    """Per-site quantitative claim block — publication-grade.
+
+    Fields mirror the evidence pack so the LLM cannot introduce numeric
+    values that are not already in the pack. Every field is optional because
+    some wells lack significance stats (short records, missing CIs).
+    """
+
+    site: str
+    site_id: str = ""
+    rate_ft_yr: Optional[float] = None
+    rate_ci95_low: Optional[float] = None
+    rate_ci95_high: Optional[float] = None
+    mk_pvalue: Optional[float] = None
+    sens_slope_ft_yr: Optional[float] = None
+    record_start: Optional[str] = None
+    record_end: Optional[str] = None
+    record_years: Optional[float] = None
+    aquifer: Optional[str] = None
+
+
+class DriverHypothesis(BaseModel):
+    """Qualitative driver hypothesis with evidence grounding and falsifiability.
+
+    ``evidence_keys`` must resolve inside the evidence pack (validated
+    downstream). ``falsification_test`` is a one-sentence observation that
+    would disprove the hypothesis — forces the LLM to propose a falsifiable
+    mechanism instead of a narrative explanation.
+    """
+
+    claim: str
+    mechanism: Literal[
+        "pumping",
+        "recharge",
+        "climate",
+        "land_use",
+        "sea_level",
+        "seasonal_cycle",
+        "structural_break",
+        "measurement_artifact",
+        "other",
+    ] = "other"
+    evidence_keys: list[str] = Field(default_factory=list)
+    confidence: Literal["high", "medium", "low"] = "low"
+    falsification_test: str = ""
 
 
 class GroundedFraming(BaseModel):
@@ -315,6 +405,8 @@ class GroundedInterpretation(BaseModel):
     important_limits: list[str] = Field(default_factory=list)
     follow_up_questions: list[str] = Field(default_factory=list)
     numeric_claims: list[GroundedNumericClaim] = Field(default_factory=list)
+    per_site_quant: list[SiteQuantBlock] = Field(default_factory=list)
+    driver_hypotheses: list[DriverHypothesis] = Field(default_factory=list)
     perspectives: list[str] = Field(default_factory=list)
     answer_moves_completed: list[str] = Field(default_factory=list)
     grounding_status: Literal["grounded", "partial", "refused"]
@@ -677,6 +769,54 @@ def _frame_decline_rank(pack: dict[str, Any], framing: GroundedFraming) -> int |
     return None
 
 
+_YEAR_LITERAL_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
+def _pack_allowed_years(pack: dict[str, Any]) -> set[str]:
+    """Collect every 4-digit year the LLM may reference without being flagged."""
+    years: set[str] = set()
+    for field in ("cohort_period_start", "cohort_period_end"):
+        years.update(_YEAR_LITERAL_RE.findall(str(pack.get(field) or "")))
+    for well in pack.get("wells") or []:
+        for field in ("record_window", "period"):
+            for chunk in well.get(field) or []:
+                years.update(_YEAR_LITERAL_RE.findall(str(chunk or "")))
+        for bp in well.get("pelt_breaks") or []:
+            years.update(_YEAR_LITERAL_RE.findall(str(bp.get("date") or "")))
+    for summary in pack.get("well_summaries") or []:
+        for field in ("record_start", "record_end"):
+            years.update(_YEAR_LITERAL_RE.findall(str(summary.get(field) or "")))
+    return years
+
+
+def _pack_allowed_site_tokens(pack: dict[str, Any]) -> set[str]:
+    """Collect valid site codes, short codes, and IDs (lowercased)."""
+    tokens: set[str] = set()
+    short_code_re = re.compile(r"[A-Za-z]{1,3}-\d{2,}[A-Za-z]?")
+    for well in pack.get("wells") or []:
+        for field in ("name", "site_id"):
+            value = str(well.get(field) or "").strip().lower()
+            if value:
+                tokens.add(value)
+                for match in short_code_re.findall(value):
+                    tokens.add(match)
+    for summary in pack.get("well_summaries") or []:
+        for field in ("name", "site_id", "borehole_code"):
+            value = str(summary.get(field) or "").strip().lower()
+            if value:
+                tokens.add(value)
+                for match in short_code_re.findall(value):
+                    tokens.add(match)
+    return tokens
+
+
+# Site codes: 1-3 letters directly followed by a dash and 2+ digits (e.g. L-100,
+# Lee L-100 contributes "l-100"). The no-whitespace requirement between letters
+# and dash avoids false positives on negative numbers like "at -0.05".
+_SITE_CODE_RE = re.compile(r"\b[A-Za-z]{1,3}-\d{2,}[A-Za-z]?\b")
+_YEAR_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
+
+
 def validate_against_pack(
     interpretation: GroundedInterpretation,
     pack: dict[str, Any],
@@ -698,6 +838,37 @@ def validate_against_pack(
     for name in re.findall(r"\bLee\s+L-\d+[A-Z]?\b", text_blob, flags=re.I):
         if name.lower() not in valid_sites:
             flags.append(f"grounded_reasoning_unknown_well:{name}")
+
+    # --- Publication-grade guardrails: no fabricated IDs / years / quant ---
+    allowed_sites = _pack_allowed_site_tokens(pack)
+    for code in _SITE_CODE_RE.findall(text_blob):
+        canonical = re.sub(r"\s+", " ", code).strip().lower()
+        if canonical and canonical not in allowed_sites:
+            flags.append(f"grounded_reasoning_fabricated_site_code:{code}")
+    allowed_years = _pack_allowed_years(pack)
+    if allowed_years:
+        for year in _YEAR_RE.findall(text_blob):
+            if year not in allowed_years:
+                flags.append(f"grounded_reasoning_fabricated_year:{year}")
+
+    quant_sites = {str(well.get("site_id") or "").lower() for well in pack.get("wells") or []}
+    quant_names = {str(well.get("name") or "").lower() for well in pack.get("wells") or []}
+    for block in interpretation.per_site_quant:
+        sid = str(block.site_id or "").lower()
+        name = str(block.site or "").lower()
+        if sid and quant_sites and sid not in quant_sites:
+            flags.append(f"grounded_reasoning_unknown_quant_site:{block.site_id}")
+        elif not sid and name and quant_names and name not in quant_names:
+            flags.append(f"grounded_reasoning_unknown_quant_site:{block.site}")
+
+    for hypothesis in interpretation.driver_hypotheses:
+        if not hypothesis.falsification_test.strip():
+            flags.append("grounded_reasoning_driver_missing_falsifier")
+        if not hypothesis.evidence_keys:
+            flags.append("grounded_reasoning_driver_missing_evidence_keys")
+        for key in hypothesis.evidence_keys:
+            if not _resolve_evidence_key(pack, key):
+                flags.append(f"grounded_reasoning_driver_bad_evidence_key:{key}")
 
     framing = interpretation.framing
     if framing.scope_type == "unknown":
@@ -1058,20 +1229,43 @@ def fallback_from_deterministic(
     )
 
 
-_RAW_EVIDENCE_SYSTEM_PROMPT = """You are a groundwater monitoring interpreter. Reason step-by-step from  # noqa: E501
-the evidence below to answer the question. You must produce your own
+_RAW_EVIDENCE_SYSTEM_PROMPT = """You are a groundwater monitoring interpreter writing publication-grade  # noqa: E501
+answers. Reason step-by-step from the evidence below. Produce your own
 interpretation — do not summarize or rephrase pre-written conclusions.
 
-## Rules
-- Every numeric value you state must come from the Evidence Pack exactly as given —
-  do not round, invent, estimate, or interpolate.
-- Cite the USGS well name (e.g., "Lee L-2194") for every well you discuss.
-- State the actual data time period from the well records (start date to end date).
+## Grounding rules (strict)
+- Every number you state must appear in the Evidence Pack exactly as given.
+  Do not round, estimate, interpolate, or infer numbers that are not in the pack.
+- Every site ID and well code (e.g., "Lee L-2194") you mention must appear in the pack.
+- Every 4-digit year (e.g., "2017") you mention must appear in the pack
+  (as part of record_window, pelt_breaks.date, or cohort_period). No other years.
+- Cite the USGS well name for every well you discuss.
 - Separate analysis by aquifer unit when multiple aquifers are present.
+- Acknowledge proxy limitations when comparing monitoring wells to production wells.
+
+## Quantitative block — `per_site_quant`
+For each focus well, emit one `SiteQuantBlock` with these fields copied verbatim
+from the pack:
+- `rate_ft_yr` (= `ft_yr`), `rate_ci95_low`/`rate_ci95_high` (from `rate_ci95`),
+- `mk_pvalue` (`mk_p`), `sens_slope_ft_yr` (`sens_ft_yr`),
+- `record_start`/`record_end` (from `record_window`), `record_years`,
+- `site`, `site_id`, `aquifer`.
+Omit fields the pack does not provide. Never fabricate a CI or p-value.
+
+## Qualitative block — `driver_hypotheses`
+Propose 1–3 plausible driver mechanisms for the observed trend. For each hypothesis:
+- `mechanism`: one of pumping, recharge, climate, land_use, sea_level,
+  seasonal_cycle, structural_break, measurement_artifact, other.
+- `evidence_keys`: keys resolvable in the pack (e.g., `wells.0.pelt_breaks`,
+  `cohort.mean_ft_yr`, `divergent_pairs`).
+- `confidence`: high / medium / low, reflecting what the pack alone can support.
+- `falsification_test`: one sentence naming an observation or dataset that
+  would disprove the hypothesis. No test = no hypothesis.
+
+## Narrative rules
 - If the question asks about causes: state what is observed and what requires
   external evidence (pumping records, rainfall, recharge data, models).
-- Acknowledge proxy limitations when comparing monitoring wells to production wells.
-- When the data is ambiguous or multiple readings are valid, present them.
+- When the data is ambiguous, present competing readings.
 - State what the analysis cannot tell you.
 
 Return valid JSON matching the GroundedInterpretation schema."""
@@ -1202,7 +1396,7 @@ def _build_multistage_reasoning_prompt(
     provider_name: str,
     model: str,
 ) -> list[tuple[str, str]]:
-    evidence = _build_reasoning_evidence(pack, hydro_context)
+    evidence = _build_reasoning_evidence(pack, hydro_context, question=question)
     payload = {
         "question": question,
         "framing": framing.model_dump(),
@@ -1267,7 +1461,7 @@ def _build_raw_evidence_prompt(
     rubric_moves: list[str] | None,
 ) -> list[tuple[str, str]]:
     """Build prompt with raw evidence (no pre-computed answers)."""
-    evidence = _build_reasoning_evidence(pack, hydro_context)
+    evidence = _build_reasoning_evidence(pack, hydro_context, question=question)
 
     parts = [
         "## Evidence Pack\n" + json.dumps(evidence, indent=2, default=str),
@@ -1306,6 +1500,56 @@ def _parse_json_response(text: str) -> dict[str, Any] | None:
         except (json.JSONDecodeError, TypeError):
             pass
     return None
+
+
+_REPAIRABLE_PREFIXES = (
+    "grounded_reasoning_fabricated_",
+    "grounded_reasoning_unknown_quant_site:",
+)
+_REPAIRABLE_EXACT = {
+    "grounded_reasoning_driver_missing_falsifier",
+    "grounded_reasoning_driver_missing_evidence_keys",
+}
+
+
+def _repairable_flags(flags: list[str]) -> list[str]:
+    """Subset of validator flags worth a single LLM repair retry."""
+    return [
+        f
+        for f in flags
+        if any(f.startswith(p) for p in _REPAIRABLE_PREFIXES) or f in _REPAIRABLE_EXACT
+    ]
+
+
+def _build_repair_prompt(
+    original_messages: list[tuple[str, str]],
+    prior: GroundedInterpretation,
+    flags: list[str],
+) -> list[tuple[str, str]]:
+    """Append a repair directive to the original prompt.
+
+    The LLM sees the same system + human context it used the first time,
+    plus a short corrective coda listing the violations.
+    """
+    violation_block = "\n".join(f"- {flag}" for flag in flags)
+    coda = (
+        "\n\n## Repair request\n"
+        "Your previous answer had the following grounding violations:\n"
+        f"{violation_block}\n\n"
+        "Regenerate the JSON. Keep what was correct, but fix each violation:\n"
+        "- Remove any site code, well name, or year that is not in the evidence pack.\n"
+        "- For every driver hypothesis, include a non-empty `falsification_test` "
+        "describing an observation that would disprove the claim.\n"
+        "- Every `per_site_quant.site_id` must match an id in the pack.\n"
+        "Do not introduce new fabrications."
+    )
+    messages = [*original_messages]
+    if messages and messages[-1][0] == "human":
+        role, body = messages[-1]
+        messages[-1] = (role, body + coda)
+    else:
+        messages.append(("human", coda.strip()))
+    return messages
 
 
 def invoke_grounded_reasoning(
@@ -1353,10 +1597,14 @@ def invoke_grounded_reasoning(
             llm_kwargs: dict[str, Any] = _provider_timeout_kwargs(provider_name, remaining)
             if provider_name == "ollama":
                 llm_kwargs["format"] = "json"
+            try:
+                temperature = float(os.getenv("GROUNDWATERGPT_REASONING_TEMPERATURE", "0"))
+            except ValueError:
+                temperature = 0.0
             llm = get_llm(
                 provider=LLMProvider(provider_name),
                 model=model,
-                temperature=0,
+                temperature=temperature,
                 **llm_kwargs,
             )
 
@@ -1410,6 +1658,48 @@ def invoke_grounded_reasoning(
                     {**pack, "interpretation_rubric": rubric or {}},
                 )
             )
+
+            # Repair retry: if a deterministic (T=0) pass produced fabrications
+            # or falsifier-less driver claims, ask the LLM to regenerate once
+            # with the violations inlined. LangGraph stochastic samples skip
+            # this (T>0) so the graph stays bounded.
+            repairable = _repairable_flags(flags)
+            if repairable and temperature == 0.0 and _remaining_llm_budget(deadline) > 15:
+                repair_messages = _build_repair_prompt(messages, interpretation, repairable)
+                repaired = _invoke_json_schema(
+                    llm,
+                    GroundedInterpretation,
+                    repair_messages,
+                    timeout_seconds=_remaining_llm_budget(deadline),
+                )
+                if repaired is not None:
+                    if use_multistage and not repaired.framing.scope_type:
+                        repaired.framing = framing
+                    repaired.llm_provider = provider_name
+                    repaired.llm_model = model
+                    post_flags = validate_against_pack(repaired, pack)
+                    post_flags.extend(
+                        _check_success_criteria(
+                            repaired,
+                            {**pack, "interpretation_rubric": rubric or {}},
+                        )
+                    )
+                    if not _repairable_flags(post_flags):
+                        logger.info(
+                            "Grounded reasoning repair succeeded via %s/%s: %s",
+                            provider_name,
+                            model,
+                            repairable,
+                        )
+                        return repaired
+                    logger.info(
+                        "Grounded reasoning repair still flagged (%s); marking partial",
+                        _repairable_flags(post_flags),
+                    )
+                    repaired.grounding_status = "partial"
+                    return repaired
+                interpretation.grounding_status = "partial"
+
             if flags:
                 logger.info(
                     "Grounded reasoning via %s/%s: %d steps, flags: %s",
@@ -1473,6 +1763,26 @@ def invoke_grounded_synthesis(
         rubric_moves = rubric_data.get("intents", {}).get(intent, {}).get("required_moves", [])
     except Exception:
         pass
+
+    try:
+        from src.agent.interpretation_graph import (
+            langgraph_interpreter_enabled,
+            run_interpretation_graph,
+        )
+
+        if langgraph_interpreter_enabled():
+            graph_result = run_interpretation_graph(
+                question,
+                pack,
+                hydro_context=hydro_context,
+                rubric_moves=rubric_moves,
+                n_samples=2,
+                deadline=deadline,
+            )
+            if graph_result is not None:
+                return graph_result
+    except Exception as exc:
+        logger.debug("LangGraph chat synthesis failed, falling back: %s", exc)
 
     return invoke_grounded_reasoning(
         question,
