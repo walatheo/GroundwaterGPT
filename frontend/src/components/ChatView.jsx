@@ -1281,6 +1281,88 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
                 )
               })()}
 
+              {Array.isArray(msg.interpretationDetails?.per_site_quant) && msg.interpretationDetails.per_site_quant.length > 0 && (
+                <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <summary className="cursor-pointer text-xs font-medium text-slate-800">
+                    Quantitative evidence ({msg.interpretationDetails.per_site_quant.length} site{msg.interpretationDetails.per_site_quant.length === 1 ? '' : 's'})
+                  </summary>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full text-xs text-slate-700">
+                      <thead className="text-[10px] uppercase text-slate-500">
+                        <tr>
+                          <th className="text-left py-1 pr-3">Site</th>
+                          <th className="text-right py-1 pr-3">Rate (ft/yr)</th>
+                          <th className="text-right py-1 pr-3">95% CI</th>
+                          <th className="text-right py-1 pr-3">MK p</th>
+                          <th className="text-right py-1 pr-3">Sen slope</th>
+                          <th className="text-left py-1">Record</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {msg.interpretationDetails.per_site_quant.map((row, i) => {
+                          const ciLow = row.rate_ci95_low
+                          const ciHigh = row.rate_ci95_high
+                          const ci = (ciLow != null && ciHigh != null)
+                            ? `[${ciLow.toFixed(3)}, ${ciHigh.toFixed(3)}]`
+                            : '—'
+                          const fmt = (v, d = 3) => (v == null ? '—' : Number(v).toFixed(d))
+                          const window = (row.record_start && row.record_end)
+                            ? `${row.record_start.slice(0, 4)}–${row.record_end.slice(0, 4)}`
+                            : (row.record_years ? `${row.record_years.toFixed(1)} yr` : '—')
+                          return (
+                            <tr key={`${row.site_id || row.site}-${i}`} className="border-t border-slate-200">
+                              <td className="py-1 pr-3 font-medium">{row.site}</td>
+                              <td className="py-1 pr-3 text-right tabular-nums">{fmt(row.rate_ft_yr)}</td>
+                              <td className="py-1 pr-3 text-right tabular-nums">{ci}</td>
+                              <td className="py-1 pr-3 text-right tabular-nums">{fmt(row.mk_pvalue, 3)}</td>
+                              <td className="py-1 pr-3 text-right tabular-nums">{fmt(row.sens_slope_ft_yr)}</td>
+                              <td className="py-1 text-slate-500">{window}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              )}
+
+              {Array.isArray(msg.interpretationDetails?.driver_hypotheses) && msg.interpretationDetails.driver_hypotheses.length > 0 && (
+                <details className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+                  <summary className="cursor-pointer text-xs font-medium text-indigo-800">
+                    Driver hypotheses ({msg.interpretationDetails.driver_hypotheses.length})
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    {msg.interpretationDetails.driver_hypotheses.slice(0, 3).map((h, i) => {
+                      const confColor = h.confidence === 'high'
+                        ? 'bg-green-100 text-green-700'
+                        : h.confidence === 'medium'
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-slate-100 text-slate-600'
+                      return (
+                        <div key={i} className="rounded-md bg-white p-2 text-xs">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-medium text-[10px]">
+                              {h.mechanism || 'other'}
+                            </span>
+                            {h.confidence && (
+                              <span className={`px-1.5 py-0.5 rounded font-medium text-[10px] ${confColor}`}>
+                                {h.confidence}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-slate-800">{h.claim}</p>
+                          {h.falsification_test && (
+                            <p className="mt-1 text-slate-500 italic">
+                              Falsifier: {h.falsification_test}
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </details>
+              )}
+
               {msg.hallucinationGuardrail && !msg.hallucinationGuardrail.all_factual_claims_cited && (
                 <div className="text-[10px] text-amber-500 mt-1">
                   Some claims are uncited
