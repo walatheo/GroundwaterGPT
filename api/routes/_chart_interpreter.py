@@ -1012,6 +1012,14 @@ def _rag_snippets(question: str) -> list[dict[str, Any]]:
     }:
         return []
     try:
+        from src.agent.hybrid_retriever import hybrid_retriever_enabled, hybrid_snippets
+
+        if hybrid_retriever_enabled():
+            return hybrid_snippets(question, k=3)
+    except Exception as exc:
+        logger.debug("Hybrid retriever unavailable, falling back to vector-only: %s", exc)
+
+    try:
         from src.agent.knowledge import search_knowledge
 
         docs = search_knowledge(question, k=5, score_threshold=0.45)
@@ -3154,20 +3162,42 @@ def interpret_with_context(
     llm_result = None
     llm_deadline = time.monotonic() + llm_timeout_seconds()
     if allow_llm_synthesis and _grounded_reasoning_enabled():
+        grounded_result = None
         try:
-            grounded_result = invoke_grounded_reasoning(
-                clean_question,
-                pack,
-                rubric=rubric,
-                deadline=llm_deadline,
+            from src.agent.interpretation_graph import (
+                langgraph_interpreter_enabled,
+                run_interpretation_graph,
             )
+
+            if langgraph_interpreter_enabled():
+                grounded_result = run_interpretation_graph(
+                    clean_question,
+                    pack,
+                    rubric=rubric,
+                )
         except Exception as exc:
-            logger.debug("Chart interpreter grounded reasoning failed: %s", exc)
+            logger.debug("LangGraph interpreter failed, falling back: %s", exc)
             grounded_result = None
+
+        if grounded_result is None:
+            try:
+                grounded_result = invoke_grounded_reasoning(
+                    clean_question,
+                    pack,
+                    rubric=rubric,
+                    deadline=llm_deadline,
+                )
+            except Exception as exc:
+                logger.debug("Chart interpreter grounded reasoning failed: %s", exc)
+                grounded_result = None
         if grounded_result is not None:
             llm_result = _grounded_to_interpretation_result(grounded_result)
             reasoning_trace = [step.model_dump() for step in grounded_result.reasoning_steps]
             reasoning_source = "grounded_llm"
+            trace = getattr(grounded_result, "langgraph_trace", None)
+            if trace:
+                reasoning_source = "langgraph"
+                reasoning_trace = [*reasoning_trace, {"langgraph_trace": trace}]
 
     if llm_result is None:
         try:

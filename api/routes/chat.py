@@ -1276,8 +1276,17 @@ def _augment_research_payload(
     visual_bundle = _build_research_visual_bundle(question)
     if not payload.get("recommended_views"):
         payload["recommended_views"] = visual_bundle["recommended_views"]
-    if not payload.get("chart_specs"):
-        payload["chart_specs"] = visual_bundle["chart_specs"]
+    existing_specs = payload.get("chart_specs") or []
+    bundle_specs = visual_bundle.get("chart_specs") or []
+    if existing_specs and bundle_specs:
+        existing_ids = {spec.get("id") for spec in existing_specs}
+        payload["chart_specs"] = existing_specs + [
+            spec for spec in bundle_specs if spec.get("id") not in existing_ids
+        ]
+    elif bundle_specs:
+        payload["chart_specs"] = bundle_specs
+    else:
+        payload["chart_specs"] = existing_specs
     if payload.get("aquifer_info") is None and visual_bundle.get("aquifer_info") is not None:
         payload["aquifer_info"] = visual_bundle["aquifer_info"]
     if not payload.get("structured_response"):
@@ -1311,6 +1320,7 @@ def _build_chat_payload(
     raw_report: Optional[str] = None,
     interpretation_details: Optional[dict[str, Any]] = None,
     chart: Any = None,
+    chart_specs: Optional[list[dict[str, Any]]] = None,
     wells: Optional[list[dict[str, Any]]] = None,
     aquifer_info: Optional[dict[str, Any]] = None,
     divergent_pairs: Optional[list[dict[str, Any]]] = None,
@@ -1356,6 +1366,7 @@ def _build_chat_payload(
         "context": context,
         "sources": sources,
         "chart": chart,
+        "chart_specs": chart_specs or [],
         "mode": mode,
         "status": "ok",
         "wells": wells or [],
@@ -2072,6 +2083,7 @@ def chat_endpoint(query: dict):
                 context=_get_site_context(named_sites[0].get("county")),
                 sources=ns_result["sources"],
                 chart=_chart_from(ns_result, path="chat.site_fallback"),
+                chart_specs=ns_result.get("chart_specs") or [],
                 mode="site_fallback",
                 wells=_build_wells_payload(named_sites),
                 divergent_pairs=ns_result.get("divergent_pairs", []),
@@ -2112,6 +2124,7 @@ def chat_endpoint(query: dict):
                 context=_get_site_context(),
                 sources=aq_result["sources"],
                 chart=_chart_from(aq_result, path="chat.aquifer_fallback"),
+                chart_specs=aq_result.get("chart_specs") or [],
                 mode="aquifer_fallback",
                 wells=_build_wells_payload(aq_sites),
                 aquifer_info=_build_aquifer_info(aq_display_name),
@@ -2154,6 +2167,7 @@ def chat_endpoint(query: dict):
                     context=_get_site_context(),
                     sources=multi_result["sources"],
                     chart=_chart_from(multi_result, path="chat.multi_location_fallback"),
+                    chart_specs=multi_result.get("chart_specs") or [],
                     mode="network_fallback",
                     wells=_build_wells_payload(multi_sites),
                     divergent_pairs=multi_result.get("divergent_pairs", []),
@@ -2196,6 +2210,7 @@ def chat_endpoint(query: dict):
             context=_get_site_context(county_hint.title() if county_hint else None),
             sources=result["sources"],
             chart=_chart_from(result, path="chat.location_fallback"),
+            chart_specs=result.get("chart_specs") or [],
             mode="site_fallback",
             wells=wells_payload,
             divergent_pairs=result.get("divergent_pairs", []),
@@ -2236,6 +2251,7 @@ def chat_endpoint(query: dict):
                     context=_get_site_context(),
                     sources=nw_result["sources"],
                     chart=_chart_from(nw_result, path="chat.network_fallback"),
+                    chart_specs=nw_result.get("chart_specs") or [],
                     mode="network_fallback",
                     wells=_build_wells_payload(nw_sites),
                     divergent_pairs=nw_result.get("divergent_pairs", []),
@@ -2585,6 +2601,7 @@ def research_endpoint(query: dict):
                 "cross_well_clusters": ns_result.get("cross_well_clusters", []),
                 "cohort_risk_level": ns_result.get("cohort_risk_level"),
                 "llm_synthesis": ns_result.get("llm_synthesis"),
+                "chart_specs": ns_result.get("chart_specs") or [],
             },
             question=question,
             max_depth=max_depth,
@@ -2639,6 +2656,7 @@ def research_endpoint(query: dict):
                 "cross_well_clusters": aq_result.get("cross_well_clusters", []),
                 "cohort_risk_level": aq_result.get("cohort_risk_level"),
                 "llm_synthesis": aq_result.get("llm_synthesis"),
+                "chart_specs": aq_result.get("chart_specs") or [],
             },
             question=question,
             max_depth=max_depth,
@@ -2695,6 +2713,7 @@ def research_endpoint(query: dict):
                     "cross_well_clusters": multi_result.get("cross_well_clusters", []),
                     "cohort_risk_level": multi_result.get("cohort_risk_level"),
                     "llm_synthesis": multi_result.get("llm_synthesis"),
+                    "chart_specs": multi_result.get("chart_specs") or [],
                 },
                 question=question,
                 max_depth=max_depth,
@@ -2752,6 +2771,7 @@ def research_endpoint(query: dict):
                 "cross_well_clusters": site_result.get("cross_well_clusters", []),
                 "cohort_risk_level": site_result.get("cohort_risk_level"),
                 "llm_synthesis": site_result.get("llm_synthesis"),
+                "chart_specs": site_result.get("chart_specs") or [],
             },
             question=question,
             max_depth=max_depth,
@@ -2804,6 +2824,7 @@ def research_endpoint(query: dict):
                     "cross_well_clusters": nw_result.get("cross_well_clusters", []),
                     "cohort_risk_level": nw_result.get("cohort_risk_level"),
                     "llm_synthesis": nw_result.get("llm_synthesis"),
+                    "chart_specs": nw_result.get("chart_specs") or [],
                 },
                 question=question,
                 max_depth=max_depth,
@@ -2915,6 +2936,7 @@ def _stream_fallback_result(question: str, max_depth: int = 3) -> dict:
             "changepoints": site_result.get("changepoints", []),
             "cross_well_clusters": site_result.get("cross_well_clusters", []),
             "cohort_risk_level": site_result.get("cohort_risk_level"),
+            "chart_specs": site_result.get("chart_specs") or [],
         }
 
     # 1. Site-name detection
