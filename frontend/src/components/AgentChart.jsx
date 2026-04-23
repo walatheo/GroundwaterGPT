@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
-import { Download } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Download, FileImage } from 'lucide-react'
 import {
-  LineChart,
+  ComposedChart,
   Line,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -10,6 +11,8 @@ import {
   Legend,
   ResponsiveContainer,
   Brush,
+  ReferenceDot,
+  ReferenceLine,
 } from 'recharts'
 
 /**
@@ -39,11 +42,28 @@ export default function AgentChart({ chartData }) {
     insights = [],
     explainability = null,
     cohort_risk_level: cohortRiskLevel,
+    annotations = [],
+    climate_series: climateSeries = [],
+    climate_correlation: climateCorrelation = null,
+    cluster_assignments: clusterAssignments = {},
   } = chartData
 
+  const hasPrecip = climateSeries && climateSeries.length > 0
+  const clusterPalette = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea']
+  const resolvedSeries = useMemo(() => {
+    if (!clusterAssignments || Object.keys(clusterAssignments).length < 2) return series
+    return series.map((s) => {
+      const clusterId = clusterAssignments[s.key]
+      if (clusterId == null) return s
+      return { ...s, color: clusterPalette[clusterId % clusterPalette.length], clusterId }
+    })
+  }, [series, clusterAssignments])
+
+  const [showExport, setShowExport] = useState(false)
+
   const legendPayload = useMemo(() => {
-    if (series.length <= 6) return undefined
-    return series
+    if (resolvedSeries.length <= 6) return undefined
+    return resolvedSeries
       .filter((entry) => entry.highlight || entry.isTrend || entry.key === 'avg')
       .map((entry) => ({
         value: entry.name || entry.key,
@@ -51,14 +71,14 @@ export default function AgentChart({ chartData }) {
         id: entry.key,
         color: entry.color || '#3b82f6',
       }))
-  }, [series])
+  }, [resolvedSeries])
 
   // Determine Y-axis domain from data
   const yDomain = useMemo(() => {
     let min = Infinity
     let max = -Infinity
     for (const row of data) {
-      for (const s of series) {
+      for (const s of resolvedSeries) {
         const v = row[s.key]
         if (v != null) {
           if (v < min) min = v
@@ -68,7 +88,17 @@ export default function AgentChart({ chartData }) {
     }
     const pad = (max - min) * 0.05 || 1
     return [Math.floor(min - pad), Math.ceil(max + pad)]
-  }, [data, series])
+  }, [data, resolvedSeries])
+
+  const precipDomain = useMemo(() => {
+    if (!hasPrecip) return undefined
+    let max = 0
+    for (const row of data) {
+      const v = row.precip_mm
+      if (v != null && v > max) max = v
+    }
+    return [0, Math.ceil(max * 1.1) || 1]
+  }, [data, hasPrecip])
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -84,6 +114,30 @@ export default function AgentChart({ chartData }) {
       )
     }
     return null
+  }
+
+  const handleFigureExport = async (format) => {
+    try {
+      setShowExport(true)
+      const { exportFigure } = await import('../api/client.js')
+      const blob = await exportFigure(chartData, format)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const baseName = (title || 'groundwater-chart')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+      link.href = url
+      link.download = `${baseName || 'groundwater-chart'}.${format}`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('figure export failed', err)
+    } finally {
+      setShowExport(false)
+    }
   }
 
   const handleDownload = () => {
@@ -141,21 +195,43 @@ export default function AgentChart({ chartData }) {
               </span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={handleDownload}
-            title="Monthly-mean aggregation of all plotted wells"
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Monthly CSV
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleDownload}
+              title="Monthly-mean aggregation of all plotted wells"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Monthly CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => handleFigureExport('svg')}
+              disabled={showExport}
+              title="Reproducible SVG rendered server-side from the chart JSON"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60"
+            >
+              <FileImage className="h-3.5 w-3.5" />
+              {showExport ? '…' : 'SVG'}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleFigureExport('png')}
+              disabled={showExport}
+              title="Reproducible PNG rendered server-side from the chart JSON"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60"
+            >
+              <FileImage className="h-3.5 w-3.5" />
+              {showExport ? '…' : 'PNG'}
+            </button>
+          </div>
         </div>
       )}
 
       <div className="h-[320px]">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
+          <ComposedChart data={data} margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis
               dataKey="date"
@@ -166,6 +242,7 @@ export default function AgentChart({ chartData }) {
               }}
             />
             <YAxis
+              yAxisId="level"
               domain={yDomain}
               tick={{ fontSize: 10 }}
               reversed
@@ -175,12 +252,32 @@ export default function AgentChart({ chartData }) {
                   : undefined
               }
             />
+            {hasPrecip && (
+              <YAxis
+                yAxisId="precip"
+                orientation="right"
+                domain={precipDomain}
+                tick={{ fontSize: 10 }}
+                label={{ value: 'Precip (mm/mo)', angle: 90, position: 'insideRight', style: { textAnchor: 'middle', fontSize: 11 } }}
+              />
+            )}
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 11 }} payload={legendPayload} />
 
-            {series.map((s) => (
+            {hasPrecip && (
+              <Bar
+                yAxisId="precip"
+                dataKey="precip_mm"
+                fill="#60a5fa"
+                fillOpacity={0.3}
+                name="Precipitation (mm/mo)"
+              />
+            )}
+
+            {resolvedSeries.map((s) => (
               <Line
                 key={s.key}
+                yAxisId="level"
                 type="monotone"
                 dataKey={s.key}
                 stroke={s.color || '#3b82f6'}
@@ -193,6 +290,22 @@ export default function AgentChart({ chartData }) {
               />
             ))}
 
+            {annotations
+              .filter((a) => a.type === 'changepoint')
+              .map((a, idx) => (
+                <ReferenceDot
+                  key={`cp-${a.site_id}-${a.date}-${idx}`}
+                  yAxisId="level"
+                  x={a.date}
+                  y={data.find((row) => row.date === a.date)?.[a.site_id]}
+                  r={a.highlight ? 5 : 3}
+                  fill={a.highlight ? '#dc2626' : '#f97316'}
+                  stroke="#fff"
+                  strokeWidth={1}
+                  label={a.highlight ? { value: 'break', position: 'top', fontSize: 9 } : undefined}
+                />
+              ))}
+
             {data.length > 60 && (
               <Brush
                 dataKey="date"
@@ -201,9 +314,17 @@ export default function AgentChart({ chartData }) {
                 tickFormatter={(v) => String(new Date(v).getFullYear())}
               />
             )}
-          </LineChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      {climateCorrelation && (
+        <p className="mt-1 text-[11px] text-slate-500">
+          Rainfall correlation (lag {climateCorrelation.lag_months} mo, n={climateCorrelation.n_months}):
+          <span className="ml-1 font-medium text-slate-700">r = {climateCorrelation.pearson_r}</span>
+          <span className="ml-1">p = {climateCorrelation.pearson_p}</span>
+        </p>
+      )}
 
       {x_label && (
         <p className="text-center text-xs text-slate-400 mt-1">{x_label}</p>

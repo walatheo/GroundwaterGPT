@@ -340,3 +340,21 @@ export async function runResearchWorkbench(payload) {
   }, 'Failed to build research workbench')
   return parseApiResponse(response, 'Failed to build research workbench')
 }
+
+
+// ---------------------------------------------------------------------------
+// Publication figure export (SVG/PNG rendered server-side via matplotlib)
+// ---------------------------------------------------------------------------
+
+export async function exportFigure(chartPayload, format = 'svg', dpi = 160) {
+  const response = await apiFetch(
+    `${API_BASE}/figures/export`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chart_payload: chartPayload, format, dpi }),
+    },
+    'Failed to export figure',
+  )
+  return await response.blob()
+}

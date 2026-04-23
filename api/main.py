@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from api.routes._detection import warm_detection_caches  # noqa: E402
 from api.routes.chat import router as chat_router  # noqa: E402
 from api.routes.data import router as data_router  # noqa: E402
+from api.routes.figure_export import router as figure_export_router  # noqa: E402
 from api.routes.knowledge import router as knowledge_router  # noqa: E402
 from api.routes.research_workflow import router as research_workflow_router  # noqa: E402
 from api.routes.wells import router as wells_router  # noqa: E402
@@ -56,6 +57,7 @@ app.include_router(chat_router)
 app.include_router(knowledge_router)
 app.include_router(research_workflow_router)
 app.include_router(wells_router)
+app.include_router(figure_export_router)
 
 
 @app.get("/")
