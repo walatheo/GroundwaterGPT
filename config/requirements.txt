@@ -4,8 +4,13 @@
 # Core Data Science
 pandas>=2.0.0
 numpy>=1.24.0
+scipy>=1.11
+statsmodels>=0.14
+ruptures>=1.1
+matplotlib>=3.8
+rank-bm25>=0.2.2
 
-# LangChain AI/ML Stack
+# LangChain AI/ML Stack (Qwen-only: Ollama + DashScope via OpenAI-compatible)
 langchain-core>=0.3.81
 langchain-chroma>=0.1.0
 langchain-community>=0.3.27
@@ -14,8 +19,6 @@ sentence-transformers>=3.0.0
 langchain-text-splitters>=0.0.1
 langchain-ollama>=0.0.1
 langchain-openai>=0.0.1
-langchain-anthropic>=0.1.0
-langchain-google-genai>=0.0.1
 langgraph>=0.0.1
 
 # Vector Database
@@ -30,3 +33,4 @@ python-dotenv>=1.0.0
 # Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0
+pytest-timeout>=2.2
