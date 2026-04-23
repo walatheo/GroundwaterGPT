@@ -470,6 +470,7 @@ def test_both_llm_providers_unavailable_returns_grounded_not_500(monkeypatch):
     """With no Qwen key and no Ollama daemon, the deterministic path still answers 200."""
     monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
     monkeypatch.setattr(interpreter, "_rag_snippets", lambda _question: [])
+    monkeypatch.setattr(interpreter, "_grounded_reasoning_enabled", lambda: False)
 
     def _no_llm(_provider, **_kwargs):
         raise RuntimeError("no LLM available")
@@ -502,6 +503,7 @@ def test_both_llm_providers_unavailable_returns_grounded_not_500(monkeypatch):
 def test_structured_llm_provider_metadata_is_reported(monkeypatch):
     """When optional chart LLM synthesis runs, the API should expose provider/model."""
     monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    monkeypatch.delenv("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", raising=False)
     monkeypatch.setenv("SYNTHESIS_MODEL", "fake-llama")
     monkeypatch.setattr(interpreter, "_rag_snippets", lambda _question: [])
 
@@ -650,6 +652,7 @@ def test_llm_bad_numerics_are_reconciled_against_pack(monkeypatch):
 def test_qwen_success_path_returns_explainer_style_answer(monkeypatch):
     """Qwen synthesis should produce an explainer-style answer, not chart-summary echo."""
     monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+    monkeypatch.delenv("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", raising=False)
     monkeypatch.setenv("GROUNDWATERGPT_INTERPRETER_MODEL", "fake-qwen")
     monkeypatch.setattr(interpreter, "_rag_snippets", lambda _question: [])
 
@@ -713,6 +716,7 @@ def test_qwen_success_path_returns_explainer_style_answer(monkeypatch):
 def test_summary_echo_llm_answer_falls_back_to_deterministic(monkeypatch):
     """Weak metadata-like LLM answers should be rejected in favor of deterministic output."""
     monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+    monkeypatch.delenv("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", raising=False)
     monkeypatch.setenv("GROUNDWATERGPT_INTERPRETER_MODEL", "fake-qwen")
     monkeypatch.setattr(interpreter, "_rag_snippets", lambda _question: [])
 

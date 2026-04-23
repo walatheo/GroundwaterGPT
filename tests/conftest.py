@@ -17,6 +17,72 @@ import pytest
 os.environ.setdefault("GROUNDWATERGPT_SKIP_AGENT_INIT", "1")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+# Disable LangGraph self-consistency sampling by default: its sample loop calls
+# real LLMs, which would pull Ollama over the wire during unit tests. Tests
+# that want to exercise the graph can re-enable it explicitly.
+os.environ.setdefault("GROUNDWATERGPT_ENABLE_LANGGRAPH_INTERPRETER", "false")
+# Unit tests must not reach real Qwen/Ollama endpoints through
+# `_invoke_structured_llm`. Tests that exercise the structured-LLM path opt in
+# by deleting this env var (via `monkeypatch.delenv`) and injecting a fake
+# `src.agent.llm_factory` into `sys.modules`.
+os.environ.setdefault("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", "1")
+
+
+def _install_llm_stubs() -> None:
+    """Hard-replace module-level LLM entry points with deterministic no-ops.
+
+    Done at collection time so the stubs survive across every test — a
+    per-test autouse ``monkeypatch`` fixture loses its effect if a prior test
+    reloads the module or swaps the attribute back before the next test's
+    fixture sets up.
+    """
+    try:
+        from api.routes import _evidence_guided_ai as _ega
+
+        _ega._invoke_progression_rewrite = lambda *a, **k: None  # type: ignore[assignment]
+    except Exception:
+        pass
+    try:
+        from src.agent import research_optimizer as _ro
+
+        _ro.get_llm = lambda *a, **k: None  # type: ignore[assignment]
+    except Exception:
+        pass
+    # `_chart_interpreter.invoke_grounded_reasoning` is imported at module
+    # load from `_grounded_reasoning`; without a default stub, tests that
+    # don't explicitly patch it will pull Ollama over the wire through the
+    # `invoke_with_llm_timeout` ThreadPoolExecutor. Tests that want the real
+    # path either patch it themselves (via monkeypatch) or opt in through a
+    # dedicated fixture.
+    try:
+        from api.routes import _chart_interpreter as _ci
+
+        _ci.invoke_grounded_reasoning = lambda *a, **k: None  # type: ignore[assignment]
+    except Exception:
+        pass
+
+
+_install_llm_stubs()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_langgraph(request, monkeypatch):
+    """Stub ``run_interpretation_graph`` per-test except when the graph is the SUT.
+
+    Tests in ``test_interpretation_graph`` drive the graph directly and do
+    their own patching, so they opt out of the stub.
+    """
+    module_obj = getattr(request.node, "module", None)
+    module_name = getattr(module_obj, "__name__", "") if module_obj else ""
+    if not module_name.endswith("test_interpretation_graph"):
+        try:
+            from src.agent import interpretation_graph as _ig
+
+            monkeypatch.setattr(_ig, "run_interpretation_graph", lambda *a, **k: None)
+        except Exception:
+            pass
+    yield
+
 
 # =============================================================================
 # PATH FIXTURES

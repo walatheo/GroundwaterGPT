@@ -9,13 +9,11 @@ import os
 import sys
 from pathlib import Path
 
-# Force the deterministic path — no LLM synthesis of any kind.
 os.environ.setdefault("GROUNDWATERGPT_SKIP_AGENT_INIT", "1")
-os.environ.setdefault("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", "1")
-os.environ.setdefault("GROUNDWATERGPT_ENABLE_GROUNDED_REASONING", "0")
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from api.main import app  # noqa: E402
@@ -30,6 +28,15 @@ def _post_chat(query: str) -> dict:
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+@pytest.fixture(autouse=True)
+def _force_deterministic_path(monkeypatch):
+    # Scope the "no LLM synthesis" signal to this module so it does not bleed
+    # into chart_interpreter tests that exercise the Qwen success path.
+    monkeypatch.setenv("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", "1")
+    monkeypatch.setenv("GROUNDWATERGPT_ENABLE_GROUNDED_REASONING", "0")
+    yield
 
 
 class TestDemoSmoke:

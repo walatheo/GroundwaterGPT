@@ -135,8 +135,12 @@ def test_invoke_with_llm_timeout_returns_none_for_slow_call():
 
 
 def test_llm_timeout_seconds_is_clamped(monkeypatch):
+    # Budget cap was raised to 120s in df52195; a mid-range value passes through.
     monkeypatch.setenv("GROUNDWATERGPT_LLM_TIMEOUT_SECONDS", "45")
-    assert grounded.llm_timeout_seconds() == 28.0
+    assert grounded.llm_timeout_seconds() == 45.0
+    # Above the cap is still clamped so runaway configs cannot stall requests.
+    monkeypatch.setenv("GROUNDWATERGPT_LLM_TIMEOUT_SECONDS", "500")
+    assert grounded.llm_timeout_seconds() == 120.0
 
 
 def test_derive_question_frame_detects_supply_unit_scope(monkeypatch):
