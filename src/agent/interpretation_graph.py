@@ -38,6 +38,12 @@ _DEFAULT_SAMPLES = 3
 _DEFAULT_TEMPS = (0.0, 0.5, 0.8)
 
 
+def _effective_sample_count(requested: int, model_id: str) -> int:
+    """Cap sample count at 2 for 32B-class models to fit the LLM budget."""
+    cap = 2 if ":32b" in (model_id or "").lower() else requested
+    return min(requested, cap)
+
+
 def langgraph_interpreter_enabled() -> bool:
     """Return True when the LangGraph interpreter should be used.
 
@@ -113,7 +119,14 @@ def run_interpretation_graph(
 
         samples: list[Any] = []
         flags: list[list[str]] = []
-        temps = _DEFAULT_TEMPS[:n_samples] or (0.0,)
+        active_model = (
+            os.getenv("GROUNDWATERGPT_REASONING_MODEL")
+            or os.getenv("SYNTHESIS_MODEL")
+            or os.getenv("GROUNDWATERGPT_LLM_MODEL")
+            or os.getenv("LLM_MODEL", "")
+        )
+        capped = _effective_sample_count(n_samples, active_model)
+        temps = _DEFAULT_TEMPS[:capped] or (0.0,)
         for temp in temps:
             if deadline is not None and _time.monotonic() >= deadline - 5:
                 logger.debug("LangGraph sample loop bailed at T=%s: budget exhausted", temp)
