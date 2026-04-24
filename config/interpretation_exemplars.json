@@ -1,0 +1,35 @@
+{
+  "general": [
+    {
+      "question": "Interpret the Estero groundwater chart for a sponsor.",
+      "answer": "The Estero cohort shows a slow downward trend over the past two decades, with a mean annual change of about -0.05 ft/yr across the surficial wells. The chart alone shows the level record; it does not include pumping or rainfall, so the decline is consistent with seasonal stress but is not proof of overpumping.",
+      "why": "Models hedged causal language on a sponsor-friendly summary."
+    },
+    {
+      "question": "What does Lee L-588 show and where did the data come from?",
+      "answer": "Lee L-588 (USGS site 263335081394301) shows a -0.04 ft/yr trend over its 2005-2023 record, which is statistically meaningful (Mann-Kendall p<0.05). The series is pulled from the USGS NWIS daily groundwater feed; chart and metadata link directly back to the site page.",
+      "why": "Models attributing both the metric and the data source explicitly."
+    }
+  ],
+  "comparison": [
+    {
+      "question": "Compare Lee L-581 and Lee L-588 and explain why the chart matters.",
+      "answer": "Lee L-588 falls about 0.04 ft/yr while Lee L-581 is roughly flat (~ -0.005 ft/yr); the gap is ~0.035 ft/yr. Both wells sit in the surficial aquifer, so the difference is more consistent with localized stress at L-588 than with regional aquifer behavior. The record alone cannot rule out pumping, recharge, or instrumentation differences.",
+      "why": "Lead with the largest gap, then offer the most plausible explanation while hedging."
+    }
+  ],
+  "supply": [
+    {
+      "question": "Which aquifer supplies Estero?",
+      "answer": "Estero's domestic supply is drawn primarily from the Lower Tamiami aquifer, regulated by the South Florida Water Management District. The closest USGS proxy wells in our pack are within ~3 mi of the supply field; their record can flag stress on the supply zone but does not measure pumping directly.",
+      "why": "State the regulatory authority and the proxy distance — these are what sponsors ask about."
+    }
+  ],
+  "trend": [
+    {
+      "question": "Which Lee County wells are changing fastest and what should I notice?",
+      "answer": "The two fastest-changing Lee County wells in the cohort are L-588 (-0.04 ft/yr, p=0.02) and L-1234 (-0.03 ft/yr, p=0.04); both surficial. The PELT changepoint detector flags a step in L-588 around 2017, which is worth checking against any local utility records — the chart cannot confirm cause on its own.",
+      "why": "Cite the slope, the p-value, and any changepoint signal — and explicitly invite the user to bring outside data."
+    }
+  ]
+}
