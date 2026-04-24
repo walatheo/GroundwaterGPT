@@ -118,8 +118,6 @@ def run_interpretation_graph(
             if deadline is not None and _time.monotonic() >= deadline - 5:
                 logger.debug("LangGraph sample loop bailed at T=%s: budget exhausted", temp)
                 break
-            prev = os.environ.get("GROUNDWATERGPT_REASONING_TEMPERATURE")
-            os.environ["GROUNDWATERGPT_REASONING_TEMPERATURE"] = str(temp)
             try:
                 interp = invoke_grounded_reasoning(
                     s.question,
@@ -128,15 +126,11 @@ def run_interpretation_graph(
                     hydro_context=s.hydro_context,
                     rubric_moves=s.rubric_moves,
                     deadline=deadline,
+                    temperature=float(temp),
                 )
             except Exception as exc:
                 logger.debug("sample reasoning failed at T=%s: %s", temp, exc)
                 interp = None
-            finally:
-                if prev is None:
-                    os.environ.pop("GROUNDWATERGPT_REASONING_TEMPERATURE", None)
-                else:
-                    os.environ["GROUNDWATERGPT_REASONING_TEMPERATURE"] = prev
             if interp is None:
                 continue
             sample_flags = validate_against_pack(interp, s.pack)

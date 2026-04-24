@@ -133,7 +133,6 @@ def test_invoke_grounded_reasoning_repairs_on_flag(monkeypatch):
     stub = _StubLLM(queue=[_fabricated_interp(), _clean_interp()])
 
     monkeypatch.setattr(gr, "_reasoning_providers", lambda: [("qwen", "qwen-plus")])
-    monkeypatch.setenv("GROUNDWATERGPT_REASONING_TEMPERATURE", "0")
     monkeypatch.setattr(
         "src.agent.llm_factory.get_llm",
         lambda **kwargs: stub,
@@ -155,7 +154,6 @@ def test_invoke_grounded_reasoning_marks_partial_when_retry_still_flagged(monkey
     stub = _StubLLM(queue=[_fabricated_interp(), _fabricated_interp()])
 
     monkeypatch.setattr(gr, "_reasoning_providers", lambda: [("qwen", "qwen-plus")])
-    monkeypatch.setenv("GROUNDWATERGPT_REASONING_TEMPERATURE", "0")
     monkeypatch.setattr(
         "src.agent.llm_factory.get_llm",
         lambda **kwargs: stub,

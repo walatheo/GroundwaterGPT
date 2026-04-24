@@ -869,3 +869,95 @@ def test_grounded_reasoning_path_threads_trace_and_metadata(monkeypatch):
     assert interpretation["data_references"][0]["lat"] is not None
     assert interpretation["data_references"][0]["record_start"]
     assert interpretation["data_references"][0]["record_end"]
+
+
+def _make_grounded_with_langgraph_trace(trace):
+    grounded = GroundedInterpretation(
+        intent="general",
+        reasoning_steps=[
+            ReasoningStep(
+                step_label="Identify wells",
+                observation="USGS wells Lee L-729 and Lee L-581 anchor the chart context.",
+                evidence_keys=["wells"],
+                inference="Answer can be tied to specific monitoring wells.",
+                confidence="high",
+            ),
+        ],
+        direct_answer=(
+            "Across the loaded USGS records the cohort declines unevenly by aquifer; "
+            "Hawthorn wells are falling fastest while Surficial Sand stays near zero."
+        ),
+        aquifer_summaries=[
+            {"zone": "Surficial Sand", "mean_annual_change": -0.05, "n_falling": 1, "n_rising": 1},
+        ],
+        why_it_matters="Confined and unconfined units respond to different stresses.",
+        limitations=["Monitoring records, not production-well data."],
+        follow_up_questions=["Is this decline seasonal or persistent?"],
+        numeric_claims=[
+            GroundedNumericClaim(
+                site="Lee L-729", value=-0.355, unit="ft/yr", source="annual_change_ft_yr"
+            )
+        ],
+        perspectives=[],
+        grounding_status="grounded",
+        llm_provider="ollama",
+        llm_model="fake-langgraph",
+    )
+    object.__setattr__(grounded, "langgraph_trace", list(trace))
+    return grounded
+
+
+def test_langgraph_path_preserves_source_trace_and_deadline(monkeypatch):
+    """LangGraph results must keep reasoning_source=langgraph and expose trace separately."""
+    monkeypatch.setenv("GROUNDWATERGPT_ENABLE_GROUNDED_REASONING", "1")
+    monkeypatch.setattr(interpreter, "_rag_snippets", lambda _question: [])
+
+    # Simulate a polish LLM that would normally trip rejection flags — should be ignored
+    # because the langgraph branch already produced a grounded answer.
+    monkeypatch.setattr(
+        interpreter,
+        "_invoke_structured_llm",
+        lambda *_args, **_kwargs: None,
+    )
+
+    captured: dict = {}
+    sample_trace = [
+        {"node": "frame", "scope": "site", "goal": "trend"},
+        {"node": "sample_reason", "samples": 2},
+        {"node": "synthesize", "emitted": True},
+    ]
+
+    fake_module = types.ModuleType("src.agent.interpretation_graph")
+
+    def _enabled() -> bool:
+        return True
+
+    def _run(question, pack, **kwargs):
+        captured["kwargs"] = kwargs
+        captured["question"] = question
+        return _make_grounded_with_langgraph_trace(sample_trace)
+
+    fake_module.langgraph_interpreter_enabled = _enabled
+    fake_module.run_interpretation_graph = _run
+    monkeypatch.setitem(sys.modules, "src.agent.interpretation_graph", fake_module)
+
+    result = interpreter.interpret_with_context(
+        "What has been the change in groundwater level across these aquifer units?",
+        chart_context=LEE_MULTI_AQUIFER_CONTEXT,
+        turn_history=[],
+        allow_llm_synthesis=True,
+    )
+
+    interpretation = result["interpretation_response"]
+    assert interpretation["reasoning_source"] == "langgraph"
+    # reasoning_trace must remain flat step dicts the UI can render
+    assert interpretation["reasoning_trace"]
+    for step in interpretation["reasoning_trace"]:
+        assert isinstance(step, dict)
+        assert "langgraph_trace" not in step
+        assert "step_label" in step
+    # langgraph_trace exposed as a separate, opaque field
+    assert interpretation["langgraph_trace"] == sample_trace
+    # deadline must have been forwarded into the graph
+    assert "deadline" in captured["kwargs"]
+    assert captured["kwargs"]["deadline"] is not None

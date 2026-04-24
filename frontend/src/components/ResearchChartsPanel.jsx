@@ -2,19 +2,23 @@ import { useEffect, useState } from 'react'
 import { VChart } from '@visactor/react-vchart'
 
 export default function ResearchChartsPanel({ chartSpecs = [], recommendedViews = [] }) {
-  const [selectedId, setSelectedId] = useState(chartSpecs[0]?.id || '')
+  // Only specs with a real VChart `spec` payload are renderable here.
+  // Lightweight reference entries (e.g., {id, site_ids, chart_ref}) are
+  // threaded through the response for context but should not be tabbed.
+  const renderable = chartSpecs.filter((s) => s && s.spec && typeof s.spec === 'object')
+  const [selectedId, setSelectedId] = useState(renderable[0]?.id || '')
 
   useEffect(() => {
-    if (!chartSpecs.some(spec => spec.id === selectedId)) {
-      setSelectedId(chartSpecs[0]?.id || '')
+    if (!renderable.some(spec => spec.id === selectedId)) {
+      setSelectedId(renderable[0]?.id || '')
     }
-  }, [chartSpecs, selectedId])
+  }, [renderable, selectedId])
 
-  if (!chartSpecs.length) return null
+  if (!renderable.length) return null
 
-  const selected = chartSpecs.find(spec => spec.id === selectedId) || chartSpecs[0]
+  const selected = renderable.find(spec => spec.id === selectedId) || renderable[0]
   const visibleRecommended = recommendedViews.filter(view =>
-    chartSpecs.some(spec => spec.id === view)
+    renderable.some(spec => spec.id === view)
   )
 
   return (
@@ -31,7 +35,7 @@ export default function ResearchChartsPanel({ chartSpecs = [], recommendedViews 
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        {chartSpecs.map((spec) => (
+        {renderable.map((spec) => (
           <button
             key={spec.id}
             type="button"

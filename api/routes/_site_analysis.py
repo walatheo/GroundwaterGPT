@@ -1576,6 +1576,49 @@ def _build_answer_brief(
     return "\n".join(lines), interpretation_details
 
 
+def _is_real_site_key(key: str) -> bool:
+    """Filter out synthetic series keys (cohort average, trend overlays).
+
+    Mirrors ChatView.jsx so backend follow-up context and frontend chart
+    references stay aligned on what counts as a real USGS site ID.
+    """
+    if not key or key == "avg":
+        return False
+    return not key.endswith("_trend")
+
+
+def _chart_specs_from_payload(chart_payload: Optional[dict], location_name: str) -> list[dict]:
+    """Derive a single trend-comparison chart_spec from a built chart payload.
+
+    Returns ``[]`` when the payload has no plottable series so downstream
+    consumers can rely on a non-empty list signalling real chart context.
+    Synthetic series (cohort average, per-site trend overlays) are excluded
+    so follow-up context never carries fake site IDs like ``avg`` or
+    ``<sid>_trend``.
+    """
+    if not chart_payload:
+        return []
+    spec_site_ids = [
+        str(series.get("key"))
+        for series in (chart_payload.get("series") or [])
+        if _is_real_site_key(str(series.get("key") or ""))
+    ]
+    if not spec_site_ids:
+        return []
+    return [
+        {
+            "id": "trend-comparison",
+            "kind": "trend_comparison",
+            "title": chart_payload.get("title") or f"{location_name} groundwater trends",
+            "description": (
+                "Monthly groundwater levels across the loaded USGS wells " f"for {location_name}."
+            ),
+            "site_ids": spec_site_ids,
+            "chart_ref": chart_payload.get("id"),
+        }
+    ]
+
+
 def _site_research_fallback(
     question: str,
     sites: list[dict],
@@ -2285,6 +2328,7 @@ def _site_research_fallback(
     chart_payload = (
         _build_chart_payload(sites, location_name, cross_well=cross_well) if include_chart else None
     )
+    chart_specs_payload = _chart_specs_from_payload(chart_payload, location_name)
 
     # --- LLM synthesis (hybrid mode) ---
     synthesis_section = ""
@@ -2392,7 +2436,7 @@ def _site_research_fallback(
         "insights": insights,
         "sources": source_urls,
         "chart": chart_payload,
-        "chart_specs": [],
+        "chart_specs": chart_specs_payload,
         "claim_citations": claim_citations,
         "claim_verdicts": claim_verdicts,
         "claim_verdict_summary": _build_claim_verdict_summary(claim_verdicts),

@@ -370,6 +370,11 @@ function buildAnalyticalDepth(msg) {
       ? details.reasoning_trace
     : []
   const reasoningSource = interpretation.reasoning_source || details.reasoning_source || 'deterministic'
+  const langgraphTrace = Array.isArray(interpretation.langgraph_trace)
+    ? interpretation.langgraph_trace
+    : Array.isArray(details.langgraph_trace)
+      ? details.langgraph_trace
+    : []
 
   if (
     numericClaims.length === 0 &&
@@ -417,6 +422,7 @@ function buildAnalyticalDepth(msg) {
     misconceptionsToAvoid,
     reasoningTrace,
     reasoningSource,
+    langgraphTrace,
     cohortRisk: msg.cohortRisk || details.risk_level || null,
     grounding: interpretation.grounding_status || null,
   }
@@ -1063,6 +1069,28 @@ export default function ChatView({ selectedSite, onOpenWorkbench, fullScreen = f
                           ))}
                         </div>
                       </div>
+                    )}
+
+                    {depth.langgraphTrace.length > 0 && (
+                      <details className="mt-3 rounded-md border border-violet-200 bg-violet-50 p-3">
+                        <summary className="cursor-pointer text-[11px] font-medium text-violet-800">
+                          LangGraph execution trace ({depth.langgraphTrace.length} step{depth.langgraphTrace.length === 1 ? '' : 's'})
+                        </summary>
+                        <ol className="mt-2 space-y-1.5 text-xs text-slate-700">
+                          {depth.langgraphTrace.map((node, i) => {
+                            const { node: nodeName, ...rest } = node || {}
+                            const detail = Object.entries(rest)
+                              .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+                              .join(' · ')
+                            return (
+                              <li key={`lg-${i}`} className="rounded-md bg-white/80 px-2 py-1.5">
+                                <span className="font-medium text-violet-900">{nodeName || `node ${i + 1}`}</span>
+                                {detail && <span className="ml-2 text-[11px] text-slate-600">{detail}</span>}
+                              </li>
+                            )
+                          })}
+                        </ol>
+                      </details>
                     )}
 
                     {depth.aquiferSummaries.length > 0 && (

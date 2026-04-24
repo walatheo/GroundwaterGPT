@@ -1223,6 +1223,49 @@ def _build_structured_response_from_claims(
     }
 
 
+def _has_renderable_spec(spec: Any) -> bool:
+    """Return True when a chart_spec entry carries a concrete VChart spec object."""
+    return isinstance(spec, dict) and isinstance(spec.get("spec"), dict)
+
+
+def _merge_chart_specs(
+    existing_specs: list[dict[str, Any]],
+    bundle_specs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Merge existing chart_specs with the visual bundle, preserving renderables.
+
+    When both lists contain an entry with the same ``id``, the renderable entry
+    (the one carrying a real VChart ``spec``) wins so a lightweight reference
+    emitted by a deterministic fallback can never shadow the bundle's
+    renderable chart with the same id (e.g. ``trend-comparison``).
+    """
+    bundle_by_id: dict[str, dict[str, Any]] = {}
+    for spec in bundle_specs:
+        sid = spec.get("id") if isinstance(spec, dict) else None
+        if sid and sid not in bundle_by_id:
+            bundle_by_id[sid] = spec
+
+    merged: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for spec in existing_specs:
+        sid = spec.get("id") if isinstance(spec, dict) else None
+        candidate = spec
+        if sid and sid in bundle_by_id:
+            bundle_spec = bundle_by_id[sid]
+            if _has_renderable_spec(bundle_spec) and not _has_renderable_spec(spec):
+                candidate = bundle_spec
+        merged.append(candidate)
+        if sid:
+            seen_ids.add(sid)
+
+    for spec in bundle_specs:
+        sid = spec.get("id") if isinstance(spec, dict) else None
+        if sid and sid in seen_ids:
+            continue
+        merged.append(spec)
+    return merged
+
+
 def _augment_research_payload(
     payload: dict[str, Any],
     *,
@@ -1279,10 +1322,7 @@ def _augment_research_payload(
     existing_specs = payload.get("chart_specs") or []
     bundle_specs = visual_bundle.get("chart_specs") or []
     if existing_specs and bundle_specs:
-        existing_ids = {spec.get("id") for spec in existing_specs}
-        payload["chart_specs"] = existing_specs + [
-            spec for spec in bundle_specs if spec.get("id") not in existing_ids
-        ]
+        payload["chart_specs"] = _merge_chart_specs(existing_specs, bundle_specs)
     elif bundle_specs:
         payload["chart_specs"] = bundle_specs
     else:

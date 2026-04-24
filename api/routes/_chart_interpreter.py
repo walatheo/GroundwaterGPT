@@ -3161,6 +3161,7 @@ def interpret_with_context(
 
     llm_result = None
     llm_deadline = time.monotonic() + llm_timeout_seconds()
+    langgraph_trace: list[dict[str, Any]] = []
     if allow_llm_synthesis and _grounded_reasoning_enabled():
         grounded_result = None
         try:
@@ -3174,6 +3175,7 @@ def interpret_with_context(
                     clean_question,
                     pack,
                     rubric=rubric,
+                    deadline=llm_deadline,
                 )
         except Exception as exc:
             logger.debug("LangGraph interpreter failed, falling back: %s", exc)
@@ -3197,7 +3199,7 @@ def interpret_with_context(
             trace = getattr(grounded_result, "langgraph_trace", None)
             if trace:
                 reasoning_source = "langgraph"
-                reasoning_trace = [*reasoning_trace, {"langgraph_trace": trace}]
+                langgraph_trace = list(trace)
 
     if llm_result is None:
         try:
@@ -3223,7 +3225,7 @@ def interpret_with_context(
         llm_result.numeric_claims = reconciled_claims
         if reconciliation_flags:
             llm_result.guardrail_flags = list(llm_result.guardrail_flags) + reconciliation_flags
-        if reasoning_source != "grounded_llm":
+        if reasoning_source not in ("grounded_llm", "langgraph"):
             llm_rejection_flags = _llm_answer_validation_flags(
                 clean_question, llm_result.answer, explainer_seed
             )
@@ -3316,6 +3318,7 @@ def interpret_with_context(
         "answer": result.answer,
         "reasoning_trace": reasoning_trace,
         "reasoning_source": reasoning_source,
+        "langgraph_trace": langgraph_trace,
         "framing": active_frame,
         "scope_type": active_frame.get("scope_type"),
         "focus_entities": active_frame.get("focus_entities", []),

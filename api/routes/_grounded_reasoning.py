@@ -1560,6 +1560,7 @@ def invoke_grounded_reasoning(
     hydro_context: dict[str, Any] | None = None,
     rubric_moves: list[str] | None = None,
     deadline: float | None = None,
+    temperature: float | None = None,
 ) -> GroundedInterpretation | None:
     """Invoke grounded reasoning with raw evidence.
 
@@ -1597,14 +1598,11 @@ def invoke_grounded_reasoning(
             llm_kwargs: dict[str, Any] = _provider_timeout_kwargs(provider_name, remaining)
             if provider_name == "ollama":
                 llm_kwargs["format"] = "json"
-            try:
-                temperature = float(os.getenv("GROUNDWATERGPT_REASONING_TEMPERATURE", "0"))
-            except ValueError:
-                temperature = 0.0
+            effective_temperature = temperature if temperature is not None else 0.0
             llm = get_llm(
                 provider=LLMProvider(provider_name),
                 model=model,
-                temperature=temperature,
+                temperature=effective_temperature,
                 **llm_kwargs,
             )
 
@@ -1664,7 +1662,7 @@ def invoke_grounded_reasoning(
             # with the violations inlined. LangGraph stochastic samples skip
             # this (T>0) so the graph stays bounded.
             repairable = _repairable_flags(flags)
-            if repairable and temperature == 0.0 and _remaining_llm_budget(deadline) > 15:
+            if repairable and effective_temperature == 0.0 and _remaining_llm_budget(deadline) > 15:
                 repair_messages = _build_repair_prompt(messages, interpretation, repairable)
                 repaired = _invoke_json_schema(
                     llm,
