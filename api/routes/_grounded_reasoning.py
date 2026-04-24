@@ -1264,6 +1264,24 @@ def _load_interpretation_exemplars() -> dict[str, list[dict[str, str]]]:
     return cleaned
 
 
+def _classify_intent_bucket(framing: "GroundedFraming") -> str:
+    """Map a GroundedFraming to one of the exemplar registry buckets."""
+    scope = framing.scope_type
+    goal = framing.question_goal
+    if scope == "supply_unit":
+        return "supply"
+    if goal == "compare" or scope == "cross_well":
+        return "comparison"
+    if goal in {"explain", "rank", "why_it_matters"} and scope in {
+        "well",
+        "aquifer",
+        "cohort",
+        "chart",
+    }:
+        return "trend"
+    return "general"
+
+
 _RAW_EVIDENCE_SYSTEM_PROMPT = """You are a groundwater monitoring interpreter writing publication-grade  # noqa: E501
 answers. Reason step-by-step from the evidence below. Produce your own
 interpretation — do not summarize or rephrase pre-written conclusions.
