@@ -1385,7 +1385,12 @@ def _reasoning_providers() -> list[tuple[str, str]]:
     reasoning_model = os.getenv("GROUNDWATERGPT_REASONING_MODEL", "")
 
     # Local Qwen via Ollama — preferred (no key, no network egress).
-    ollama_model = reasoning_model or os.getenv("SYNTHESIS_MODEL") or os.getenv("LLM_MODEL", "")
+    ollama_model = (
+        reasoning_model
+        or os.getenv("SYNTHESIS_MODEL")
+        or os.getenv("GROUNDWATERGPT_LLM_MODEL")
+        or os.getenv("LLM_MODEL", "")
+    )
     providers.append(("ollama", ollama_model or "qwen3:8b"))
 
     # Hosted Qwen via DashScope — used when an API key is configured.

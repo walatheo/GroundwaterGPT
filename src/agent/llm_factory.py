@@ -26,7 +26,7 @@ class LLMProvider(Enum):
 # picks up changes without code edits.
 LLM_CONFIG = {
     "provider": LLMProvider(os.getenv("LLM_PROVIDER", "ollama")),
-    "model": os.getenv("LLM_MODEL", "qwen3:8b"),
+    "model": os.getenv("GROUNDWATERGPT_LLM_MODEL") or os.getenv("LLM_MODEL", "qwen3:8b"),
     "temperature": 0.7,
     "max_tokens": 2048,
 }
