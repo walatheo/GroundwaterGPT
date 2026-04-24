@@ -1229,6 +1229,41 @@ def fallback_from_deterministic(
     )
 
 
+# ---------------------------------------------------------------------------
+# Few-shot exemplar registry
+# ---------------------------------------------------------------------------
+
+_INTERPRETATION_EXEMPLARS_PATH = (
+    Path(__file__).resolve().parents[2] / "config" / "interpretation_exemplars.json"
+)
+
+
+@lru_cache(maxsize=1)
+def _load_interpretation_exemplars() -> dict[str, list[dict[str, str]]]:
+    """Return per-intent exemplar lists. Missing or malformed file -> {}."""
+    try:
+        raw = json.loads(_INTERPRETATION_EXEMPLARS_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    cleaned: dict[str, list[dict[str, str]]] = {}
+    for intent, entries in raw.items():
+        if not isinstance(entries, list):
+            continue
+        good: list[dict[str, str]] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            q = entry.get("question")
+            a = entry.get("answer")
+            if isinstance(q, str) and q.strip() and isinstance(a, str) and a.strip():
+                good.append({"question": q.strip(), "answer": a.strip()})
+        if good:
+            cleaned[str(intent)] = good
+    return cleaned
+
+
 _RAW_EVIDENCE_SYSTEM_PROMPT = """You are a groundwater monitoring interpreter writing publication-grade  # noqa: E501
 answers. Reason step-by-step from the evidence below. Produce your own
 interpretation — do not summarize or rephrase pre-written conclusions.
