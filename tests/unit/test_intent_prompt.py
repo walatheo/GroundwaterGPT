@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+import pytest
+
+from api.routes import _grounded_reasoning as gr
 from api.routes._grounded_reasoning import GroundedFraming, _classify_intent_bucket
+
+
+@pytest.fixture(autouse=True)
+def _clear_exemplar_cache():
+    gr._load_interpretation_exemplars.cache_clear()
+    yield
+    gr._load_interpretation_exemplars.cache_clear()
 
 
 def _frame(scope: str, goal: str) -> GroundedFraming:
@@ -33,7 +43,6 @@ def test_unknown_scope_falls_back_to_general():
     assert _classify_intent_bucket(_frame("unknown", "general")) == "general"
 
 
-from api.routes import _grounded_reasoning as gr  # noqa: E402
 from api.routes._grounded_reasoning import _build_intent_specific_prompt  # noqa: E402
 
 
@@ -69,3 +78,62 @@ def test_intent_block_empty_when_registry_empty(tmp_path, monkeypatch):
 def test_intent_block_empty_for_unknown_bucket():
     gr._load_interpretation_exemplars.cache_clear()
     assert _build_intent_specific_prompt("nonsense") == ""
+
+
+from api.routes._grounded_reasoning import (  # noqa: E402
+    _build_multistage_reasoning_prompt,
+    _build_raw_evidence_prompt,
+)
+
+
+def _minimal_pack() -> dict:
+    return {
+        "site_ids": ["A1"],
+        "sites": [{"site_id": "A1", "name": "Lee L-100"}],
+    }
+
+
+def test_raw_evidence_prompt_appends_intent_block():
+    gr._load_interpretation_exemplars.cache_clear()
+    messages = _build_raw_evidence_prompt(
+        "Compare Lee L-581 and Lee L-588.",
+        _minimal_pack(),
+        None,
+        None,
+    )
+    system = messages[0][1]
+    # Should still contain the base system prompt header...
+    assert "groundwater monitoring interpreter" in system.lower()
+    # ...AND the comparison guidance from Task 4.
+    assert "largest gap" in system.lower()
+
+
+def test_multistage_prompt_appends_intent_block():
+    gr._load_interpretation_exemplars.cache_clear()
+    messages = _build_multistage_reasoning_prompt(
+        "Which aquifer supplies Estero?",
+        _minimal_pack(),
+        None,
+        None,
+        GroundedFraming(scope_type="supply_unit", question_goal="source_proxy"),
+        provider_name="ollama",
+        model="qwen3:8b",
+    )
+    system = messages[0][1]
+    assert "regulatory authority" in system.lower()
+
+
+def test_prompt_unchanged_when_registry_empty(tmp_path, monkeypatch):
+    empty = tmp_path / "empty.json"
+    empty.write_text("{}")
+    monkeypatch.setattr(gr, "_INTERPRETATION_EXEMPLARS_PATH", empty)
+    monkeypatch.setattr(gr, "_INTENT_GUIDANCE", {})
+    gr._load_interpretation_exemplars.cache_clear()
+    messages = _build_raw_evidence_prompt(
+        "anything",
+        _minimal_pack(),
+        None,
+        None,
+    )
+    # Base prompt only, no trailing augmentation.
+    assert messages[0][1].rstrip() == gr._RAW_EVIDENCE_SYSTEM_PROMPT.rstrip()

@@ -4,7 +4,16 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from api.routes._grounded_reasoning import _load_interpretation_exemplars
+
+
+@pytest.fixture(autouse=True)
+def _clear_exemplar_cache():
+    _load_interpretation_exemplars.cache_clear()
+    yield
+    _load_interpretation_exemplars.cache_clear()
 
 
 def test_loader_returns_dict_keyed_by_intent():

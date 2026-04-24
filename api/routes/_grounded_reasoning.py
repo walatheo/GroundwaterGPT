@@ -1501,8 +1501,10 @@ def _build_multistage_reasoning_prompt(
             "limitations": "Chart limits and missing outside evidence.",
         },
     }
+    intent_block = _build_intent_specific_prompt(_classify_intent_bucket(framing))
+    system_prompt = _RAW_EVIDENCE_SYSTEM_PROMPT + ("\n\n" + intent_block if intent_block else "")
     return [
-        ("system", _RAW_EVIDENCE_SYSTEM_PROMPT),
+        ("system", system_prompt),
         (
             "human",
             _thinking_prefix(provider_name, model) + json.dumps(payload, indent=2, default=str),
@@ -1565,8 +1567,12 @@ def _build_raw_evidence_prompt(
         )
     parts.append(f"\n## Question\n{question}")
 
+    intent_block = _build_intent_specific_prompt(
+        _classify_intent_bucket(derive_question_frame(question, pack))
+    )
+    system_prompt = _RAW_EVIDENCE_SYSTEM_PROMPT + ("\n\n" + intent_block if intent_block else "")
     return [
-        ("system", _RAW_EVIDENCE_SYSTEM_PROMPT),
+        ("system", system_prompt),
         ("human", "\n\n".join(parts)),
     ]
 
