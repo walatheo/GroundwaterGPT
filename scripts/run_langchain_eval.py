@@ -208,7 +208,16 @@ def main() -> int:
     parser.add_argument("--cases", type=int, default=None, help="limit number of cases")
     parser.add_argument("--out", type=Path, default=None, help="output JSON path")
     parser.add_argument("--cases-path", type=Path, default=DEFAULT_CASES_PATH)
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Override synthesis model (sets GROUNDWATERGPT_LLM_MODEL for the run).",
+    )
     args = parser.parse_args()
+
+    if args.model:
+        os.environ["GROUNDWATERGPT_LLM_MODEL"] = args.model
 
     cases = _load_cases(args.cases_path, args.cases)
     llm = _get_judge_llm()
