@@ -31,3 +31,41 @@ def test_aquifer_rank_routes_to_trend_bucket():
 
 def test_unknown_scope_falls_back_to_general():
     assert _classify_intent_bucket(_frame("unknown", "general")) == "general"
+
+
+from api.routes import _grounded_reasoning as gr  # noqa: E402
+from api.routes._grounded_reasoning import _build_intent_specific_prompt  # noqa: E402
+
+
+def test_intent_block_renders_worked_examples():
+    gr._load_interpretation_exemplars.cache_clear()
+    block = _build_intent_specific_prompt("general")
+    assert "### Worked example" in block
+    # The first general exemplar in the shipped registry mentions Estero.
+    assert "Estero" in block
+
+
+def test_intent_block_includes_intent_specific_paragraph_for_supply():
+    gr._load_interpretation_exemplars.cache_clear()
+    block = _build_intent_specific_prompt("supply")
+    assert "regulatory authority" in block.lower()
+
+
+def test_intent_block_includes_intent_specific_paragraph_for_comparison():
+    gr._load_interpretation_exemplars.cache_clear()
+    block = _build_intent_specific_prompt("comparison")
+    assert "largest gap" in block.lower()
+
+
+def test_intent_block_empty_when_registry_empty(tmp_path, monkeypatch):
+    empty = tmp_path / "empty.json"
+    empty.write_text("{}")
+    monkeypatch.setattr(gr, "_INTERPRETATION_EXEMPLARS_PATH", empty)
+    monkeypatch.setattr(gr, "_INTENT_GUIDANCE", {})
+    gr._load_interpretation_exemplars.cache_clear()
+    assert _build_intent_specific_prompt("general") == ""
+
+
+def test_intent_block_empty_for_unknown_bucket():
+    gr._load_interpretation_exemplars.cache_clear()
+    assert _build_intent_specific_prompt("nonsense") == ""

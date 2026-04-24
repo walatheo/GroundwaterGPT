@@ -1282,6 +1282,44 @@ def _classify_intent_bucket(framing: "GroundedFraming") -> str:
     return "general"
 
 
+_INTENT_GUIDANCE: dict[str, str] = {
+    "general": (
+        "Lead with the most useful pattern in the chart, then add hydrogeologic "
+        "context. Hedge causal language explicitly when pumping or rainfall data "
+        "is missing from the evidence pack."
+    ),
+    "comparison": (
+        "Lead with the largest gap between the compared entities and quantify "
+        "it. Then offer the most plausible explanation grounded in the pack, "
+        "and explicitly note what would be needed to confirm cause."
+    ),
+    "supply": (
+        "Always state the regulatory authority for the supply unit and the "
+        "proxy distance from the closest monitoring wells in the pack. Note "
+        "that monitoring records flag stress; they do not measure pumping."
+    ),
+    "trend": (
+        "Cite the slope (ft/yr), the Mann-Kendall p-value when available, and "
+        "any PELT changepoint date. Invite the user to bring outside data "
+        "(pumping, rainfall, utility records) for cause attribution."
+    ),
+}
+
+
+def _build_intent_specific_prompt(bucket: str) -> str:
+    """Render exemplars + intent guidance for a given bucket. Empty when none."""
+    exemplars = _load_interpretation_exemplars().get(bucket, [])
+    guidance = _INTENT_GUIDANCE.get(bucket, "")
+    if not exemplars and not guidance:
+        return ""
+    parts: list[str] = []
+    for ex in exemplars:
+        parts.append(f"### Worked example\nQ: {ex['question']}\nA: {ex['answer']}")
+    if guidance:
+        parts.append(f"### Intent guidance\n{guidance}")
+    return "\n\n".join(parts)
+
+
 _RAW_EVIDENCE_SYSTEM_PROMPT = """You are a groundwater monitoring interpreter writing publication-grade  # noqa: E501
 answers. Reason step-by-step from the evidence below. Produce your own
 interpretation — do not summarize or rephrase pre-written conclusions.
