@@ -39,6 +39,10 @@ and honest. Read it before reading anything else.
   a `question_intent` to the chat envelope. This means causal/limitations/
   drought phrasings on a specific well can collapse to a generic trend
   template even when the LLM does fire.
+- **`src/data/continuous_learning.py` is legacy ingestion scaffolding.** It
+  is lazily exported but not part of the tested API path. It duplicates site
+  metadata, writes directly to `data/`, and should be treated as a starting
+  point for a future ingestion service rather than production automation.
 
 ## Highest-leverage items for the next team
 
