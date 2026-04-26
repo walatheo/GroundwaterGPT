@@ -226,10 +226,13 @@ make benchmark
 
 | Category | Tests | Purpose |
 |----------|-------|---------|
-| `tests/unit/` | 181 passing locally | API contracts, chart payloads, citation integrity, claim verdicts, workbench |
-| `tests/benchmark/` | 68 cases | Deterministic research response checks and threshold enforcement |
+| `tests/unit/` | 481 passing locally | API contracts, chart payloads, citation integrity, claim verdicts, workbench |
+| `tests/benchmark/` | 68 cases | Deterministic response checks (LLM disabled — see caveat below) |
 | `tests/data/` | 25+ | Data quality, schema validation, USGS integrity |
+
 **Current deterministic status:** manuscript-facing unit tests and the 68/68 fallback benchmark pass locally.
+
+**Important caveat about benchmark numbers.** The 68/68 benchmark and its supporting coverage figures are run with `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS=1` and `GROUNDWATERGPT_SKIP_AGENT_INIT=1`. They evaluate only the deterministic pipeline — no LLM is active during the run. They are reproducibility evidence for the deterministic layer, not evidence that the live LLM-synthesis path is production-ready. The live path depends on local Ollama performance and currently exhibits cold-start latency that can exhaust per-request budgets on first call.
 
 ---
 
