@@ -27,16 +27,14 @@ ENV/
 /data/
 data/*.csv
 
-# Generated benchmark / browser test artifacts
+# Generated benchmark / browser test artifacts. Regenerate by default; if a
+# closeout report must be pinned, add it intentionally with git add -f.
 /chat_benchmark_report.json
+/agent_benchmark_report.json
 /chart_llm_benchmark_report.json
 /interpretation_benchmark_report.json
 /evidence_guided_synthesis_benchmark_report.json
 /frontend/test-results/
-
-# Manuscript closeout pins these benchmark reports for reproducibility.
-!chat_benchmark_report.json
-!agent_benchmark_report.json
 
 # Model files (regenerate with train_groundwater.py)
 models/*.joblib
@@ -55,6 +53,13 @@ Thumbs.db
 
 # Claude Code worktrees, plans, and agent artifacts
 .claude/
+
+# Session-scoped agent memory and plugin caches (not project source)
+.remember/
+docs/superpowers/
+
+# UAT ledgers are debugging history, not committed source
+tests/edge_cases/uat_ledger/
 
 # Jupyter
 .ipynb_checkpoints/

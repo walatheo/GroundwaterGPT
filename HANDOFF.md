@@ -1,0 +1,114 @@
+# EAGLE — Project Handoff Notes
+
+This document is for the next team picking up EAGLE. It is intentionally short
+and honest. Read it before reading anything else.
+
+## What works today
+
+- **Deterministic USGS pipeline.** Site detection, time-series loading, monthly
+  aggregation, OLS trend, cross-well metrics, divergent pairs, candidate
+  changepoints, behavior clusters, cohort risk labels, citation integrity,
+  provenance hashes. This is the layer the manuscript rests on.
+- **Charts.** Recharts-ready payloads from a single deterministic builder used
+  by chat, research, and streaming paths.
+- **Tests.** 481 unit tests pass locally
+  (`GROUNDWATERGPT_SKIP_AGENT_INIT=1 python3 -m pytest tests/unit/ -q`).
+- **Demo.** `make demo` brings up FastAPI on :8000 and Vite on :3000.
+- **Bench.** `scripts/run_chat_benchmark.py --mode fallback --enforce-thresholds`
+  passes 68/68. **Note: this benchmark runs with the LLM disabled.** It is
+  reproducibility evidence for the deterministic layer, not a quality signal
+  for the live LLM path.
+
+## What is known to be slow or fragile
+
+- **LLM cold-start latency.** On local Ollama (Qwen variants), the first
+  request after a cold start can take longer than the full per-request LLM
+  budget. The framing step alone has been observed at 60+ seconds. After the
+  recent fix (see CHANGELOG below) the framing call is now capped at 25% of
+  the remaining budget, but the underlying performance issue remains: this
+  project needs a faster Qwen variant or hosted DashScope to be reliably
+  responsive.
+- **Cache poisoning (now mitigated).** When the LLM path was skipped due to
+  budget exhaustion, the deterministic-only response used to be cached and
+  served forever. That's now fixed in `chat.py` via `_llm_synthesis_was_skipped`,
+  but the underlying LLM-perf issue still means many users will see the
+  deterministic answer rather than the LangGraph-synthesized one.
+- **Question intent is not first-class outside chart interpretation.**
+  `_chart_interpreter._detect_question_intent` exists and is used by the
+  chart path, but `_site_analysis._site_research_fallback` does not surface
+  a `question_intent` to the chat envelope. This means causal/limitations/
+  drought phrasings on a specific well can collapse to a generic trend
+  template even when the LLM does fire.
+
+## Highest-leverage items for the next team
+
+These came out of an architectural review on 2026-04-26. They are listed in
+the order I'd tackle them.
+
+1. **Make `question_intent` mandatory in the backend response contract for
+   every route, not just chart interpreter.** Today
+   `_progression_seed_from_chat_payload` only reads `question_intent` from
+   the chart-interpreter response. Adding it to site/aquifer/location
+   fallback results would let `_evidence_guided_ai.py` route follow-up
+   generation correctly for all routes.
+2. **Replace the repeated route-specific fallback dicts with one typed
+   adapter.** Today the same envelope is hand-built three times in
+   `chat.py` (site, research, streaming). Each new field — `chart_specs`,
+   intent, provenance, trace, citations — needs three patches. One typed
+   adapter from `_site_research_fallback` to chat/research/stream payloads
+   would cut maintenance burden substantially.
+3. **Centralize model selection.** `--model`, `GROUNDWATERGPT_LLM_MODEL`,
+   `SYNTHESIS_MODEL`, and hosted Qwen choices currently follow ad-hoc
+   precedence rules in different files. One helper with a single
+   precedence rule would make eval comparisons honest.
+4. **Move follow-up generation authority to the backend.** The frontend
+   currently captures `questionIntent` but mostly ignores it, regenerating
+   suggestions from chart/well heuristics. If the backend always sends
+   grouped intent-aware suggestions, the UI just renders.
+5. **Split the large files.** `chat.py`, `_chart_interpreter.py`,
+   `_grounded_reasoning.py`, `_site_analysis.py`, and `ChatView.jsx` are
+   each large enough that surgical changes are risky. Each deserves its
+   own refactor plan.
+
+## Things the docs explicitly say NOT to claim
+
+(See `docs/DEMO_RUNBOOK.md` §8 for the full list. Repeated here for emphasis.)
+
+- The 1.000 benchmark score does not prove the hydrologic conclusions are
+  scientifically optimal. It validates software contract compliance.
+- Risk labels are not calibrated against expert labels.
+- Candidate changepoints are not formal regime shifts.
+- Divergent pairs do not prove aquifer connectivity or causal mechanisms.
+- The system does not dynamically cover the national USGS network.
+- The live LLM path is not production-latency ready.
+
+## Recent changes (2026-04-26 closeout)
+
+- `_grounded_reasoning.py`: framing LLM call capped at min(0.25 × remaining
+  budget, 15s) so a slow framing call cannot starve the interpretation step.
+- `chat.py`: cache writes are now skipped when the LLM path was meant to
+  fire but didn't (prevents cache poisoning of LLM-failed responses).
+- `requirements-lite.txt`: added `pytest-timeout` so the `pyproject.toml`
+  declared timeout actually works.
+- `.gitignore`: ignore `.remember/`, `docs/superpowers/`, and
+  `tests/edge_cases/uat_ledger/`. Benchmark JSON reports are no longer
+  re-included by default; pin them explicitly with `git add -f` for a
+  manuscript closeout if needed.
+- `CITATION.cff`: filled author block.
+- `README.md`, `docs/MANUSCRIPT_DRAFT.md`: corrected stale test count,
+  updated default LLM from `llama3.2` to Qwen, added cold-start latency
+  caveat.
+
+## How to run
+
+```bash
+make demo                              # backend + frontend
+make benchmark                         # deterministic chat benchmark
+GROUNDWATERGPT_SKIP_AGENT_INIT=1 \
+  python3 -m pytest tests/unit/ -q     # unit tests
+```
+
+To exercise the LLM path against the real Ollama, set
+`GROUNDWATERGPT_LLM_MODEL` to a fast variant (e.g. `qwen3:1.5b`) before
+starting the demo, and warm the model by issuing one throwaway request
+before any timed evaluation.

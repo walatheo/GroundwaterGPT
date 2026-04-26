@@ -5,8 +5,10 @@ version: "0.1.0"
 date-released: "2026-04-15"
 repository-code: "https://github.com/walatheo/GroundwaterGPT"
 authors:
-  - family-names: "TODO"
-    given-names: "TODO"
+  - family-names: "Clay"
+    given-names: "Salatheo"
+    affiliation: "Florida Gulf Coast University"
+    email: "sclay2082@eagle.fgcu.edu"
 keywords:
   - groundwater
   - USGS
