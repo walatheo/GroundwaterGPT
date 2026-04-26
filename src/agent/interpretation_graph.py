@@ -31,6 +31,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from src.agent.model_config import resolve_local_qwen_model
+
 logger = logging.getLogger(__name__)
 
 
@@ -119,12 +121,7 @@ def run_interpretation_graph(
 
         samples: list[Any] = []
         flags: list[list[str]] = []
-        active_model = (
-            os.getenv("GROUNDWATERGPT_REASONING_MODEL")
-            or os.getenv("SYNTHESIS_MODEL")
-            or os.getenv("GROUNDWATERGPT_LLM_MODEL")
-            or os.getenv("LLM_MODEL", "")
-        )
+        active_model = resolve_local_qwen_model("GROUNDWATERGPT_REASONING_MODEL")
         capped = _effective_sample_count(n_samples, active_model)
         temps = _DEFAULT_TEMPS[:capped] or (0.0,)
         for temp in temps:

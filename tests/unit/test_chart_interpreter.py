@@ -504,6 +504,8 @@ def test_structured_llm_provider_metadata_is_reported(monkeypatch):
     """When optional chart LLM synthesis runs, the API should expose provider/model."""
     monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
     monkeypatch.delenv("GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS", raising=False)
+    monkeypatch.delenv("GROUNDWATERGPT_LLM_MODEL", raising=False)
+    monkeypatch.delenv("GROUNDWATERGPT_INTERPRETER_MODEL", raising=False)
     monkeypatch.setenv("SYNTHESIS_MODEL", "fake-llama")
     monkeypatch.setattr(interpreter, "_rag_snippets", lambda _question: [])
 

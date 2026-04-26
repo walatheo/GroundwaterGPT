@@ -145,14 +145,14 @@ backend/frontend manually instead of `make demo`.
 
 ```bash
 ollama serve
-ollama pull llama3.2
+ollama pull qwen3:8b
 ```
 
 Then in a separate terminal:
 
 ```bash
 cd /Users/salatheoclay/Desktop/GroundwaterGPT/GroundwaterGPT
-LLM_PROVIDER=ollama LLM_MODEL=llama3.2 uvicorn api.main:app --port 8000
+LLM_PROVIDER=ollama GROUNDWATERGPT_LLM_MODEL=qwen3:8b uvicorn api.main:app --port 8000
 ```
 
 And in another terminal:

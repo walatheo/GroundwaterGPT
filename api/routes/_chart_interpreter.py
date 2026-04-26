@@ -48,6 +48,7 @@ from api.routes._site_analysis import (
     _seasonal_decomposition,
 )
 from api.site_metadata import SITE_METADATA
+from src.agent.model_config import resolve_local_qwen_model
 
 logger = logging.getLogger(__name__)
 
@@ -2957,7 +2958,7 @@ def _invoke_structured_llm(
         "on",
     }:
         return None
-    providers.append(("ollama", os.getenv("SYNTHESIS_MODEL", "qwen3:8b")))
+    providers.append(("ollama", resolve_local_qwen_model("GROUNDWATERGPT_INTERPRETER_MODEL")))
 
     numeric_claims = _numeric_claims_from_pack(pack)
     if not pack.get("site_ids") or not numeric_claims:

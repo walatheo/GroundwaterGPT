@@ -10,6 +10,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.agent.model_config import resolve_local_qwen_model
+
 logger = logging.getLogger(__name__)
 
 GENERIC_REWRITE_QUESTION_PATTERNS = (
@@ -363,7 +365,7 @@ def _providers() -> list[tuple[str, str]]:
     providers.append(
         (
             "ollama",
-            os.getenv("GROUNDWATERGPT_PROGRESS_MODEL", os.getenv("SYNTHESIS_MODEL", "qwen3:8b")),
+            resolve_local_qwen_model("GROUNDWATERGPT_PROGRESS_MODEL"),
         )
     )
     return providers

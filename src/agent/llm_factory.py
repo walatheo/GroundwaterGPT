@@ -14,6 +14,8 @@ import os
 from enum import Enum
 from typing import Optional
 
+from src.agent.model_config import resolve_local_qwen_model
+
 
 class LLMProvider(Enum):
     """Supported LLM backends — both serve Qwen."""
@@ -26,7 +28,7 @@ class LLMProvider(Enum):
 # picks up changes without code edits.
 LLM_CONFIG = {
     "provider": LLMProvider(os.getenv("LLM_PROVIDER", "ollama")),
-    "model": os.getenv("GROUNDWATERGPT_LLM_MODEL") or os.getenv("LLM_MODEL", "qwen3:8b"),
+    "model": resolve_local_qwen_model(),
     "temperature": 0.7,
     "max_tokens": 2048,
 }

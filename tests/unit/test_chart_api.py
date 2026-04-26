@@ -10,6 +10,7 @@ Validates:
 """
 
 import sys
+from numbers import Real
 from pathlib import Path
 
 import pytest
@@ -59,12 +60,14 @@ class TestSiteChartEndpoint:
         """Every series key should appear in at least one data record."""
         sid = _first_site_id()
         resp = client.get(f"/api/sites/{sid}/chart")
+        assert resp.status_code == 200
         body = resp.json()
         keys = {s["key"] for s in body["series"]}
         data_keys = set()
         for row in body["data"]:
             data_keys.update(k for k in row if k != "date")
-        assert keys & data_keys, "Series keys should appear in data"
+        missing_keys = keys - data_keys
+        assert not missing_keys, f"Series keys missing from chart data: {missing_keys}"
 
     def test_data_has_date_and_level(self):
         """Each data row has date and level fields."""
@@ -72,15 +75,20 @@ class TestSiteChartEndpoint:
         body = client.get(f"/api/sites/{sid}/chart").json()
         for row in body["data"][:5]:
             assert "date" in row
+            assert isinstance(row["date"], str)
+            assert row["date"]
             assert "level" in row
+            assert isinstance(row["level"], Real)
 
     def test_rolling_avg_present(self):
         """Default rolling average is included after window fills."""
         sid = _first_site_id()
         body = client.get(f"/api/sites/{sid}/chart").json()
-        # At least some rows should have rollingAvg
-        has_avg = any("rollingAvg" in row for row in body["data"])
-        assert has_avg, "Expected rolling average in chart data"
+        rows = body["data"]
+        assert len(rows) >= 30
+        assert all("rollingAvg" not in row for row in rows[:29])
+        expected = round(sum(row["level"] for row in rows[:30]) / 30, 2)
+        assert rows[29]["rollingAvg"] == pytest.approx(expected, abs=0.05)
 
     def test_custom_rolling_window(self):
         """Custom rolling window param is accepted."""
@@ -88,18 +96,24 @@ class TestSiteChartEndpoint:
         resp = client.get(f"/api/sites/{sid}/chart?rolling_window=7")
         assert resp.status_code == 200
         body = resp.json()
-        # The series name should reflect the window
         names = [s["name"] for s in body["series"]]
         assert any("7" in n for n in names), f"Expected '7' in series names: {names}"
+        rows = body["data"]
+        assert len(rows) >= 7
+        assert all("rollingAvg" not in row for row in rows[:6])
+        expected = round(sum(row["level"] for row in rows[:7]) / 7, 2)
+        assert rows[6]["rollingAvg"] == pytest.approx(expected, abs=0.05)
 
     def test_date_filter(self):
         """start_date / end_date narrow the result."""
         sid = _first_site_id()
         full = client.get(f"/api/sites/{sid}/chart").json()
-        # Pick a midpoint date
         mid = full["data"][len(full["data"]) // 2]["date"]
         filtered = client.get(f"/api/sites/{sid}/chart?start_date={mid}").json()
-        assert len(filtered["data"]) <= len(full["data"])
+        dates = [row["date"] for row in filtered["data"]]
+        assert dates
+        assert all(date >= mid for date in dates)
+        assert len(dates) < len(full["data"])
 
     def test_unknown_site_404(self):
         """Unknown site_id returns 404."""
@@ -111,6 +125,8 @@ class TestSiteChartEndpoint:
         sid = _first_site_id()
         body = client.get(f"/api/sites/{sid}/chart").json()
         assert "site" in body
+        assert body["site"]["id"] == sid
+        assert body["site"]["name"] == SITE_METADATA[sid]["name"]
 
 
 # ===================================================================
@@ -154,14 +170,15 @@ class TestComparisonChartEndpoint:
         filtered = client.get(
             f"/api/compare/chart?site_ids={','.join(ids)}&start_date={mid}"
         ).json()
-        assert len(filtered["data"]) <= len(full["data"])
+        dates = [row["date"] for row in filtered["data"]]
+        assert dates
+        assert all(date >= mid for date in dates)
+        assert len(dates) < len(full["data"])
 
     def test_max_five_sites(self):
         """Only the first 5 site IDs are processed."""
         data_dir = Path(__file__).parent.parent.parent / "data"
-        ids = [sid for sid in SITE_METADATA if (data_dir / f"usgs_{sid}.csv").exists()][
-            :7
-        ]
+        ids = [sid for sid in SITE_METADATA if (data_dir / f"usgs_{sid}.csv").exists()][:7]
         if len(ids) < 6:
             pytest.skip("Need 6+ site CSVs")
         body = client.get(f"/api/compare/chart?site_ids={','.join(ids)}").json()
@@ -209,6 +226,4 @@ class TestChartDataIntegrity:
                 if not any(abs(row["level"] - lv) <= 0.01 for lv in day_levels[d]):
                     mismatches += 1
 
-        assert (
-            mismatches == 0
-        ), f"{mismatches} level mismatches between chart and data endpoints"
+        assert mismatches == 0, f"{mismatches} level mismatches between chart and data endpoints"

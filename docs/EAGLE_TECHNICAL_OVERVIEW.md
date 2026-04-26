@@ -416,7 +416,7 @@ The benchmark suite [tests/benchmark/chat_eval_cases.json](tests/benchmark/chat_
 
 ### 9.2 Current benchmark (deterministic column)
 
-Current [chat_benchmark_report.json](chat_benchmark_report.json), generated with `scripts/run_chat_benchmark.py --mode fallback --enforce-thresholds` (hybrid narration disabled via `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS=1`, agent disabled via `GROUNDWATERGPT_SKIP_AGENT_INIT=1`). **This benchmark exercises only the deterministic pipeline — no LLM of any kind is active during the run:**
+The generated local `chat_benchmark_report.json` report, produced with `scripts/run_chat_benchmark.py --mode fallback --enforce-thresholds` (hybrid narration disabled via `GROUNDWATERGPT_DISABLE_LLM_SYNTHESIS=1`, agent disabled via `GROUNDWATERGPT_SKIP_AGENT_INIT=1`), is the deterministic closeout column. **This benchmark exercises only the deterministic pipeline — no LLM of any kind is active during the run:**
 
 - **68 / 68 cases passing**, `overall_score = 1.000`.
 - Average citation coverage: **1.000** (threshold: 0.90).

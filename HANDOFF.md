@@ -57,14 +57,14 @@ the order I'd tackle them.
    intent, provenance, trace, citations — needs three patches. One typed
    adapter from `_site_research_fallback` to chat/research/stream payloads
    would cut maintenance burden substantially.
-3. **Centralize model selection.** `--model`, `GROUNDWATERGPT_LLM_MODEL`,
-   `SYNTHESIS_MODEL`, and hosted Qwen choices currently follow ad-hoc
-   precedence rules in different files. One helper with a single
-   precedence rule would make eval comparisons honest.
-4. **Move follow-up generation authority to the backend.** The frontend
+3. **Move follow-up generation authority to the backend.** The frontend
    currently captures `questionIntent` but mostly ignores it, regenerating
    suggestions from chart/well heuristics. If the backend always sends
    grouped intent-aware suggestions, the UI just renders.
+4. **Keep model-selection tests green when adding new LLM routes.** Local
+   Qwen model precedence now lives in `src/agent/model_config.py`; new
+   synthesis paths should use that helper instead of reading `SYNTHESIS_MODEL`
+   or `LLM_MODEL` directly.
 5. **Split the large files.** `chat.py`, `_chart_interpreter.py`,
    `_grounded_reasoning.py`, `_site_analysis.py`, and `ChatView.jsx` are
    each large enough that surgical changes are risky. Each deserves its
@@ -98,6 +98,12 @@ the order I'd tackle them.
 - `README.md`, `docs/MANUSCRIPT_DRAFT.md`: corrected stale test count,
   updated default LLM from `llama3.2` to Qwen, added cold-start latency
   caveat.
+- `src/agent/model_config.py`: centralized local Qwen model precedence so
+  `GROUNDWATERGPT_LLM_MODEL` and CLI `--model` overrides are not shadowed by
+  legacy `SYNTHESIS_MODEL` / `LLM_MODEL` settings.
+- `tests/unit/test_chart_api.py`: tightened chart tests from shape-only
+  checks into behavior checks for series keys, date filtering, metadata, and
+  rolling-average values.
 
 ## How to run
 
