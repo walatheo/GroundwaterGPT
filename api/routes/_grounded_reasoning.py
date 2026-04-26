@@ -24,6 +24,8 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from src.agent.model_config import resolve_local_qwen_model
+
 logger = logging.getLogger(__name__)
 _LLM_TIMEOUT_EXECUTOR = ThreadPoolExecutor(
     max_workers=max(2, int(os.getenv("GROUNDWATERGPT_LLM_TIMEOUT_WORKERS", "4"))),
@@ -1385,13 +1387,8 @@ def _reasoning_providers() -> list[tuple[str, str]]:
     reasoning_model = os.getenv("GROUNDWATERGPT_REASONING_MODEL", "")
 
     # Local Qwen via Ollama — preferred (no key, no network egress).
-    ollama_model = (
-        reasoning_model
-        or os.getenv("SYNTHESIS_MODEL")
-        or os.getenv("GROUNDWATERGPT_LLM_MODEL")
-        or os.getenv("LLM_MODEL", "")
-    )
-    providers.append(("ollama", ollama_model or "qwen3:8b"))
+    ollama_model = resolve_local_qwen_model("GROUNDWATERGPT_REASONING_MODEL")
+    providers.append(("ollama", ollama_model))
 
     # Hosted Qwen via DashScope — used when an API key is configured.
     if os.getenv("DASHSCOPE_API_KEY"):
@@ -1711,11 +1708,17 @@ def invoke_grounded_reasoning(
             use_multistage = _is_open_reasoning_model(provider_name, model)
 
             if use_multistage:
+                # Cap framing at a fraction of the remaining budget so a slow
+                # framing call cannot starve the interpretation step. The
+                # deterministic `derive_question_frame` is comprehensive and
+                # serves as the fallback when the LLM framing call is skipped
+                # or times out.
+                frame_budget = min(_remaining_llm_budget(deadline) * 0.25, 15.0)
                 framing = _invoke_json_schema(
                     llm,
                     GroundedFraming,
                     _build_frame_prompt(question, pack, provider_name=provider_name, model=model),
-                    timeout_seconds=_remaining_llm_budget(deadline),
+                    timeout_seconds=frame_budget,
                 ) or derive_question_frame(question, pack)
                 messages = _build_multistage_reasoning_prompt(
                     question,

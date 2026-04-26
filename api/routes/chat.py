@@ -305,6 +305,39 @@ def _store_cached_chat_response(
     _CHAT_CACHE[cache_key] = copy.deepcopy(payload)
 
 
+def _llm_synthesis_was_skipped(payload: dict[str, Any], allow_llm_synthesis: bool) -> bool:
+    """Return True when the LLM synthesis path was meant to run but didn't.
+
+    Prevents cache poisoning: a cold-start request whose LLM call timed out
+    would otherwise serve its deterministic-only answer to every subsequent
+    request with the same cache key, even after the model warms up.
+    """
+    if not allow_llm_synthesis:
+        return False
+    try:
+        from api.routes._grounded_reasoning import grounded_reasoning_enabled
+    except Exception:
+        return False
+    if not grounded_reasoning_enabled():
+        return False
+    guardrail = payload.get("hallucination_guardrail") or {}
+    if guardrail.get("has_llm_synthesis"):
+        return False
+    if payload.get("llm_synthesis"):
+        return False
+    details = payload.get("interpretation_details") or {}
+    if str(details.get("reasoning_source") or "").lower() == "grounded_llm":
+        return False
+    mode = str(payload.get("mode") or "")
+    return mode in {
+        "site_fallback",
+        "aquifer_fallback",
+        "location_fallback",
+        "network_fallback",
+        "multi_location_fallback",
+    }
+
+
 def _trim_turn_history(raw_history: Any) -> list[dict[str, Any]]:
     """Normalize the last four chat turns for chart-bound follow-ups."""
     if not isinstance(raw_history, list):
@@ -2052,7 +2085,9 @@ def chat_endpoint(query: dict):
             question=user_query,
             allow_llm_rewrite=allow_llm_synthesis,
         )
-        if decision.route_mode != "research":
+        if decision.route_mode != "research" and not _llm_synthesis_was_skipped(
+            finalized, allow_llm_synthesis
+        ):
             _store_cached_chat_response(cache_key, finalized)
         return finalized
 
