@@ -86,6 +86,20 @@ the order I'd tackle them.
 - The system does not dynamically cover the national USGS network.
 - The live LLM path is not production-latency ready.
 
+## Artifact policy for JSON, data, and outputs
+
+- **Tracked JSON is source/config/test material.** Keep `config/*.json`,
+  `tests/benchmark/*.json`, and edge-case fixture JSON files in git because
+  they define expected behavior.
+- **Generated JSON is run evidence.** Root benchmark reports,
+  `outputs/chat_review/*/report.json`, `responses.jsonl`, research sessions,
+  learner events, and manuscript provenance files are local artifacts by
+  default. Regenerate them from `scripts/` instead of reviewing them as source.
+- **Large local stores stay out of git.** `data/`, `knowledge_base/`,
+  `outputs/`, browser test output, caches, logs, and local agent memory are
+  intentionally ignored. Pin a final closeout artifact only when it is needed
+  for a manuscript or release, and do that deliberately.
+
 ## Recent changes (2026-04-26 closeout)
 
 - `_grounded_reasoning.py`: framing LLM call capped at min(0.25 × remaining
@@ -98,6 +112,9 @@ the order I'd tackle them.
   `tests/edge_cases/uat_ledger/`. Benchmark JSON reports are no longer
   re-included by default; pin them explicitly with `git add -f` for a
   manuscript closeout if needed.
+- `README.md`, `HANDOFF.md`: clarified that generated JSON reports, `outputs/`,
+  `data/`, and `knowledge_base/` are local artifacts rather than maintained
+  project source.
 - `CITATION.cff`: filled author block.
 - `README.md`, `docs/MANUSCRIPT_DRAFT.md`: corrected stale test count,
   updated default LLM from `llama3.2` to Qwen, added cold-start latency
