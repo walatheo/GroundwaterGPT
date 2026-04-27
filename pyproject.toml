@@ -35,3 +35,4 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 timeout = 30
+norecursedirs = ["legacy", ".venv", "node_modules", "knowledge_base"]
