@@ -12,5 +12,9 @@ Quarantined code that is **not part of the live system**. Kept for provenance on
 | `scripts/run_agent_benchmark.py` | Eval harness for `DeepResearchAgent`. | Targets a dormant module. |
 | `reports/agent_benchmark_report.json` | Frozen output of the above. | Reference only. |
 | `tests/test_research_agent_v2.py`, `test_evidence_guided_synthesis.py`, `test_tools.py` | Tests for the modules above. | Excluded from the suite via `pyproject.toml` `norecursedirs`. |
+| `tests/scaffolding/test_chat_review_runner.py` | Tests for `scripts/run_chat_review._auto_flags`. | Eval/dev CLI; not on the `/api/chat` UAT path. |
+| `tests/scaffolding/test_eval_model_flag.py` | Tests for the `--model` flag on `run_langchain_eval`. | Eval CLI wiring; not on the UAT path. |
+| `tests/scaffolding/test_langchain_eval.py` | Smoke tests for the LangChain eval harness. | Eval harness; not on the UAT path. |
+| `tests/scaffolding/test_interpretation_benchmark.py` | Tests for `scripts/run_interpretation_benchmark._expand_case_suite`. | Benchmark CLI; not on the UAT path. |
 
 If you need to revive any of this, restore the file to its original location and re-add its imports — `git log --follow` on the path will surface the prior history.
