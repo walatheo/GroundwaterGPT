@@ -1,7 +1,8 @@
-"""Research workbench analysis helpers.
+"""Multi-well comparison analysis helpers.
 
-Builds researcher-oriented comparison payloads with aggregated series,
-derived metrics, provenance metadata, and export-ready text bundles.
+Builds comparison payloads with aggregated series, derived metrics,
+provenance metadata, and export-ready text bundles for the multi-well
+data viewer endpoint.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ _AGGREGATION_LABELS: dict[Aggregation, str] = {
 
 
 @dataclass
-class WorkbenchSiteResult:
+class MultiWellSiteResult:
     """Processed comparison inputs for one site."""
 
     site_id: str
@@ -173,7 +174,7 @@ def _normalize_series(series: pd.Series, normalization: Normalization) -> pd.Ser
 
 
 def _build_primary_chart(
-    site_results: list[WorkbenchSiteResult],
+    site_results: list[MultiWellSiteResult],
     *,
     aggregation: Aggregation,
     normalization: Normalization,
@@ -261,7 +262,7 @@ def _build_primary_chart(
     }
 
 
-def _build_metrics_table(site_results: list[WorkbenchSiteResult]) -> list[dict[str, Any]]:
+def _build_metrics_table(site_results: list[MultiWellSiteResult]) -> list[dict[str, Any]]:
     """Compute researcher-facing derived metrics from aggregated raw values."""
     rows: list[dict[str, Any]] = []
     for site in site_results:
@@ -288,7 +289,7 @@ def _build_metrics_table(site_results: list[WorkbenchSiteResult]) -> list[dict[s
 
 
 def _build_secondary_chart_specs(
-    site_results: list[WorkbenchSiteResult],
+    site_results: list[MultiWellSiteResult],
     metrics_table: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Build secondary workbench views for annual change and seasonal profile."""
@@ -425,7 +426,7 @@ def _build_export_bundle(
     }
 
 
-def build_research_workbench_payload(
+def build_multi_well_payload(
     *,
     site_ids: list[str],
     filters: dict[str, Any] | None,
@@ -433,7 +434,7 @@ def build_research_workbench_payload(
     aggregation: Aggregation,
     normalization: Normalization,
 ) -> dict[str, Any]:
-    """Build the complete researcher workbench response payload."""
+    """Build the complete multi-well comparison response payload."""
     if not site_ids:
         raise ValueError("site_ids must include at least one site.")
     if len(site_ids) > 8:
@@ -470,7 +471,7 @@ def build_research_workbench_payload(
     )
     expected_periods = _expected_periods(start_date, end_date, aggregation)
 
-    site_results: list[WorkbenchSiteResult] = []
+    site_results: list[MultiWellSiteResult] = []
     resolved_sites: list[dict[str, Any]] = []
     citations: list[dict[str, Any]] = []
 
@@ -489,7 +490,7 @@ def build_research_workbench_payload(
             (len(aggregated) / len(expected_periods) * 100) if len(expected_periods) else 0.0
         )
         site_results.append(
-            WorkbenchSiteResult(
+            MultiWellSiteResult(
                 site_id=site_id,
                 name=meta.get("name", site_id),
                 county=meta.get("county", "Florida"),
@@ -570,7 +571,7 @@ def build_research_workbench_payload(
 
     return {
         "status": "ok",
-        "mode": "research_workbench",
+        "mode": "multi_well",
         "resolved_sites": resolved_sites,
         "primary_chart": primary_chart,
         "chart_specs": chart_specs,

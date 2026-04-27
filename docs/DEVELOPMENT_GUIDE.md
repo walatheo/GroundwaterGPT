@@ -16,7 +16,7 @@ The application has four active layers:
 | --- | --- | --- |
 | Frontend | `frontend/src/` | React dashboard, map, chart panels, chat, research workbench UI |
 | API | `api/main.py`, `api/routes/` | FastAPI route registration, deterministic chat routing, interpretation, site/well/data endpoints |
-| Analysis | `api/routes/_site_analysis.py`, `api/routes/_research_workbench.py` | Monthly aggregation, trend summaries, cohort comparison, chart payloads |
+| Analysis | `api/routes/_site_analysis.py`, `api/routes/_multi_well.py` | Monthly aggregation, trend summaries, cohort comparison, chart payloads |
 | Agent and evidence | `src/agent/`, `api/routes/_citation.py`, `api/routes/_provenance.py` | Knowledge search, evidence-linked synthesis, citation metrics, provenance envelopes |
 
 The data path is intentionally plain: local `data/usgs_<site_id>.csv` files are
