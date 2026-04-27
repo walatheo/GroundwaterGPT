@@ -460,11 +460,9 @@ def run_chat_benchmark(
 
     from api.main import app
 
-    force_fallback = bool(thresholds.get("force_fallback_mode", False))
-    if force_fallback:
-        from api.routes import chat as chat_routes
-
-        chat_routes._research_agent = None
+    # The legacy agent path is gone (see legacy/src_agent/research_agent.py),
+    # so force_fallback no longer needs to disable anything -- the deterministic
+    # chain is the only path. The flag is preserved for threshold semantics.
 
     client = TestClient(app)
     case_results: list[dict[str, Any]] = []

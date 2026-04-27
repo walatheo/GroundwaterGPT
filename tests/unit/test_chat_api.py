@@ -262,15 +262,8 @@ class TestChatEndpoint:
         assert supply["municipality"] == "City of Naples"
         assert any(unit["zone"] == "Lower Tamiami" for unit in supply["supply_units"])
 
-    def test_chat_kb_query_skips_research_agent_for_fast_fallback(self, monkeypatch):
-        """KB-matched chat queries should not invoke the slower research-agent path."""
-        from api.routes import chat as chat_routes
-
-        class _BoomAgent:
-            def research(self, **_kwargs):
-                raise AssertionError("research agent should not be called for KB fast path")
-
-        monkeypatch.setattr(chat_routes, "_research_agent", _BoomAgent())
+    def test_chat_kb_query_routes_to_deterministic_fallback(self):
+        """KB-matched chat queries should route to the deterministic fallback."""
         resp = client.post(
             "/api/chat",
             json={"message": "When is the best time to plant considering groundwater?"},
@@ -1110,22 +1103,6 @@ class TestChatStatus:
         assert "web_search_enabled" in checks
         assert "last_chat_error" in checks
         assert "last_research_error" in checks
-
-    def test_status_tracks_latest_chat_runtime_error(self, monkeypatch):
-        """chat/status should expose latest chat runtime error metadata."""
-        from api.routes import chat as chat_routes
-
-        class _BoomAgent:
-            def research(self, **_kwargs):
-                raise RuntimeError("simulated chat failure")
-
-        monkeypatch.setattr(chat_routes, "_research_agent", _BoomAgent())
-        resp = client.post("/api/chat", json={"message": "test runtime failure path"})
-        assert resp.status_code == 200
-        body = client.get("/api/chat/status").json()
-        last_error = body["runtime_checks"]["last_chat_error"]
-        assert isinstance(last_error, dict)
-        assert "simulated chat failure" in str(last_error.get("message", ""))
 
 
 # ===================================================================

@@ -1,6 +1,5 @@
 """Tests for inline chart payloads in chat/research responses."""
 
-import json
 import sys
 from pathlib import Path
 
@@ -11,7 +10,6 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from api.main import app  # noqa: E402
-from api.routes import chat as chat_routes  # noqa: E402
 from api.routes._agent_chart_hook import attach_chart_from_agent_result  # noqa: E402
 from api.routes._site_analysis import (  # noqa: E402
     _build_chart_payload,
@@ -270,58 +268,6 @@ class TestInlineChartIntegration:
         attached = attach_chart_from_agent_result(result)
 
         assert attached.get("chart") is None
-
-    def test_streaming_agent_path_yields_chart_in_final_event(self, monkeypatch):
-        site_ids = _first_two_site_ids()
-
-        class _StubResearchAgent:
-            def research(self, **_kwargs):
-                return {
-                    "report": "Stubbed agent research response",
-                    "insights": [],
-                    "sources": [],
-                    "session_id": "session_stub",
-                    "research_plan": {"main_question": "Compare selected wells"},
-                    "budget_status": {"status": "complete", "depth_reached": 1, "max_depth": 1},
-                    "checkpoints": [],
-                    "tool_trace": [
-                        {
-                            "tool": "site_selector",
-                            "status": "completed",
-                            "details": {"site_ids": site_ids},
-                        }
-                    ],
-                    "chart_specs": [{"id": "trend-comparison", "site_ids": site_ids}],
-                    "search_history": [],
-                    "depth_reached": 1,
-                    "elapsed_seconds": 0.1,
-                    "claim_citations": [],
-                    "claim_verdicts": [],
-                    "claim_verdict_summary": {},
-                    "citation_summary": {
-                        "total_claims": 0,
-                        "cited_claims": 0,
-                        "citation_coverage": 0.0,
-                    },
-                    "section_confidence": {},
-                    "hallucination_guardrail": {},
-                }
-
-        monkeypatch.setattr(chat_routes, "_research_agent", _StubResearchAgent())
-
-        resp = client.post(
-            "/api/research/stream",
-            json={"question": "Compare selected wells", "max_depth": 1, "timeout": 60},
-        )
-
-        assert resp.status_code == 200
-        chunks = [line for line in resp.text.split("\n\n") if line.strip().startswith("data:")]
-        events = [json.loads(chunk.replace("data:", "", 1).strip()) for chunk in chunks]
-        final = next(event for event in events if event.get("type") == "result")
-
-        assert final["chart"] is not None
-        assert final["chart"]["series"]
-        assert final["chart"]["data"]
 
     def test_build_chart_payload_trend_names_have_ft_yr_units(self):
         sites = [

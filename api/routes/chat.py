@@ -28,7 +28,6 @@ from fastapi.responses import StreamingResponse
 
 from api.helpers import calculate_stats, load_site_data
 from api.routes import _chart_interpreter
-from api.routes._agent_chart_hook import attach_chart_from_agent_result
 from api.routes._answer_contract import stamp_contract_fields
 from api.routes._chart_interpreter import LEARNER_TERM_LIBRARY, misconception_warnings
 from api.routes._citation import (  # noqa: E402
@@ -631,87 +630,24 @@ def _sites_for_multiple_locations(
 
 
 # ---------------------------------------------------------------------------
-# Try to initialise real agents (graceful fallback on import/init failure)
+# Status flags. The DeepResearchAgent path that previously lived here was
+# retired -- see legacy/src_agent/research_agent.py. /api/chat and
+# /api/research now run the deterministic answering chain only.
 # ---------------------------------------------------------------------------
 
-_research_agent = None
-_agent_boot_errors: list[str] = []
 _runtime_error_state: dict[str, dict[str, Optional[str]]] = {
     "chat": {"message": None, "timestamp": None},
     "research": {"message": None, "timestamp": None},
 }
 
-skip_agent_init = _env_flag("GROUNDWATERGPT_SKIP_AGENT_INIT")
+# Retained for status reporting; tests and benchmarks still set the env var.
+skip_agent_init = _env_flag("GROUNDWATERGPT_SKIP_AGENT_INIT", default=True)
 research_web_search_enabled = _env_flag("GROUNDWATERGPT_ENABLE_WEB_SEARCH", default=False)
 
 
-def _set_runtime_error(channel: str, error: Exception) -> None:
-    """Store the most recent runtime error for status visibility."""
-    _runtime_error_state[channel] = {
-        "message": str(error),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-def _clear_runtime_error(channel: str) -> None:
-    """Clear runtime error state after a successful request path."""
-    _runtime_error_state[channel] = {"message": None, "timestamp": None}
-
-
 def _build_degraded_reasons() -> list[str]:
-    """Build explicit degraded reasons for chat status responses."""
-    reasons = list(_agent_boot_errors)
-    if skip_agent_init:
-        reasons.append("LLM agent initialization disabled by GROUNDWATERGPT_SKIP_AGENT_INIT.")
-    if _research_agent is None:
-        reasons.append(
-            "Evidence-linked synthesis agent is unavailable; "
-            "deterministic fallback mode will be used."
-        )
-
-    chat_error = _runtime_error_state["chat"]["message"]
-    if chat_error:
-        reasons.append(f"Latest chat runtime error: {chat_error}")
-    research_error = _runtime_error_state["research"]["message"]
-    if research_error:
-        reasons.append(f"Latest research runtime error: {research_error}")
-    return reasons
-
-
-if skip_agent_init:
-    logger.info("Skipping LLM-backed agent initialization (GROUNDWATERGPT_SKIP_AGENT_INIT set)")
-else:
-    try:
-        from src.agent.research_agent import DeepResearchAgent
-
-        try:
-            _research_agent = DeepResearchAgent(
-                max_depth=3,
-                timeout_seconds=120,
-                use_web_search=research_web_search_enabled,
-            )
-            if getattr(_research_agent, "llm", None) is None:
-                _agent_boot_errors.append(
-                    "Research agent initialized without an available LLM; "
-                    "using deterministic fallback."
-                )
-                _research_agent = None
-        except Exception as exc:
-            _agent_boot_errors.append(f"Research agent initialization failed: {exc}")
-            logger.warning("Research agent initialization failed: %s", exc)
-            _research_agent = None
-
-        if _research_agent:
-            logger.info("Evidence-linked synthesis agent initialised with runtime safeguards")
-        else:
-            logger.warning("No evidence-linked synthesis agent available after initialization")
-    except Exception as exc:
-        _agent_boot_errors.append(f"Agent import bootstrap failed: {exc}")
-        logger.warning(
-            "Could not initialise LLM agents -- " "falling back to rule-based chat. Reason: %s",
-            exc,
-        )
-        _research_agent = None
+    """Status responses are always 'ok' now that the dormant agent is gone."""
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -2353,74 +2289,7 @@ def chat_endpoint(query: dict):
             decision,
         )
 
-    # --- Evidence-bound synthesis path for generic open-ended questions ---
-    if _research_agent is not None:
-        try:
-            result = _research_agent.research(
-                query=user_query,
-                max_depth=1,
-                timeout=45,
-            )
-            result = attach_chart_from_agent_result(result)
-            response_text = str(result.get("report", "")).strip()
-            if not response_text or "No insights were gathered" in response_text:
-                raise ValueError("Research agent returned no meaningful insights")
-
-            claim_citations = result.get("claim_citations", [])
-            claim_verdicts = result.get("claim_verdicts", _build_claim_verdicts(claim_citations))
-            section_confidence = result.get(
-                "section_confidence",
-                _build_section_confidence_from_claims(claim_citations),
-            )
-            _clear_runtime_error("chat")
-            return _finalize(
-                _build_chat_payload(
-                    response_text=response_text,
-                    answer_brief=result.get("answer_brief"),
-                    raw_report=result.get("report"),
-                    interpretation_details=result.get("interpretation_details"),
-                    context=_get_site_context(),
-                    sources=result.get("sources", []),
-                    chart=_chart_from(result, path="chat.evidence_bound_research"),
-                    mode="research_chat",
-                    wells=result.get("wells", []),
-                    aquifer_info=result.get("aquifer_info"),
-                    divergent_pairs=result.get("divergent_pairs", []),
-                    cohort_risk_level=result.get("cohort_risk_level"),
-                    llm_synthesis=result.get("llm_synthesis"),
-                    hallucination_guardrail=result.get(
-                        "hallucination_guardrail",
-                        {
-                            "strategy": "evidence_bound_research_chat",
-                            "removed_uncited_factual_sentences": 0,
-                            "all_factual_claims_cited": True,
-                            "has_llm_synthesis": bool(getattr(_research_agent, "llm", None)),
-                        },
-                    ),
-                    claim_citations=claim_citations,
-                    claim_verdicts=claim_verdicts,
-                    claim_verdict_summary=result.get(
-                        "claim_verdict_summary",
-                        _build_claim_verdict_summary(claim_verdicts),
-                    ),
-                    citation_summary=result.get(
-                        "citation_summary",
-                        _build_citation_summary(claim_citations),
-                    ),
-                    section_confidence=section_confidence,
-                    citation_integrity=result.get(
-                        "citation_integrity",
-                        _build_citation_integrity(claim_citations, section_confidence),
-                    ),
-                ),
-                decision,
-            )
-        except Exception as exc:
-            logger.error("Evidence-bound chat synthesis error: %s", exc)
-            _set_runtime_error("chat", exc)
-            # Fall through to rule-based fallback
-
-    # --- Fallback ---
+    # --- Fallback: deterministic groundwater Q&A for generic open-ended questions ---
     return _finalize(
         _ground_fallback_chat_response(_fallback_response(user_query)),
         decision,
@@ -2552,84 +2421,6 @@ def research_endpoint(query: dict):
         raise HTTPException(status_code=400, detail="question is required")
 
     max_depth, timeout = _parse_research_limits(query)
-
-    if _research_agent is not None:
-        try:
-            result = _research_agent.research(
-                query=question,
-                max_depth=max_depth,
-                timeout=timeout,
-            )
-            result = attach_chart_from_agent_result(result)
-            _clear_runtime_error("research")
-            report = result.get("report", "")
-            # If the agent produced no meaningful output, fall through to the
-            # deterministic fallback so keyword-routed queries (e.g. Estero)
-            # still return reproducible, citation-complete responses.
-            if not report or "No insights were gathered" in report:
-                raise ValueError("Research agent returned no meaningful insights")
-            claim_citations = result.get("claim_citations", [])
-            claim_verdicts = result.get("claim_verdicts", _build_claim_verdicts(claim_citations))
-            claim_verdict_summary = result.get(
-                "claim_verdict_summary",
-                _build_claim_verdict_summary(claim_verdicts),
-            )
-            citation_summary = result.get(
-                "citation_summary",
-                {"total_claims": 0, "cited_claims": 0, "citation_coverage": 0.0},
-            )
-            section_confidence = result.get(
-                "section_confidence",
-                _build_section_confidence_from_claims(claim_citations),
-            )
-            citation_integrity = _build_citation_integrity(claim_citations, section_confidence)
-            return _augment_research_payload(
-                {
-                    "status": "ok",
-                    "mode": "deep_research",
-                    "report": report,
-                    "chart": _chart_from(result, path="research.agent"),
-                    "insights": result.get("insights", []),
-                    "sources": result.get("sources", []),
-                    "session_id": result.get("session_id"),
-                    "research_plan": result.get("research_plan"),
-                    "budget_status": result.get("budget_status"),
-                    "checkpoints": result.get("checkpoints"),
-                    "tool_trace": result.get("tool_trace"),
-                    "recommended_views": result.get("recommended_views"),
-                    "chart_specs": result.get("chart_specs"),
-                    "structured_response": result.get("structured_response"),
-                    "search_history": result.get("search_history", []),
-                    "depth_reached": result.get("depth_reached", 0),
-                    "elapsed_seconds": result.get("elapsed_seconds", 0),
-                    "claim_citations": claim_citations,
-                    "claim_verdicts": claim_verdicts,
-                    "claim_verdict_summary": claim_verdict_summary,
-                    "citation_summary": citation_summary,
-                    "section_confidence": section_confidence,
-                    "hallucination_guardrail": result.get(
-                        "hallucination_guardrail",
-                        {
-                            "strategy": "claim_reference_filter",
-                            "removed_uncited_factual_sentences": 0,
-                            "all_factual_claims_cited": True,
-                        },
-                    ),
-                    "citation_integrity": citation_integrity,
-                },
-                question=question,
-                max_depth=max_depth,
-                default_mode="deep_research",
-                trace_summary="LLM-backed research completed.",
-            )
-        except Exception as exc:
-            logger.error(
-                "Research agent error: %s\n%s",
-                exc,
-                traceback.format_exc(),
-            )
-            _set_runtime_error("research", exc)
-            # Fall through to fallback
 
     # --- Site-name fast path: explicit well names / site IDs (most specific) ---
     named_sites = _detect_site_names(question)
@@ -3190,119 +2981,61 @@ def _run_research_in_thread(
 
     try:
         progress_callback("Initializing research session...", 0.03)
-        if _research_agent is not None:
-            # Real LLM-backed research -- progress events will flow.
-            result = _research_agent.research(
-                query=question,
-                max_depth=max_depth,
-                timeout=timeout,
-                progress_callback=progress_callback,
-            )
-            result = attach_chart_from_agent_result(result)
-            claim_citations = result.get("claim_citations", [])
-            section_confidence = result.get("section_confidence", {})
-            event_queue.put(
-                _augment_research_payload(
+        progress_callback(
+            "Routing to deterministic groundwater analysis...",
+            0.2,
+            {
+                "session_id": "",
+                "phase": "routing",
+                "research_plan": _heuristic_research_plan(question, max_depth),
+                "budget_status": {
+                    "max_depth": max_depth,
+                    "depth_reached": 0,
+                    "elapsed_seconds": 0,
+                    "insights_gathered": 0,
+                    "status": "routing",
+                },
+                "checkpoints": [],
+                "tool_trace": [
                     {
-                        "type": "result",
-                        "status": "ok",
-                        "mode": "deep_research",
-                        "report": result.get("report", ""),
-                        "chart": _chart_from(result, path="research.stream.agent"),
-                        "insights": result.get("insights", []),
-                        "sources": result.get("sources", []),
-                        "session_id": result.get("session_id"),
-                        "research_plan": result.get("research_plan"),
-                        "budget_status": result.get("budget_status"),
-                        "checkpoints": result.get("checkpoints"),
-                        "tool_trace": result.get("tool_trace"),
-                        "recommended_views": result.get("recommended_views"),
-                        "chart_specs": result.get("chart_specs"),
-                        "structured_response": result.get("structured_response"),
-                        "search_history": result.get("search_history", []),
-                        "depth_reached": result.get("depth_reached", 0),
-                        "elapsed_seconds": result.get("elapsed_seconds", 0),
-                        "claim_citations": claim_citations,
-                        "claim_verdicts": result.get("claim_verdicts", []),
-                        "claim_verdict_summary": result.get("claim_verdict_summary", {}),
-                        "citation_summary": result.get(
-                            "citation_summary",
-                            {
-                                "total_claims": 0,
-                                "cited_claims": 0,
-                                "citation_coverage": 0.0,
-                            },
-                        ),
-                        "section_confidence": section_confidence,
-                        "hallucination_guardrail": result.get("hallucination_guardrail", {}),
-                        "citation_integrity": result.get(
-                            "citation_integrity",
-                            _build_citation_integrity(claim_citations, section_confidence),
-                        ),
-                    },
-                    question=question,
-                    max_depth=max_depth,
-                    default_mode="deep_research",
-                    trace_summary="Streaming LLM-backed research completed.",
-                )
-            )
-        else:
-            # Fallback mode -- use same routing chain as /api/research.
-            progress_callback(
-                "Routing to deterministic groundwater analysis...",
-                0.2,
-                {
-                    "session_id": "",
-                    "phase": "routing",
-                    "research_plan": _heuristic_research_plan(question, max_depth),
-                    "budget_status": {
-                        "max_depth": max_depth,
-                        "depth_reached": 0,
-                        "elapsed_seconds": 0,
-                        "insights_gathered": 0,
-                        "status": "routing",
-                    },
-                    "checkpoints": [],
-                    "tool_trace": [
-                        {
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                            "phase": "routing",
-                            "depth": 0,
-                            "tool": "research_router",
-                            "status": "started",
-                            "details": {"summary": "Selecting deterministic fallback path."},
-                        }
-                    ],
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "phase": "routing",
+                        "depth": 0,
+                        "tool": "research_router",
+                        "status": "started",
+                        "details": {"summary": "Selecting deterministic fallback path."},
+                    }
+                ],
+            },
+        )
+        progress_callback(
+            "Building cited groundwater response...",
+            0.72,
+            {
+                "session_id": "",
+                "phase": "synthesizing",
+                "research_plan": _heuristic_research_plan(question, max_depth),
+                "budget_status": {
+                    "max_depth": max_depth,
+                    "depth_reached": max(0, min(1, max_depth - 1)),
+                    "elapsed_seconds": 0,
+                    "insights_gathered": 0,
+                    "status": "synthesizing",
                 },
-            )
-            progress_callback(
-                "Building cited groundwater response...",
-                0.72,
-                {
-                    "session_id": "",
-                    "phase": "synthesizing",
-                    "research_plan": _heuristic_research_plan(question, max_depth),
-                    "budget_status": {
-                        "max_depth": max_depth,
-                        "depth_reached": max(0, min(1, max_depth - 1)),
-                        "elapsed_seconds": 0,
-                        "insights_gathered": 0,
-                        "status": "synthesizing",
-                    },
-                    "checkpoints": [],
-                    "tool_trace": [
-                        {
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                            "phase": "synthesizing",
-                            "depth": 0,
-                            "tool": "deterministic_fallback",
-                            "status": "completed",
-                            "details": {"summary": "Compiling deterministic groundwater analysis."},
-                        }
-                    ],
-                },
-            )
-            event_queue.put(_stream_fallback_result(question, max_depth=max_depth))
+                "checkpoints": [],
+                "tool_trace": [
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "phase": "synthesizing",
+                        "depth": 0,
+                        "tool": "deterministic_fallback",
+                        "status": "completed",
+                        "details": {"summary": "Compiling deterministic groundwater analysis."},
+                    }
+                ],
+            },
+        )
+        event_queue.put(_stream_fallback_result(question, max_depth=max_depth))
     except Exception as exc:
         logger.error(
             "Streaming research thread error: %s\n%s",
@@ -3390,40 +3123,32 @@ def research_stream_endpoint(query: dict):
 
 @router.get("/chat/status")
 def chat_status():
-    """Get AI chat and research system status."""
+    """Get chat subsystem status.
+
+    The deep-research agent is retired (see legacy/), so the response always
+    reports the deterministic answering chain.
+    """
     degraded_reasons = _build_degraded_reasons()
-    synthesis_available = _research_agent is not None
     return {
-        "status": "ok" if (synthesis_available and not degraded_reasons) else "fallback",
+        "status": "ok" if not degraded_reasons else "fallback",
         "version": "1.0.0",
-        "agent_available": synthesis_available,
-        "research_available": synthesis_available,
+        "agent_available": False,
+        "research_available": False,
         "degraded_reasons": degraded_reasons,
         "runtime_checks": {
             "skip_agent_init": skip_agent_init,
             "web_search_enabled": research_web_search_enabled,
-            "chat_agent_initialized": synthesis_available,
-            "research_agent_initialized": synthesis_available,
+            "chat_agent_initialized": False,
+            "research_agent_initialized": False,
             "last_chat_error": _runtime_error_state["chat"],
             "last_research_error": _runtime_error_state["research"],
         },
-        "features": (
-            [
-                "Deterministic groundwater Q&A",
-                "Evidence-linked research synthesis",
-                "Hydrogeology document grounding",
-                "Structured responses with claim and evidence IDs",
-                "Reproducibility metadata and provenance hashes",
-                "Deep research with iterative search",
-                "Section-level confidence and trust metadata",
-            ]
-            if synthesis_available
-            else [
-                "Deterministic groundwater Q&A (fallback mode)",
-                "Evidence-linked cited responses",
-                "USGS well and aquifer context",
-                "Research provenance metadata",
-                "Aquifer information",
-            ]
-        ),
+        "features": [
+            "Deterministic groundwater Q&A",
+            "Evidence-linked cited responses",
+            "Hydrogeology document grounding",
+            "Structured responses with claim and evidence IDs",
+            "Reproducibility metadata and provenance hashes",
+            "USGS well and aquifer context",
+        ],
     }
