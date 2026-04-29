@@ -12,8 +12,8 @@ These are narrow behavioral contracts, not end-to-end LLM tests:
 
 from __future__ import annotations
 
-from api.routes import _grounded_reasoning as gr
-from api.routes._grounded_reasoning import (
+from api.routes.answering import reasoning as gr
+from api.routes.answering.reasoning import (
     DriverHypothesis,
     GroundedFraming,
     GroundedInterpretation,

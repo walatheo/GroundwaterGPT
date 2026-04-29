@@ -1,7 +1,7 @@
 """LangGraph state machine for grounded chart interpretation.
 
 The graph wraps the existing deterministic pipeline in
-``api.routes._grounded_reasoning`` with three additions that matter for
+``api.routes.answering.reasoning`` with three additions that matter for
 publication-quality reasoning:
 
     frame  →  sample_reason (self-consistency)  →  critic  →  synthesize
@@ -95,7 +95,7 @@ def run_interpretation_graph(
         logger.debug("langgraph unavailable; falling back to single-turn interpreter")
         return None
 
-    from api.routes._grounded_reasoning import (
+    from api.routes.answering.reasoning import (
         derive_question_frame,
         invoke_grounded_reasoning,
         validate_against_pack,

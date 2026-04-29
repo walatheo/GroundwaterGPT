@@ -29,7 +29,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
 from api.routes._answer_contract import GroundingStatus, derive_grounding_status
-from api.routes._evidence_guided_ai import clean_sentence, questionize
+from api.routes.answering.followups import clean_sentence, questionize
 
 # Default limits we always want on the record. The chart / wells story is
 # observational — these caveats keep the reply honest when the branch forgot

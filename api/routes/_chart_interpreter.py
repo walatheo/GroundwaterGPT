@@ -32,20 +32,20 @@ from api.routes._detection import (
     _load_site_timeseries,
     _usgs_site_url,
 )
-from api.routes._evidence_guided_ai import build_evidence_guided_progression
-from api.routes._grounded_reasoning import derive_question_frame
-from api.routes._grounded_reasoning import grounded_reasoning_enabled as _grounded_reasoning_enabled
-from api.routes._grounded_reasoning import (
-    invoke_grounded_reasoning,
-    invoke_with_llm_timeout,
-    llm_timeout_seconds,
-)
 from api.routes._site_analysis import (
     _build_chart_explainability,
     _build_chart_insights,
     _build_supply_interpretation,
     _cross_well_analysis,
     _seasonal_decomposition,
+)
+from api.routes.answering.followups import build_evidence_guided_progression
+from api.routes.answering.reasoning import derive_question_frame
+from api.routes.answering.reasoning import grounded_reasoning_enabled as _grounded_reasoning_enabled
+from api.routes.answering.reasoning import (
+    invoke_grounded_reasoning,
+    invoke_with_llm_timeout,
+    llm_timeout_seconds,
 )
 from api.site_metadata import SITE_METADATA
 from src.agent.model_config import resolve_local_qwen_model

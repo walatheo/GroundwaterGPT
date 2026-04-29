@@ -2333,7 +2333,7 @@ def _site_research_fallback(
     # --- LLM synthesis (hybrid mode) ---
     synthesis_section = ""
     reasoning_trace: list[dict] = []
-    from api.routes._grounded_reasoning import grounded_reasoning_enabled
+    from api.routes.answering.reasoning import grounded_reasoning_enabled
 
     needs_synthesis = (
         allow_llm_synthesis
@@ -2347,7 +2347,7 @@ def _site_research_fallback(
     if needs_synthesis:
         synthesis_deadline = time.monotonic() + 30.0
         try:
-            from api.routes._grounded_reasoning import (
+            from api.routes.answering.reasoning import (
                 grounded_reasoning_enabled,
                 invoke_grounded_synthesis,
                 llm_timeout_seconds,

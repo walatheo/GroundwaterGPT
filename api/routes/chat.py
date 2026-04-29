@@ -56,16 +56,6 @@ from api.routes._detection import (  # noqa: E402
     _sites_for_aquifer,
     _usgs_site_url,
 )
-from api.routes._evidence_guided_ai import (
-    build_evidence_guided_progression,
-    clean_sentence,
-    questionize,
-)
-from api.routes._grounded_answer import attach_grounded_answer
-from api.routes._insufficient_evidence import (
-    attach_insufficient_answer,
-    build_insufficient_from_decision,
-)
 from api.routes._provenance import build_research_provenance
 from api.routes._route_decision import RouteDecision, resolve_route
 from api.routes._site_analysis import (  # noqa: E402
@@ -74,6 +64,16 @@ from api.routes._site_analysis import (  # noqa: E402
     _seasonal_decomposition,
     _site_research_fallback,
     _trend_label,
+)
+from api.routes.answering.composer import attach_grounded_answer
+from api.routes.answering.followups import (
+    build_evidence_guided_progression,
+    clean_sentence,
+    questionize,
+)
+from api.routes.answering.refusal import (
+    attach_insufficient_answer,
+    build_insufficient_from_decision,
 )
 from api.site_metadata import SITE_METADATA
 
@@ -314,7 +314,7 @@ def _llm_synthesis_was_skipped(payload: dict[str, Any], allow_llm_synthesis: boo
     if not allow_llm_synthesis:
         return False
     try:
-        from api.routes._grounded_reasoning import grounded_reasoning_enabled
+        from api.routes.answering.reasoning import grounded_reasoning_enabled
     except Exception:
         return False
     if not grounded_reasoning_enabled():

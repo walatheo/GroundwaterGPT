@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from api.routes._grounded_reasoning import (
+from api.routes._site_analysis import _ols_rate_ci95
+from api.routes.answering.reasoning import (
     DriverHypothesis,
     GroundedFraming,
     GroundedInterpretation,
@@ -18,7 +19,6 @@ from api.routes._grounded_reasoning import (
     SiteQuantBlock,
     validate_against_pack,
 )
-from api.routes._site_analysis import _ols_rate_ci95
 
 
 def _pack() -> dict:

@@ -3,7 +3,7 @@
 import time
 
 from api.routes import _chart_interpreter as interpreter
-from api.routes import _grounded_reasoning as grounded
+from api.routes.answering import reasoning as grounded
 
 LEE_CONTEXT = {
     "chart_id": "Lee County Multi-Aquifer Groundwater Levels",

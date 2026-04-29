@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from api.routes._grounded_reasoning import _load_interpretation_exemplars
+from api.routes.answering.reasoning import _load_interpretation_exemplars
 
 
 @pytest.fixture(autouse=True)
@@ -26,7 +26,7 @@ def test_loader_returns_dict_keyed_by_intent():
 
 def test_loader_returns_empty_when_file_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "api.routes._grounded_reasoning._INTERPRETATION_EXEMPLARS_PATH",
+        "api.routes.answering.reasoning._INTERPRETATION_EXEMPLARS_PATH",
         tmp_path / "missing.json",
     )
     _load_interpretation_exemplars.cache_clear()
@@ -37,7 +37,7 @@ def test_loader_returns_empty_when_json_malformed(tmp_path, monkeypatch):
     bad = tmp_path / "bad.json"
     bad.write_text("{not valid json")
     monkeypatch.setattr(
-        "api.routes._grounded_reasoning._INTERPRETATION_EXEMPLARS_PATH",
+        "api.routes.answering.reasoning._INTERPRETATION_EXEMPLARS_PATH",
         bad,
     )
     _load_interpretation_exemplars.cache_clear()
@@ -58,7 +58,7 @@ def test_loader_skips_entries_missing_required_keys(tmp_path, monkeypatch):
         )
     )
     monkeypatch.setattr(
-        "api.routes._grounded_reasoning._INTERPRETATION_EXEMPLARS_PATH",
+        "api.routes.answering.reasoning._INTERPRETATION_EXEMPLARS_PATH",
         f,
     )
     _load_interpretation_exemplars.cache_clear()

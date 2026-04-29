@@ -13,7 +13,7 @@ from api.routes._explainer import (
     explain_grounded_answer,
     validate_explanation,
 )
-from api.routes._grounded_answer import GroundedAnswer
+from api.routes.answering.composer import GroundedAnswer
 
 
 def _answer(

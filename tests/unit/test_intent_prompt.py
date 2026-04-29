@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from api.routes import _grounded_reasoning as gr
-from api.routes._grounded_reasoning import GroundedFraming, _classify_intent_bucket
+from api.routes.answering import reasoning as gr
+from api.routes.answering.reasoning import GroundedFraming, _classify_intent_bucket
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +43,7 @@ def test_unknown_scope_falls_back_to_general():
     assert _classify_intent_bucket(_frame("unknown", "general")) == "general"
 
 
-from api.routes._grounded_reasoning import _build_intent_specific_prompt  # noqa: E402
+from api.routes.answering.reasoning import _build_intent_specific_prompt  # noqa: E402
 
 
 def test_intent_block_renders_worked_examples():
@@ -80,7 +80,7 @@ def test_intent_block_empty_for_unknown_bucket():
     assert _build_intent_specific_prompt("nonsense") == ""
 
 
-from api.routes._grounded_reasoning import (  # noqa: E402
+from api.routes.answering.reasoning import (  # noqa: E402
     _build_multistage_reasoning_prompt,
     _build_raw_evidence_prompt,
 )

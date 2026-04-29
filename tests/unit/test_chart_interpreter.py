@@ -6,7 +6,7 @@ import types
 import pytest
 
 from api.routes import _chart_interpreter as interpreter
-from api.routes._grounded_reasoning import (
+from api.routes.answering.reasoning import (
     GroundedInterpretation,
     GroundedNumericClaim,
     ReasoningStep,

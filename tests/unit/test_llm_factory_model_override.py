@@ -51,7 +51,7 @@ def test_reasoning_providers_use_groundwatergpt_llm_model(monkeypatch):
     monkeypatch.delenv("SYNTHESIS_MODEL", raising=False)
     monkeypatch.delenv("GROUNDWATERGPT_REASONING_MODEL", raising=False)
     monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
-    from api.routes._grounded_reasoning import _reasoning_providers
+    from api.routes.answering.reasoning import _reasoning_providers
 
     providers = _reasoning_providers()
     assert providers == [("ollama", "qwen3:32b")]
@@ -63,7 +63,7 @@ def test_reasoning_providers_prefer_project_model_over_synthesis_model(monkeypat
     monkeypatch.delenv("LLM_MODEL", raising=False)
     monkeypatch.delenv("GROUNDWATERGPT_REASONING_MODEL", raising=False)
     monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
-    from api.routes._grounded_reasoning import _reasoning_providers
+    from api.routes.answering.reasoning import _reasoning_providers
 
     providers = _reasoning_providers()
     assert providers == [("ollama", "qwen3:32b")]

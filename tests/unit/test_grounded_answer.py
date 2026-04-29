@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from api.routes._answer_contract import GroundingStatus
-from api.routes._grounded_answer import (
+from api.routes.answering.composer import (
     GroundedAnswer,
     attach_grounded_answer,
     compose_grounded_answer,

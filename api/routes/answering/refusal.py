@@ -35,8 +35,8 @@ from dataclasses import replace
 from typing import Any, Optional
 
 from api.routes._answer_contract import GroundingStatus, RouteMode
-from api.routes._grounded_answer import GroundedAnswer
 from api.routes._route_decision import RouteDecision, extract_out_of_scope_geo
+from api.routes.answering.composer import GroundedAnswer
 
 # ---------------------------------------------------------------------------
 # Reason-specific templates.

@@ -174,7 +174,7 @@ def _run_case(case: dict, llm) -> CaseScorecard:
     provider = ""
     try:
         os.environ.setdefault("GROUNDWATERGPT_SKIP_AGENT_INIT", "1")
-        from api.routes._grounded_reasoning import invoke_grounded_synthesis
+        from api.routes.answering.reasoning import invoke_grounded_synthesis
 
         grounded = invoke_grounded_synthesis(
             question,

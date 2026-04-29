@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from api.routes._grounded_reasoning import (
+from api.routes.answering.reasoning import (
     GroundedFraming,
     GroundedInterpretation,
     GroundedNumericClaim,
@@ -77,9 +77,9 @@ def test_graph_runs_self_consistency_and_returns_best():
     draft_c = _make_interp(grounding="grounded")
 
     with patch(
-        "api.routes._grounded_reasoning.invoke_grounded_reasoning",
+        "api.routes.answering.reasoning.invoke_grounded_reasoning",
         side_effect=[draft_a, draft_b, draft_c],
-    ), patch("api.routes._grounded_reasoning.validate_against_pack", return_value=[]):
+    ), patch("api.routes.answering.reasoning.validate_against_pack", return_value=[]):
         result = interpretation_graph.run_interpretation_graph("which well is fastest?", pack)
 
     assert result is not None
@@ -94,7 +94,7 @@ def test_graph_runs_self_consistency_and_returns_best():
 def test_graph_returns_none_when_all_samples_fail():
     pack = _pack()
     with patch(
-        "api.routes._grounded_reasoning.invoke_grounded_reasoning",
+        "api.routes.answering.reasoning.invoke_grounded_reasoning",
         return_value=None,
     ):
         result = interpretation_graph.run_interpretation_graph("fastest?", pack)
@@ -105,10 +105,10 @@ def test_graph_appends_critic_flags_to_limits():
     pack = _pack()
     draft = _make_interp()
     with patch(
-        "api.routes._grounded_reasoning.invoke_grounded_reasoning",
+        "api.routes.answering.reasoning.invoke_grounded_reasoning",
         return_value=draft,
     ), patch(
-        "api.routes._grounded_reasoning.validate_against_pack",
+        "api.routes.answering.reasoning.validate_against_pack",
         return_value=["grounded_reasoning_missing_evidence_keys"],
     ):
         result = interpretation_graph.run_interpretation_graph("fastest?", pack, n_samples=1)

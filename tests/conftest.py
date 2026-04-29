@@ -37,7 +37,7 @@ def _install_llm_stubs() -> None:
     fixture sets up.
     """
     try:
-        from api.routes import _evidence_guided_ai as _ega
+        from api.routes.answering import followups as _ega
 
         _ega._invoke_progression_rewrite = lambda *a, **k: None  # type: ignore[assignment]
     except Exception:
@@ -49,7 +49,7 @@ def _install_llm_stubs() -> None:
     except Exception:
         pass
     # `_chart_interpreter.invoke_grounded_reasoning` is imported at module
-    # load from `_grounded_reasoning`; without a default stub, tests that
+    # load from `answering.reasoning`; without a default stub, tests that
     # don't explicitly patch it will pull Ollama over the wire through the
     # `invoke_with_llm_timeout` ThreadPoolExecutor. Tests that want the real
     # path either patch it themselves (via monkeypatch) or opt in through a

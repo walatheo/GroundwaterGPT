@@ -32,7 +32,7 @@ _LLM_TIMEOUT_EXECUTOR = ThreadPoolExecutor(
     thread_name_prefix="gw-llm",
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 HYDRO_CONTEXT_PATH = PROJECT_ROOT / "config" / "estero_hydrogeology_context.json"
 
 _NEGATIVE_SIGNAL_TERMS = (
@@ -1236,7 +1236,7 @@ def fallback_from_deterministic(
 # ---------------------------------------------------------------------------
 
 _INTERPRETATION_EXEMPLARS_PATH = (
-    Path(__file__).resolve().parents[2] / "config" / "interpretation_exemplars.json"
+    Path(__file__).resolve().parents[3] / "config" / "interpretation_exemplars.json"
 )
 
 

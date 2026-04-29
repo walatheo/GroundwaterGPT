@@ -31,7 +31,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from api.routes._grounded_answer import GroundedAnswer
+from api.routes.answering.composer import GroundedAnswer
 
 logger = logging.getLogger(__name__)
 

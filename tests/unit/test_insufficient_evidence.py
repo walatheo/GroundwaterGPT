@@ -5,15 +5,15 @@ from __future__ import annotations
 import pytest
 
 from api.routes._answer_contract import GroundingStatus, RouteMode
-from api.routes._grounded_answer import GroundedAnswer
-from api.routes._insufficient_evidence import (
+from api.routes._route_decision import RouteDecision
+from api.routes.answering.composer import GroundedAnswer
+from api.routes.answering.refusal import (
     attach_insufficient_answer,
     build_insufficient_answer,
     build_insufficient_from_decision,
     is_insufficient_answer,
     should_short_circuit_explainer,
 )
-from api.routes._route_decision import RouteDecision
 
 
 class TestBuildInsufficientAnswer:

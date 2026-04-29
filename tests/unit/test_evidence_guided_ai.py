@@ -1,6 +1,6 @@
 """Tests for shared evidence-guided AI progression helpers."""
 
-from api.routes import _evidence_guided_ai as guided_ai
+from api.routes.answering import followups as guided_ai
 
 
 def test_deterministic_progression_builds_goal_and_groups():

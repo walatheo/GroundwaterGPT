@@ -111,9 +111,9 @@ def _summary(label: str, timings: list[float]) -> dict[str, float]:
 def run(iterations: int = 100) -> dict[str, dict[str, float]]:
     """Execute all four micro-benchmarks and return their summary stats."""
     from api.routes._explainer import validate_explanation
-    from api.routes._grounded_answer import GroundedAnswer, compose_grounded_answer
-    from api.routes._insufficient_evidence import build_insufficient_from_decision
     from api.routes._route_decision import resolve_route
+    from api.routes.answering.composer import GroundedAnswer, compose_grounded_answer
+    from api.routes.answering.refusal import build_insufficient_from_decision
 
     detectors = _build_detectors()
     envelope = _sample_envelope()
