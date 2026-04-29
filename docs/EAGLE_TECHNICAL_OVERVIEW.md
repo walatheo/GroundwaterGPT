@@ -1,6 +1,8 @@
-ww# EAGLE Technical Overview
+# EAGLE Technical Overview
 
 **Document purpose.** This is a low-level, audit-oriented description of EAGLE (Evidence-Aligned Groundwater Level Explorer) as it exists in the repository on 2026-04-16. It is intended as grounding material for a manuscript workflow. Every architectural claim, numeric threshold, and data-flow assertion is tied to concrete files and line ranges in the code so that a downstream author or reviewer can verify it without re-reading the codebase from scratch.
+
+> **Status update (2026-04-29).** A cleanup pass quarantined the dormant `DeepResearchAgent` and its companions to `legacy/`, dropped its plumbing from `api/routes/chat.py`, renamed the `/api/research/workbench` data viewer to `/api/multi-well` (the old name lied about what it does), and grouped the four files that compose every chat response into `api/routes/answering/` (`composer.py`, `reasoning.py`, `followups.py`, `refusal.py`). Where this document still says "the agent is dormant in `src/agent/`" the reality is now "the agent has been moved to `legacy/src_agent/` and is no longer reachable from a serving import." The chat path described below is otherwise unchanged. UAT 10/10 and 415 unit tests pass on this configuration.
 
 > Naming note: the repository directory, Python module names, and `GROUNDWATERGPT_*` environment-variable prefix predate the EAGLE rename and are intentionally preserved as stable interfaces. "EAGLE" is the user-facing system name; file paths and env vars in this document still read `GROUNDWATERGPT_*` because they do on disk.
 
@@ -435,7 +437,7 @@ The key implication for the manuscript: the headline ("68/68 benchmark pass, 100
 
 ### 9.3 Current live-agent smoke benchmark
 
-The repository now includes [scripts/run_agent_benchmark.py](scripts/run_agent_benchmark.py), which routes the same benchmark case format through `DeepResearchAgent` using the live-agent threshold file. A bounded local smoke run was cached in [agent_benchmark_report.json](agent_benchmark_report.json) using Ollama `qwen3:8b` and `--limit 1`.
+The historical bounded live-agent smoke (`legacy/scripts/run_agent_benchmark.py` and `legacy/agent_benchmark_report.json` after the 2026-04-29 cleanup pass) routed the same benchmark case format through the now-quarantined `DeepResearchAgent` using the live-agent threshold file. The cached run used Ollama `qwen3:8b` and `--limit 1`. It is preserved for reference only and is no longer part of the maintained benchmark surface.
 
 - Cases: **1 / 68** shared benchmark cases, routed through `deep_research`.
 - Agent-routed rate: **1.000**.
@@ -575,9 +577,9 @@ The first cleanup pass removed code and documents that were not reachable from t
 
 These are not dead, but they are large enough that they hide the architecture the manuscript is trying to describe. Splitting them would make the paper's file references more precise.
 
-- **[api/routes/chat.py](api/routes/chat.py) (2793 lines).** Suggest splitting into: `chat_routes.py` (the FastAPI route handlers), `routing_chain.py` (the site/aquifer/multi/location/network detection wiring), `fallback_wiring.py` (how each routing branch calls `_site_research_fallback` and assembles the payload), `agent_wiring.py` (how the LLM branches call `DeepResearchAgent` and `_agent_chart_hook`), `interpretation_routes.py` (the `/api/interpret` cache and chart-context bridge), and `sse_streaming.py` (the streaming generator + thread-queue bridge).
+- **[api/routes/chat.py](api/routes/chat.py).** Suggest splitting into: `chat_routes.py` (the FastAPI route handlers), `routing_chain.py` (the site/aquifer/multi/location/network detection wiring), `fallback_wiring.py` (how each routing branch calls `_site_research_fallback` and assembles the payload), `interpretation_routes.py` (the `/api/interpret` cache and chart-context bridge), and `sse_streaming.py` (the streaming generator + thread-queue bridge). After the 2026-04-29 cleanup the agent-wiring branch is gone, but the file is still large enough that splitting helps readability.
 - **[api/routes/_site_analysis.py](api/routes/_site_analysis.py) (1970 lines).** Suggest splitting into `_trend.py` (OLS slope, helpers), `_changepoint.py` (`_detect_changepoint`), `_cluster.py` (`_cluster_wells`), `_cross_well.py` (`_cross_well_analysis` orchestrator), `_supply.py` (water-supply proxy mapping and answer brief), `_chart.py` (`_build_chart_payload`, `_build_chart_insights`), and a thin `_site_analysis.py` that re-exports for existing imports.
-- **[src/agent/research_agent.py](src/agent/research_agent.py) (~1980 lines).** Suggest splitting the synthesis layer (`_build_evidence_items`, `_parse_structured_response`, `_heuristic_structured_response`, `_render_structured_report`) into a dedicated `src/agent/structured_synthesis.py` so the claim/evidence binding that the paper's argument depends on lives in one small, testable file.
+- **[api/routes/answering/reasoning.py](api/routes/answering/reasoning.py).** The framing/structured-output module is the largest active LLM-touching file. Suggest splitting Pydantic models, prompt builders, LLM invocation, and validators into their own files so the claim/evidence binding lives in narrow, testable units.
 
 ### 11.7 Remaining cleanup impact
 
@@ -601,9 +603,9 @@ After this pass, the largest remaining items are methodological rather than arch
 | Site metadata loader | [api/site_metadata.py](api/site_metadata.py) | — |
 | FastAPI app factory | [api/main.py](api/main.py) | 54 lines |
 | Wells listing router | [api/routes/wells.py](api/routes/wells.py) | 176 lines |
-| Deep research agent — **dormant in demo/eval** (phases, budget, evidence registry, structured synthesis) | [src/agent/research_agent.py](src/agent/research_agent.py) | 1980 lines |
-| Agent tool surface — **dormant** | [src/agent/tools.py](src/agent/tools.py) | 1083 lines |
-| Research optimizer — **dormant** (planner, ranker, reflector, persistence) | [src/agent/research_optimizer.py](src/agent/research_optimizer.py) | 854 lines |
+| Deep research agent — **quarantined to legacy/ on 2026-04-29** (phases, budget, evidence registry, structured synthesis) | [legacy/src_agent/research_agent.py](../legacy/src_agent/research_agent.py) | 1980 lines |
+| Agent tool surface — **quarantined to legacy/** | [legacy/src_agent/tools.py](../legacy/src_agent/tools.py) | 1083 lines |
+| Research optimizer — **quarantined to legacy/** (planner, ranker, reflector, persistence) | [legacy/src_agent/research_optimizer.py](../legacy/src_agent/research_optimizer.py) | 854 lines |
 | Knowledge base loader | [src/agent/knowledge.py](src/agent/knowledge.py) | 760 lines |
 | Source verification (trust levels, category, priority) | [src/agent/source_verification.py](src/agent/source_verification.py) | 658 lines |
 | LLM provider factory | [src/agent/llm_factory.py](src/agent/llm_factory.py) | 180 lines |
@@ -646,7 +648,7 @@ After this pass, the largest remaining items are methodological rather than arch
 - Provenance schema: `research_provenance_v1` with `code_commit`, `response_sha256`, `data_snapshot.sha256`, `config_hashes`, `methodology.trend_method = "monthly_OLS_with_screened_two_segment_changepoints"`, `methodology.cluster_method = "deterministic_standardized_kmeans"`, `methodology.external_covariates.included = false`.
 - Structured response schema: `evidence_response_v1` with `answer`, `claims[*] = {claim, claim_type, claim_ids, evidence_ids, confidence, is_interpretive, uncertainty}`, `limitations`, `recommended_followup`, `evidence`.
 - Web search: off by default (`GROUNDWATERGPT_ENABLE_WEB_SEARCH` env flag, default `False` at [api/routes/chat.py:363](api/routes/chat.py#L363)).
-- LLM agent timeout (dormant — agent disabled in demo/eval): class default **300 s** at [src/agent/research_agent.py:267](src/agent/research_agent.py#L267), code-level override **120 s** at [api/routes/chat.py:565](api/routes/chat.py#L565). Search budgets at `max_depth=3`: **8 web / 12 KB / 18 API**, `max_total_cost=6.0`. These numbers have not been exercised at scale.
+- LLM agent timeout (quarantined): class default **300 s** at `legacy/src_agent/research_agent.py:267`, with the prior code-level override of **120 s** in `api/routes/chat.py` removed in the 2026-04-29 cleanup. Search budgets at `max_depth=3`: **8 web / 12 KB / 18 API**, `max_total_cost=6.0`. These numbers were never exercised at scale and are no longer wired into a serving path.
 - Frontend bundle: lazy-loaded `AgentChart` and `ResearchChartsPanel` via `React.lazy` + `Suspense`; backend unreachable detection surfaces as a banner via a ~15-line `backendStatus` observable.
 
 ---

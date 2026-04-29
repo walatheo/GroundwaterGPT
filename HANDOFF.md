@@ -53,7 +53,7 @@ the order I'd tackle them.
    every route, not just chart interpreter.** Today
    `_progression_seed_from_chat_payload` only reads `question_intent` from
    the chart-interpreter response. Adding it to site/aquifer/location
-   fallback results would let `_evidence_guided_ai.py` route follow-up
+   fallback results would let `api/routes/answering/followups.py` route follow-up
    generation correctly for all routes.
 2. **Replace the repeated route-specific fallback dicts with one typed
    adapter.** Today the same envelope is hand-built three times in
@@ -70,7 +70,7 @@ the order I'd tackle them.
    synthesis paths should use that helper instead of reading `SYNTHESIS_MODEL`
    or `LLM_MODEL` directly.
 5. **Split the large files.** `chat.py`, `_chart_interpreter.py`,
-   `_grounded_reasoning.py`, `_site_analysis.py`, and `ChatView.jsx` are
+   `answering/reasoning.py`, `_site_analysis.py`, and `ChatView.jsx` are
    each large enough that surgical changes are risky. Each deserves its
    own refactor plan.
 
@@ -100,10 +100,38 @@ the order I'd tackle them.
   intentionally ignored. Pin a final closeout artifact only when it is needed
   for a manuscript or release, and do that deliberately.
 
+## Recent changes (2026-04-29 cleanup pass)
+
+- `legacy/`: dormant `DeepResearchAgent`, `research_optimizer`,
+  `evidence_guided_synthesis` (the agent's variant — not the live route),
+  `tools.py`, `continuous_learning`, the agent benchmark script and
+  cached report, and four agent-only test files were quarantined here.
+  Excluded from the test suite via `pyproject.toml` `norecursedirs` and
+  from pre-commit via `exclude: ^legacy/`. `chat.py` lost ~280 lines of
+  agent-init / agent-branch plumbing that was already gated off in demo,
+  tests, and benchmarks.
+- `api/routes/multi_well.py` + `api/routes/_multi_well.py` (was
+  `research_workflow.py` + `_research_workbench.py`): the side-by-side
+  data viewer endpoint moved from `POST /api/research/workbench` to
+  `POST /api/multi-well`. The old path still works for one release as a
+  hidden alias; frontend client.js calls the new path. Old name lied —
+  it never did research synthesis.
+- `api/routes/answering/{composer,reasoning,followups,refusal}.py`: the
+  four files that compose every chat response are now grouped in this
+  subpackage. Public API is unchanged (re-exported from
+  `api/routes/answering/__init__.py`); 18 import sites + a few mock-patch
+  strings were rewritten.
+- `legacy/tests/scaffolding/`: four eval/CLI test files
+  (`test_chat_review_runner`, `test_eval_model_flag`, `test_langchain_eval`,
+  `test_interpretation_benchmark`) moved out of `tests/unit/` because they
+  exercise dev tooling, not the `/api/chat` UAT path.
+- Verified parity: UAT 10/10 passes, 415 unit tests pass.
+
 ## Recent changes (2026-04-26 closeout)
 
-- `_grounded_reasoning.py`: framing LLM call capped at min(0.25 × remaining
-  budget, 15s) so a slow framing call cannot starve the interpretation step.
+- `answering/reasoning.py` (was `_grounded_reasoning.py`): framing LLM call
+  capped at min(0.25 × remaining budget, 15s) so a slow framing call cannot
+  starve the interpretation step.
 - `chat.py`: cache writes are now skipped when the LLM path was meant to
   fire but didn't (prevents cache poisoning of LLM-failed responses).
 - `requirements-lite.txt`: added `pytest-timeout` so the `pyproject.toml`

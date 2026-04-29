@@ -58,15 +58,20 @@ frontend/
   tests/e2e/                   Playwright coverage for chart flows
 
 src/
-  agent/                       Experimental DeepResearchAgent, shared evidence-guided synthesis, tools, knowledge
+  agent/                       Live LLM primitives — llm_factory, interpretation_graph, knowledge, source_verification
   data/                        USGS download and pipeline utilities
   evaluation/                  Chat and retrieval benchmark helpers
   claim_disagreement.py        Claim-verdict normalization
 
+legacy/                        Quarantined dormant code; excluded from the test suite
+  src_agent/                   DeepResearchAgent + companions (disabled in demo/eval)
+  src_data/                    Continuous-learning scaffold (never wired in)
+  scripts/                     Agent benchmark harness
+  tests/                       Tests for the above
+
 tests/
-  unit/                        API, chart, chat, agent, and workflow tests
+  unit/                        API, chart, chat, and analysis tests on the live UAT path
   data/                        Data quality and local USGS integrity checks
-  agent/                       Agent budget and workflow behavior tests
   benchmark/                   Deterministic benchmark cases and thresholds
   knowledge/                   Optional local Chroma accuracy tests
 
@@ -190,10 +195,9 @@ Ignored/generated paths include:
 Generated benchmark reports can be regenerated with the scripts in `scripts/`.
 Only intentionally pinned reports should remain tracked.
 
-The pinned evidence-guided benchmark report now lives at
+The pinned evidence-guided benchmark report lives at
 `evidence_guided_synthesis_benchmark_report.json` and is the narrow proof path
-for the validated AI role. It should be interpreted separately from the dormant
-live-agent smoke.
+for the validated AI role.
 
 ## Refactor Notes
 
@@ -201,9 +205,9 @@ The active code is clean enough to run, but three modules are still large:
 
 | Module | Why it is large | Preferred future split |
 | --- | --- | --- |
-| `api/routes/chat.py` | Endpoint handlers, deterministic routing, streaming, agent wiring | Route handlers, routing/detection wiring, fallback response assembly, SSE streaming |
+| `api/routes/chat.py` | Endpoint handlers, deterministic routing, streaming | Route handlers, routing/detection wiring, fallback response assembly, SSE streaming |
 | `api/routes/_site_analysis.py` | Trend math, cohort logic, chart payloads, narrative helpers | Trend helpers, changepoints, cohort analysis, chart payload builders |
-| `src/agent/research_agent.py` | Planning, search, synthesis, evidence parsing, rendering | Agent orchestration, structured synthesis, persistence/session helpers |
+| `api/routes/answering/reasoning.py` | LLM-driven framing, structured-output models, multi-stage prompts | Pydantic models, prompt builders, LLM invocation, validators |
 
 Split these only when touching related behavior. Avoid broad refactors that do
 not reduce a concrete maintenance risk.

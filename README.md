@@ -129,13 +129,19 @@ EAGLE/
 │   └── vite.config.js        # Vite configuration
 │
 ├── 🤖 src/                   # Source code
-│   ├── agent/                # AI research agent
-│   │   ├── research_agent.py # Deep Research Agent
+│   ├── agent/                # Live response-generation primitives
+│   │   ├── llm_factory.py    # Provider selection (Qwen / Ollama / DashScope)
+│   │   ├── interpretation_graph.py  # LangGraph engine for chart interpretation
 │   │   ├── knowledge.py      # ChromaDB interface
 │   │   └── source_verification.py
 │   ├── data/                 # Data processing
-│   │   ├── download_data.py  # USGS fetcher
-│   │   └── continuous_learning.py
+│   │   └── download_data.py  # USGS fetcher
+│
+├── 📦 legacy/                # Quarantined dormant code (not loaded at runtime)
+│   ├── src_agent/            # DeepResearchAgent + companions (disabled in demo/eval)
+│   ├── src_data/             # Continuous-learning scaffold (never wired in)
+│   ├── scripts/              # Agent benchmark harness
+│   └── tests/                # Tests for the above; excluded from the suite
 │
 ├── 📊 data/                  # Generated/local USGS CSV data, ignored by git
 │   └── usgs_*.csv            # 40 canonical monitoring-site time series
@@ -147,7 +153,7 @@ EAGLE/
 │
 ├── 📈 outputs/               # Generated benchmark/research outputs, ignored by git
 │
-├── 🧪 tests/                 # Test suite (481 unit tests passing locally)
+├── 🧪 tests/                 # Test suite (415 unit tests passing locally)
 │   ├── data/                 # Data quality & integrity tests
 │   └── unit/                 # Unit tests
 │
@@ -182,10 +188,11 @@ EAGLE follows **whitebox principles** — all AI-surfaced conclusions are tracea
 │               KNOWLEDGE + EVIDENCE-GUIDED AI LAYER          │
 │  agent/knowledge.py (ChromaDB + Embeddings)                 │
 │  - Vector search (BAAI/bge-small-en-v1.5)                  │
-│  api/routes/_evidence_guided_ai.py                          │
-│  - Grounded next-goal and follow-up synthesis               │
-│  agent/research_agent.py                                    │
-│  - Experimental research-agent path kept out of demo core   │
+│  api/routes/answering/                                      │
+│  - composer.py    : canonical GroundedAnswer envelope       │
+│  - reasoning.py   : LLM-driven hydrologic interpretation    │
+│  - followups.py   : evidence-guided next-question generator │
+│  - refusal.py     : insufficient-evidence / out-of-scope    │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
