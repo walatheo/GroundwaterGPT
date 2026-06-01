@@ -110,10 +110,12 @@ The generated ChromaDB store lives in `knowledge_base/` and is ignored by git.
 ```
 EAGLE/
 ├── README.md                 # This file
+├── HANDOFF.md                # Engineering-successor handoff (next-maintainer notes)
 ├── requirements.txt          # Python dependencies
 │
 ├── 📚 docs/                  # Documentation
 │   ├── README.md             # Documentation index
+│   ├── SPONSOR_HANDOFF.md    # Operator handoff (fresh-clone setup, prerequisites)
 │   ├── EAGLE_TECHNICAL_OVERVIEW.md
 │   ├── MANUSCRIPT_DRAFT.md
 │   ├── DEVELOPMENT_GUIDE.md
@@ -138,7 +140,7 @@ EAGLE/
 │   │   └── download_data.py  # USGS fetcher
 │
 ├── 📦 legacy/                # Quarantined dormant code (not loaded at runtime)
-│   ├── src_agent/            # DeepResearchAgent + companions (disabled in demo/eval)
+│   ├── src_agent/            # DeepResearchAgent + companions (quarantined; not reachable from serving imports)
 │   ├── src_data/             # Continuous-learning scaffold (never wired in)
 │   ├── scripts/              # Agent benchmark harness
 │   └── tests/                # Tests for the above; excluded from the suite
@@ -294,6 +296,8 @@ feature/your-feature
 | Document | Purpose |
 |----------|---------|
 | **[docs/README.md](docs/README.md)** | Documentation index for the maintained guide set |
+| **[HANDOFF.md](HANDOFF.md)** | Engineering-successor handoff: what works, known fragility, next-team priorities |
+| **[docs/SPONSOR_HANDOFF.md](docs/SPONSOR_HANDOFF.md)** | Operator handoff: fresh-clone prerequisites, setup, data, known limitations |
 | **[EAGLE_TECHNICAL_OVERVIEW.md](docs/EAGLE_TECHNICAL_OVERVIEW.md)** | Manuscript-grounding technical description |
 | **[MANUSCRIPT_DRAFT.md](docs/MANUSCRIPT_DRAFT.md)** | Submission-oriented draft centered on the actual novelty |
 | **[DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)** | Architecture and developer workflow |

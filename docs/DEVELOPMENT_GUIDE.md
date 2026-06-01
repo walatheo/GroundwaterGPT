@@ -64,7 +64,7 @@ src/
   claim_disagreement.py        Claim-verdict normalization
 
 legacy/                        Quarantined dormant code; excluded from the test suite
-  src_agent/                   DeepResearchAgent + companions (disabled in demo/eval)
+  src_agent/                   DeepResearchAgent + companions (quarantined; not reachable from serving imports)
   src_data/                    Continuous-learning scaffold (never wired in)
   scripts/                     Agent benchmark harness
   tests/                       Tests for the above
@@ -76,11 +76,13 @@ tests/
   knowledge/                   Optional local Chroma accuracy tests
 
 docs/
+  SPONSOR_HANDOFF.md           Operator handoff: fresh-clone setup and prerequisites
   EAGLE_TECHNICAL_OVERVIEW.md  Audit-oriented system description
   MANUSCRIPT_DRAFT.md          Submission-facing draft
   DEVELOPMENT_GUIDE.md         This file
   ENGINEERING_STANDARDS.md     Review and quality standards
   DEMO_RUNBOOK.md              Demo and benchmark walkthrough
+HANDOFF.md                     (repo root) Engineering-successor handoff
 ```
 
 ## Active Runtime Paths
