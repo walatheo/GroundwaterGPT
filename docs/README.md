@@ -14,6 +14,8 @@ This repository keeps a small set of living documents for the manuscript-facing 
   Research-grade quality, testing, and review standards.
 - [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md)
   Deterministic demo and benchmark walkthrough.
+- [SPONSOR_HANDOFF.md](SPONSOR_HANDOFF.md)
+  Single-page operator handoff: prerequisites, fresh-clone setup, data, and known limitations. Pair with the root `HANDOFF.md` (engineering-successor notes).
 
 ## Intent
 
